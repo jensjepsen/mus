@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "mus"
+version = "0.1.0"
+description = ""
+authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+anthropic = {extras = ["bedrock"], version = "^0.39.0"}
+jsonpickle = "^3.4.2"
+typer = "^0.13.0"
+requests = "^2.32.3"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
