@@ -74,6 +74,7 @@ def test_llm_query_with_tool_use(llm, mock_client):
     called = False
 
     def test_tool(**kwargs):
+        """Test tool function"""
         nonlocal called
         called = True
         return "Tool result"
@@ -87,20 +88,20 @@ def test_llm_query_with_tool_use(llm, mock_client):
     assert isinstance(result[1].content, ToolUse)
     assert isinstance(result[2].content, ToolResult)
 
-@patch('bob.llm.LLM.query')
+@patch('mus.llm.LLM.query')
 def test_llm_call(mock_query, llm):
     mock_query.return_value = iter([Delta(type="text", content="Test response")])
     result = llm("Test query")
     assert isinstance(result, IterableResult)
     assert str(result) == "Test response"
 
-@patch('bob.llm.LLM.query')
-def test_llm_structured(mock_query, llm):
+@patch('mus.llm.LLM.query')
+def test_llm_fill(mock_query, llm):
     mock_query.return_value = iter([
         Delta(type="text", content="Processing"),
         Delta(type="tool_result", content=ToolResult(content=TestStructure(field1="test", field2=123)))
     ])
-    result = llm.structured("Test query", TestStructure)
+    result = llm.fill("Test query", TestStructure)
     assert isinstance(result, TestStructure)
     assert result.field1 == "test"
     assert result.field2 == 123
@@ -112,18 +113,14 @@ def test_iterable_result():
         Delta(type="tool_use", content=ToolUse(name="test_tool", input={})),
         Delta(type="tool_result", content=ToolResult(content="Tool output"))
     ]
-    result = IterableResult(deltas, bot)
+    result = IterableResult(deltas)
     
-    assert str(result) == "HelloRunning tool: test_toolTool result: Tool output"
+    assert str(result) == "HelloRunning tool: test_toolTool applied"
     
     with pytest.raises(TypeError):
-        result + 1
+        _ = result + 1
 
-    assert result + " World" == "HelloRunning tool: test_toolTool result: Tool output World"
-
-    # Test the __call__ method
-    result()
-    bot.assert_called_once_with(history=result.history)
+    assert result + " World" == "HelloRunning tool: test_toolTool applied World"
 
 if __name__ == "__main__":
     pytest.main()
