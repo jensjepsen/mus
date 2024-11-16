@@ -1,5 +1,5 @@
 import typing as t
-from anthropic import AnthropicBedrock
+from anthropic import AnthropicBedrock, Anthropic
 from anthropic import types as at
 
 from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File
@@ -42,9 +42,8 @@ def extend_history(history: t.List[at.MessageParam], new_message: at.MessagePara
         new_history = history + [new_message]
     return new_history
 
-
 class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
-    def __init__(self, client: AnthropicBedrock):
+    def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
         self.client = client
 
     def stream(self, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[at.MessageParam], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:

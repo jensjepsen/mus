@@ -52,20 +52,25 @@ class File:
 
 
 ToolSimpleReturnValue = t.Union[str, "File"]
-ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
+ToolReturnValue = t.Union[t.List[ToolSimpleReturnValue], ToolSimpleReturnValue]
+
+def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
+    return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
+
+@t.runtime_checkable
 class ToolCallableType(t.Protocol):
     __name__: str
     def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
-
-def a() -> ToolReturnValue:
-    return ["a", File(b64type="image/png", content="a")]
 
 StructuredType = t.TypeVar("StructuredType", bound=DataClass)
 
 QuerySimpleType = t.Union[str, File]
 QueryIterableType = t.List[QuerySimpleType]
 QueryType = t.Union[str, File, QueryIterableType, "Query"]
+
+def is_query_type(val: t.Any) -> t.TypeGuard[QueryType]:
+    return isinstance(val, str) or isinstance(val, File) or isinstance(val, Query) or (isinstance(val, list) and all(is_query_type(v) for v in val))
 
 class Query:
     def __init__(self, val: t.Optional[QueryType]=None):

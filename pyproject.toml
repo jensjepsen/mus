@@ -12,6 +12,7 @@ anthropic = {extras = ["bedrock"], version = "^0.39.0"}
 jsonpickle = "^3.4.2"
 typer = "^0.13.0"
 requests = "^2.32.3"
+typeguard = "^4.4.1"
 
 
 [tool.poetry.group.dev.dependencies]

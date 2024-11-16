@@ -1,5 +1,5 @@
 
-from anthropic import AnthropicBedrock
+from anthropic import AnthropicBedrock, Anthropic
 import functools
 import pathlib
 import typing as t
@@ -12,21 +12,20 @@ from .llm import LLM, AnthropicLLM
 from .llm.types import File
 from .state import StateManager, StateType, State
 from .functions import tool
-from .types import InterpretableCallable, InterpretableCallableWrappedParams
+from .types import InterpretableCallable, InterpretableCallableWrappedParams, LLM_CLIENTS
 
-def get_anthropic_client():
-    return AnthropicLLM(client=AnthropicBedrock(aws_region="us-west-2"))
-
+def wrap_client(client: LLM_CLIENTS):
+    if isinstance(client, Anthropic) or isinstance(client, AnthropicBedrock):
+        return AnthropicLLM(client=client)
+    else:
+        raise ValueError(f"Unsupported client type: {type(client)}")
 
 class Mus:
-    def __init__(self, state: t.Optional[str]=None):
+    def __init__(self, client: LLM_CLIENTS):
         self.state_manager = StateManager()
-        self.client = get_anthropic_client()
-
-        if state:
-            self.state_manager.loads(state)
+        self.client = wrap_client(client)
         
-        self.llm = functools.partial(LLM, client=get_anthropic_client())
+        self.llm = functools.partial(LLM, client=self.client)
         self.tool = tool
         self.print = functools.partial(print, end="", flush=True)
 

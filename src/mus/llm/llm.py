@@ -1,10 +1,12 @@
 import typing as t
+import typeguard
 
 from dataclasses import dataclass
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs
+from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value
 from ..functions import functions_map
 from ..types import DataClass
+import json
 
 class IterableResult:
     def __init__(self, iterable: t.Iterable[Delta]):
@@ -41,12 +43,14 @@ class IterableResult:
         else:
             raise TypeError(f"unsupported operand type(s) for +: 'IterableResult' and '{type(other)}'")
     
-@dataclass
 class LLM:
-    prompt: t.Optional[str]
-    client: LLMClient
-    functions: t.Optional[t.List[t.Callable]]=None
-    function_choice: t.Literal["auto", "any"] = "auto"
+    def __init__(self, client: LLMClient, prompt: t.Optional[str]=None, functions: t.Optional[t.List[ToolCallableType]]=None, function_choice: t.Literal["auto", "any"] = "auto") -> None:
+        self.client = client
+        self.prompt = prompt
+        self.functions = functions
+        self.function_choice = function_choice    
+    
+    
     
     def query(self, query: t.Optional[QueryType]=None, functions: t.Optional[t.List[t.Callable]] = None, function_choice: t.Optional[t.Literal["auto", "any"]] = None, history: t.List[t.Dict[str, t.Any]] = []):
         functions = functions or self.functions or []
@@ -54,7 +58,11 @@ class LLM:
 
         func_map = functions_map(functions)
         def invoke_function(func_name: str, input: t.Dict[str, t.Any]):
-            return func_map[func_name](**input)
+            result = func_map[func_name](**input)
+            if not is_tool_return_value(result):
+                result = json.dumps(result)
+
+            return result
         parsed_query: t.Optional[QueryIterableType] = None
         if query:
             if isinstance(query, str) or isinstance(query, File):

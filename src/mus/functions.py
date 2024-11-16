@@ -33,7 +33,7 @@ def func_to_tool(func: ToolCallableType) -> at.ToolParam:
             return definition
     if not func.__doc__:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
-    p = at.ToolParam(name=func.__name__, description=func.__doc__, input_schema=get_schema(func.__name__, list(func.__annotations__.items())[:-1]))
+    p = at.ToolParam(name=func.__name__, description=func.__doc__, input_schema=get_schema(func.__name__, list(func.__annotations__.items())))
     return p
 
 def dataclass_to_tool(dataclass: t.Type) -> at.ToolParam:
