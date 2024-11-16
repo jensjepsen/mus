@@ -3,11 +3,11 @@ Fixes types in scripts
 """
 import typing as t
 if t.TYPE_CHECKING:
-    from bob.llm.llm import IterableResult
+    from mus.llm.llm import IterableResult
     from typing import Annotated, Literal, Pattern, Optional, Union, Tuple
-    from bob import Bob, File, Query
-    from bob.state import State, StateType
-    a_bob = Bob()
+    from mus import Mus, File, Query
+    from mus.state import State, StateType
+    a_bob = Mus()
     state = a_bob.state
     llm = a_bob.llm
     tool = a_bob.tool

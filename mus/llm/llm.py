@@ -25,6 +25,7 @@ class IterableResult:
             elif msg.type == "tool_result":
                 self.total += f"Tool applied"
             yield msg
+        self.has_iterated = True
     
     def __str__(self):
         if not self.has_iterated:

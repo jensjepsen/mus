@@ -29,12 +29,25 @@ def query_to_content(query: QueryIterableType):
         for q in query
     ]
 
+def extend_history(history: t.List[at.MessageParam], new_message: at.MessageParam):
+    prev_history = history[0:-1]
+    last_message = history[-1] if history else None
+    
+    if last_message and last_message["role"] == new_message["role"]:
+        new_history = prev_history + [at.MessageParam(
+            role=last_message["role"],
+            content=last_message["content"] + new_message["content"]
+        )]
+    else:
+        new_history = history + [new_message]
+    return new_history
 
-class AnthropicLLM(LLMClient):
+
+class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
     def __init__(self, client: AnthropicBedrock):
         self.client = client
 
-    def stream(self, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[t.Dict[str, t.Any]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
+    def stream(self, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[at.MessageParam], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
         kwargs = {}
         if functions:
             # should be abstracted to LLM class
@@ -47,7 +60,7 @@ class AnthropicLLM(LLMClient):
             kwargs["system"] = prompt
         
         if query:
-            history = self.extend_history(history, {"role": "user", "content": query_to_content(query)})
+            history = extend_history(history, {"role": "user", "content": query_to_content(query)})
         
         with self.client.messages.stream(
             model="anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -68,7 +81,7 @@ class AnthropicLLM(LLMClient):
                         function_blocks.append(event.content_block)
                 
                 elif event.type == "message_stop":
-                    history = self.extend_history(history, {
+                    history = extend_history(history, {
                         "role": event.message.role,
                         "content": event.message.content
                     })
@@ -89,19 +102,6 @@ class AnthropicLLM(LLMClient):
                                 "type": "tool_result",
                                 "content": query_to_content(func_result)
                             }]
-                        history = self.extend_history(history, func_message)
+                        history = extend_history(history, func_message)
                         history = yield from self.stream(prompt, None, history, functions, invoke_function, function_choice)
         return history
-
-    def extend_history(self, history: t.List[at.Message], new_message: at.MessageParam):
-        prev_history = history[0:-1]
-        last_message = history[-1] if history else None
-        
-        if last_message and last_message["role"] == new_message["role"]:
-            new_history = prev_history + [at.MessageParam(
-                role=last_message["role"],
-                content=last_message["content"] + new_message["content"]
-            )]
-        else:
-            new_history = history + [new_message]
-        return new_history

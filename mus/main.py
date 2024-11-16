@@ -18,7 +18,7 @@ def get_anthropic_client():
     return AnthropicLLM(client=AnthropicBedrock(aws_region="us-west-2"))
 
 
-class Bob:
+class Mus:
     def __init__(self, state: t.Optional[str]=None):
         self.state_manager = StateManager()
         self.client = get_anthropic_client()
@@ -99,7 +99,7 @@ def run_file(file: pathlib.Path, state_path: t.Optional[pathlib.Path]=None):
             state = None
     else:
         state = None
-    bob = Bob(state=state)
+    bob = Mus(state=state)
     with open(file, "r") as f:
         bob.run(f.read())
     if state_path:

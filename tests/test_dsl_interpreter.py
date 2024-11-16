@@ -44,7 +44,8 @@ result = add(5, 3)
     """
     interpreter.run(code)
     assert interpreter.variables['result'] == 8
-    assert interpreter.functions['add'].__annotations__ == {'x': int, 'y': int, 'returns': 'int'}
+    
+    assert interpreter.functions['add'].__annotations__ == {'x': int, 'y': int, 'returns': int}
     assert interpreter.functions['add'].__doc__ == "This function adds two numbers"
 
 def test_class_definition(interpreter):

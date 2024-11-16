@@ -106,8 +106,17 @@ def test_llm_fill(mock_query, llm):
     assert result.field1 == "test"
     assert result.field2 == 123
 
+@patch('mus.llm.LLM.query')
+def test_llm_bot_decorator(mock_query, llm):
+    mock_query.return_value = iter([Delta(type="text", content="Test response")])
+    
+    @llm.bot
+    def bot(query: str):
+        return query
+
+    assert str(bot("Test query")) == "Test response"
+
 def test_iterable_result():
-    bot = Mock()
     deltas = [
         Delta(type="text", content="Hello"),
         Delta(type="tool_use", content=ToolUse(name="test_tool", input={})),

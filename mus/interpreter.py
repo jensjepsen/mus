@@ -118,7 +118,7 @@ class DSLInterpreter:
             elif isinstance(node, ast.Import):
                 raise DSLError(f"Syntax error: Import statements are not allowed", node, self.code)
             elif isinstance(node, ast.ImportFrom):
-                if node.module == "bob.stubs":
+                if node.module == "mus.stubs":
                     return None
                 raise DSLError(f"Syntax error: Import statements are not allowed", node, self.code)
             else:
@@ -158,7 +158,7 @@ class DSLInterpreter:
                 annotated_args[arg.arg] = self.evaluate_type(arg.annotation)
         if missing_annotations:
             raise DSLError(f"Function \"{node.name}\" arguments must have type annotations for args: {', '.join(missing_annotations)}", node, self.code)
-
+        
         function.__annotations__ = {
             **annotated_args,
             **{"returns": self.evaluate_type(node.returns) if node.returns else None}

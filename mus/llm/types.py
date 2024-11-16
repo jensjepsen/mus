@@ -5,9 +5,11 @@ from abc import ABC, abstractmethod
 
 from ..types import DataClass
 
-class LLMClient(ABC):
+HISTORY_TYPE = t.TypeVar("HISTORY_TYPE")
+
+class LLMClient(ABC, t.Generic[HISTORY_TYPE]):
     @abstractmethod
-    def stream(self, prompt: t.Optional[str], query: t.Optional["QueryIterableType"], history: t.List[t.Dict[str, t.Any]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable["Delta"]:
+    def stream(self, prompt: t.Optional[str], query: t.Optional["QueryIterableType"], history: HISTORY_TYPE, functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable["Delta"]:
         pass
 
 
