@@ -2,9 +2,6 @@ import typing as t
 
 if t.TYPE_CHECKING:
     from .main import Mus
-    from anthropic import AnthropicBedrock, Anthropic
-
-LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock"]
 
 InterpretableCallableWrappedParams = t.ParamSpec("InterpretableCallableWrappedParams")
 

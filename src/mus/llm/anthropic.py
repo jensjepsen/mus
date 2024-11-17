@@ -1,9 +1,29 @@
 import typing as t
 from anthropic import AnthropicBedrock, Anthropic
 from anthropic import types as at
+from dataclasses import is_dataclass
+from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass
+from ..functions import get_schema
 
-from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File
-from ..functions import functions_for_llm
+def func_to_tool(func: ToolCallableType) -> at.ToolParam:
+    if hasattr(func, '__metadata__'):
+        if definition := func.__metadata__.get("definition"):
+            return definition
+    if not func.__doc__:
+        raise ValueError(f"Function {func.__name__} is missing a docstring")
+    p = at.ToolParam(name=func.__name__, description=func.__doc__, input_schema=get_schema(func.__name__, list(func.__annotations__.items())))
+    return p
+
+def dataclass_to_tool(dataclass) -> at.ToolParam:
+    p = at.ToolParam(name=dataclass.__name__, description=dataclass.__doc__, input_schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())))
+    return p
+
+def functions_for_llm(functions: t.List[ToolCallableType]) -> t.List[at.ToolParam]:
+    return [
+        dataclass_to_tool(func) if is_dataclass(func) else func_to_tool(func)
+        for func
+        in (functions or [])
+    ]
 
 def parse_query(query: QuerySimpleType):
     if isinstance(query, str):
@@ -46,10 +66,9 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
     def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
         self.client = client
 
-    def stream(self, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[at.MessageParam], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
+    def stream(self, *, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[at.MessageParam], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
         kwargs = {}
         if functions:
-            # should be abstracted to LLM class
             kwargs["tools"] = functions_for_llm(functions)
             if function_choice:
                 kwargs["tool_choice"] = {
@@ -74,7 +93,7 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
             function_blocks: t.List[at.ToolUseBlock] = []
             for event in response:
                 if event.type == "text":
-                    yield Delta(type="text", content=event.text)
+                    yield Delta(content={"type": "text", "data": event.text})
                 elif event.type == "content_block_stop":
                     if event.content_block.type == "tool_use":
                         function_blocks.append(event.content_block)
@@ -86,21 +105,26 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
                     })
                     
                     if event.message.stop_reason == "tool_use":
-                        func_message: at.MessageParam = {
-                            "role": "user",
-                            "content": []
-                        }
+                        func_message_contents = []
                         for block in function_blocks:
-                            yield Delta(type="tool_use", content=ToolUse(name=block.name, input=block.input))
+                            tool_use = ToolUse(name=block.name, input=block.input)
+                            yield Delta(content={
+                                "data": tool_use,
+                                "type": "tool_use"
+                            })
                             func_result = invoke_function(block.name, block.input)
 
-                            yield Delta(type="tool_result", content=ToolResult(content=func_result))
+                            yield Delta(content={"data": ToolResult(content=func_result), "type": "tool_result"})
                             
-                            func_message["content"] += [{
+                            func_message_contents.append({
                                 "tool_use_id": block.id,
                                 "type": "tool_result",
                                 "content": query_to_content(func_result)
-                            }]
+                            })
+                        func_message: at.MessageParam = {
+                            "role": "user",
+                            "content": func_message_contents
+                        }
                         history = extend_history(history, func_message)
-                        history = yield from self.stream(prompt, None, history, functions, invoke_function, function_choice)
+                        history = yield from self.stream(prompt=prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
         return history

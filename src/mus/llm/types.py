@@ -5,12 +5,27 @@ from abc import ABC, abstractmethod
 
 from ..types import DataClass
 
+if t.TYPE_CHECKING:
+    from anthropic import AnthropicBedrock, Anthropic
+
 HISTORY_TYPE = t.TypeVar("HISTORY_TYPE")
+LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
+
+
+class LLMClientStreamArgs(t.TypedDict, t.Generic[HISTORY_TYPE]):
+    prompt: t.Optional[str]
+    query: t.Optional["QueryIterableType"]
+    history: HISTORY_TYPE
+    functions: t.List[t.Callable]
+    invoke_function: t.Callable
+    function_choice: t.Literal["auto", "any"]
+
 
 class LLMClient(ABC, t.Generic[HISTORY_TYPE]):
     @abstractmethod
-    def stream(self, prompt: t.Optional[str], query: t.Optional["QueryIterableType"], history: HISTORY_TYPE, functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable["Delta"]:
+    def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs]) -> t.Iterable["Delta"]:
         pass
+
 
 
 @dataclass
@@ -22,18 +37,36 @@ class ToolUse:
 class ToolResult:
     content: "ToolReturnValue"
 
+
+class DeltaText(t.TypedDict):
+    type: t.Literal["text"]
+    data: str
+
+class DeltaToolUse(t.TypedDict):
+    type: t.Literal["tool_use"]
+    data: ToolUse
+
+class DeltaToolResult(t.TypedDict):
+    type: t.Literal["tool_result"]
+    data: ToolResult
+
+DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult
+
 @dataclass
 class Delta:
-    type: t.Literal["text", "tool_use", "tool_result"]
-    content: t.Union[str, ToolUse, ToolResult]
+    content: DeltaContent
 
     def __str__(self) -> str:
-        if self.type == "text":
-            return self.content
-        elif self.type == "tool_use":
-            return f"\nRunning tool: {self.content.name}\n"
-        elif self.type == "tool_result":
-            return f"\nTool result: {self.content.content}\n"
+        if self.content["type"] == "text":
+            return self.content["data"]
+        elif self.content["type"] == "tool_use":
+            return f"\nRunning tool: {self.content["data"].name}\n"
+        elif self.content["type"] == "tool_result":
+            return f"\nTool result: {self.content['data']}\n"
+        else:
+            raise ValueError(f"Invalid delta type: {self.content['type']}")
+
+
 
 @dataclass
 class File:

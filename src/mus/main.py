@@ -12,20 +12,13 @@ from .llm import LLM, AnthropicLLM
 from .llm.types import File
 from .state import StateManager, StateType, State
 from .functions import tool
-from .types import InterpretableCallable, InterpretableCallableWrappedParams, LLM_CLIENTS
-
-def wrap_client(client: LLM_CLIENTS):
-    if isinstance(client, Anthropic) or isinstance(client, AnthropicBedrock):
-        return AnthropicLLM(client=client)
-    else:
-        raise ValueError(f"Unsupported client type: {type(client)}")
+from .types import InterpretableCallable, InterpretableCallableWrappedParams
 
 class Mus:
-    def __init__(self, client: LLM_CLIENTS):
+    def __init__(self):
         self.state_manager = StateManager()
-        self.client = wrap_client(client)
         
-        self.llm = functools.partial(LLM, client=self.client)
+        self.llm = LLM
         self.tool = tool
         self.print = functools.partial(print, end="", flush=True)
 
@@ -98,7 +91,10 @@ def run_file(file: pathlib.Path, state_path: t.Optional[pathlib.Path]=None):
             state = None
     else:
         state = None
-    bob = Mus(state=state)
+    bob = Mus()
+
+    if state:
+        bob.load(state)
     with open(file, "r") as f:
         bob.run(f.read())
     if state_path:

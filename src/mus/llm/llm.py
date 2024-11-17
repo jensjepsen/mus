@@ -1,12 +1,12 @@
 import typing as t
-import typeguard
 
-from dataclasses import dataclass
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value
+from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS
 from ..functions import functions_map
 from ..types import DataClass
 import json
+
+from anthropic import Anthropic, AnthropicBedrock
 
 class IterableResult:
     def __init__(self, iterable: t.Iterable[Delta]):
@@ -20,11 +20,11 @@ class IterableResult:
             self.history = yield from self.iterable
 
         for msg in run():
-            if msg.type == "text":
-                self.total += msg.content
-            elif msg.type == "tool_use":
-                self.total += f"Running tool: {msg.content.name}"
-            elif msg.type == "tool_result":
+            if msg.content["type"] == "text":
+                self.total += msg.content["data"]
+            elif msg.content["type"] == "tool_use":
+                self.total += f"Running tool: {msg.content['data'].name}"
+            elif msg.content["type"] == "tool_result":
                 self.total += f"Tool applied"
             yield msg
         self.has_iterated = True
@@ -42,17 +42,22 @@ class IterableResult:
             return str(self) + other
         else:
             raise TypeError(f"unsupported operand type(s) for +: 'IterableResult' and '{type(other)}'")
-    
+
+def wrap_client(client: LLM_CLIENTS):
+    if isinstance(client, Anthropic) or isinstance(client, AnthropicBedrock):
+        from .anthropic import AnthropicLLM
+        return AnthropicLLM(client=client)
+    else:
+        return client
+
 class LLM:
-    def __init__(self, client: LLMClient, prompt: t.Optional[str]=None, functions: t.Optional[t.List[ToolCallableType]]=None, function_choice: t.Literal["auto", "any"] = "auto") -> None:
-        self.client = client
+    def __init__(self, prompt: t.Optional[str]=None, *, client: LLM_CLIENTS, functions: t.Optional[t.List[ToolCallableType]]=None, function_choice: t.Literal["auto", "any"] = "auto") -> None:
+        self.client = wrap_client(client)
         self.prompt = prompt
         self.functions = functions
-        self.function_choice = function_choice    
+        self.function_choice = function_choice
     
-    
-    
-    def query(self, query: t.Optional[QueryType]=None, functions: t.Optional[t.List[t.Callable]] = None, function_choice: t.Optional[t.Literal["auto", "any"]] = None, history: t.List[t.Dict[str, t.Any]] = []):
+    def query(self, query: t.Optional[QueryType]=None, functions: t.Optional[t.List[t.Callable]] = None, function_choice: t.Optional[t.Literal["auto", "any"]] = None, history: t.List[t.Any] = []):
         functions = functions or self.functions or []
         function_choice = function_choice or self.function_choice
 
@@ -77,24 +82,25 @@ class LLM:
         else:
             dedented_query = None
         dedented_prompt = dedent(self.prompt) if self.prompt else None
-        history = yield from self.client.stream(dedented_prompt, dedented_query, history, functions, invoke_function, function_choice)
+        history = yield from self.client.stream(prompt=dedented_prompt, query=dedented_query, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
         return history
 
     def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None):
-        return IterableResult(self.query(query, history=previous.history if previous is not None else []))
+        _q = self.query(query, history=previous.history if previous is not None else [])
+        return IterableResult(_q)
     
-    def fill(self, query: QueryType, structure: t.Type[DataClass]) -> DataClass:
+    def fill(self, query: QueryType, structure: t.Type[DataClass]):
         for msg in self.query(query, functions=[structure], function_choice="any"):
-            if msg.type == "tool_result":
-                return msg.content.content
+            if msg.content["type"] == "tool_result":
+                return msg.content["data"].content
         else:
             raise ValueError("No structured response found")
     
-    def wrap(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
+    def func(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         def decorated_function(query: t.Optional[QueryType]=None) -> LLMDecoratedFunctionReturnType:
             for msg in self.query(query, functions=[function], function_choice="any"):
-                if msg.type == "tool_result":
-                    return msg.content.content
+                if msg.content["type"] == "tool_use":
+                    return function(**(msg.content["data"].input))
             else:
                 raise ValueError("LLM did not invoke the function")
         return decorated_function

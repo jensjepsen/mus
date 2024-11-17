@@ -25,24 +25,3 @@ def get_schema(name: str, fields: t.List[tuple[str, t.Type]]):
 def functions_map(functions: t.List[ToolCallableType]) -> t.Dict[str, ToolCallableType]:
     return {func.__name__: func for func in (functions or [])}
 
-# TODO: below should be moved to llm.anthropic
-
-def func_to_tool(func: ToolCallableType) -> at.ToolParam:
-    if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"):
-            return definition
-    if not func.__doc__:
-        raise ValueError(f"Function {func.__name__} is missing a docstring")
-    p = at.ToolParam(name=func.__name__, description=func.__doc__, input_schema=get_schema(func.__name__, list(func.__annotations__.items())))
-    return p
-
-def dataclass_to_tool(dataclass: t.Type) -> at.ToolParam:
-    p = at.ToolParam(name=dataclass.__name__, description=dataclass.__doc__, input_schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())))
-    return p
-
-def functions_for_llm(functions: t.List[ToolCallableType]) -> t.List[at.ToolParam]:
-    return [
-        dataclass_to_tool(func) if is_dataclass(func) else func_to_tool(func)
-        for func
-        in (functions or [])
-    ]
