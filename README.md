@@ -46,6 +46,6 @@ for msg in haiku_bot("dogs"):
 
 
 ## TODO
-[] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
-[] Document .func decorator
-[] Make LLM.__call__ function as primary decorator to avoid having to do .bot or .func
+- [] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
+- [] Document .func decorator
+- [] Make LLM.__call__ function as primary decorator to avoid having to do .bot or .func
