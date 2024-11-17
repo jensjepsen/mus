@@ -91,7 +91,6 @@ def merge_messages(messages: t.List[at.MessageParam]):
             merged[-1]["content"] = join_content(last_content, message["content"]) # type: ignore
         else:
             merged.append(message)
-    print(jsonpickle.dumps(merged, indent=2))
     return merged
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[QueryIterableType, Delta]]):
