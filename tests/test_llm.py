@@ -105,7 +105,7 @@ def test_llm_call(mock_query, llm):
 def test_llm_fill(mock_query, llm):
     mock_query.return_value = iter(list([
         Delta(content={"data": "Processing", "type": "text"}),
-        Delta(content={"data": ToolResult(content=TestStructure(field1="test", field2=123)), "type": "tool_result"})
+        Delta(content={"data": ToolResult(content=TestStructure(field1="test", field2=123), id="abc"), "type": "tool_result"})
     ]))
     result = llm.fill("Test query", TestStructure)
     assert isinstance(result, TestStructure)
@@ -125,8 +125,8 @@ def test_llm_bot_decorator(mock_query, llm):
 def test_iterable_result():
     deltas = [
         Delta(content={"type": "text", "data": "Hello"}),
-        Delta(content={"data": ToolUse(name="test_tool", input={}), "type": "tool_use"}),
-        Delta(content={"data": ToolResult(content="Tool output"), "type": "tool_result"})
+        Delta(content={"data": ToolUse(name="test_tool", input={}, id="abc"), "type": "tool_use"}),
+        Delta(content={"data": ToolResult(content="Tool output", id="abc"), "type": "tool_result"})
     ]
     result = IterableResult(deltas)
     

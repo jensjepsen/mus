@@ -1,7 +1,7 @@
 import typing as t
 
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS
+from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult
 from ..functions import functions_map
 from ..types import DataClass
 import json
@@ -17,9 +17,10 @@ class IterableResult:
 
     def __iter__(self):
         def run():
-            self.history = yield from self.iterable
+           self.history = yield from self.iterable
 
         for msg in run():
+            self.history.append(msg)
             if msg.content["type"] == "text":
                 self.total += msg.content["data"]
             elif msg.content["type"] == "tool_use":
@@ -60,6 +61,7 @@ class LLM:
     def query(self, query: t.Optional[QueryType]=None, functions: t.Optional[t.List[t.Callable]] = None, function_choice: t.Optional[t.Literal["auto", "any"]] = None, history: t.List[t.Any] = []):
         functions = functions or self.functions or []
         function_choice = function_choice or self.function_choice
+        
 
         func_map = functions_map(functions)
         def invoke_function(func_name: str, input: t.Dict[str, t.Any]):
@@ -82,7 +84,19 @@ class LLM:
         else:
             dedented_query = None
         dedented_prompt = dedent(self.prompt) if self.prompt else None
-        history = yield from self.client.stream(prompt=dedented_prompt, query=dedented_query, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
+        if dedented_query:
+            history = history + [dedented_query]
+        for msg in self.client.stream(prompt=dedented_prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice):
+            yield msg
+            history = history + [msg]
+            if msg.content["type"] == "tool_use":
+                func_result = invoke_function(msg.content["data"].name, msg.content["data"].input)
+                fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
+                yield fd
+                history.append(fd)
+                history = yield from self.query(None, functions=functions, function_choice=function_choice, history=history)
+                
+            
         return history
 
     def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None):

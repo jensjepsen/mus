@@ -30,11 +30,13 @@ class LLMClient(ABC, t.Generic[HISTORY_TYPE]):
 
 @dataclass
 class ToolUse:
+    id: str
     name: str
     input: t.Dict[str, t.Any]
 
 @dataclass
 class ToolResult:
+    id: str
     content: "ToolReturnValue"
 
 
@@ -66,8 +68,6 @@ class Delta:
         else:
             raise ValueError(f"Invalid delta type: {self.content['type']}")
 
-
-
 @dataclass
 class File:
     b64type: t.Literal["image/png"]
@@ -81,7 +81,6 @@ class File:
     
     def __radd__(self, other):
         return Query([other, self])
-
 
 
 ToolSimpleReturnValue = t.Union[str, "File"]
@@ -132,7 +131,6 @@ class Query:
             return Query(other.val + self.val)
         else:
             return Query(other + self.val)   
-    
 
 
 LLMDecoratedFunctionReturnType = t.TypeVar("LLMDecoratedFunctionReturnType", covariant=True)

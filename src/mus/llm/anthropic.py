@@ -2,8 +2,9 @@ import typing as t
 from anthropic import AnthropicBedrock, Anthropic
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass
+from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass, Query, ToolSimpleReturnValue
 from ..functions import get_schema
+import jsonpickle
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
     if hasattr(func, '__metadata__'):
@@ -25,48 +26,119 @@ def functions_for_llm(functions: t.List[ToolCallableType]) -> t.List[at.ToolPara
         in (functions or [])
     ]
 
-def parse_query(query: QuerySimpleType):
+def file_to_image(file: File) -> at.ImageBlockParam:
+    return at.ImageBlockParam({
+        "type": "image",
+        "source": {
+            "data": file.content,
+            "media_type": file.b64type,
+            "type": "base64"
+        }
+    })
+
+def str_to_text_block(s: str) -> at.TextBlockParam:
+    return at.TextBlockParam({
+        "type": "text",
+        "text": s
+    })
+
+def parse_content(query: t.Union[str, File]):
     if isinstance(query, str):
-        return at.TextBlockParam({
-            "type": "text",
-            "text": query
-        })
+        return str_to_text_block(query)
     elif isinstance(query, File):
-        return at.ImageBlockParam({
-            "type": "image",
-            "source": {
-                "data": query.content,
-                "media_type": query.b64type,
-                "type": "base64"
-            }
-        })
+        return file_to_image(query)
     else:
         raise ValueError(f"Invalid query type: {type(query)}")
 
 def query_to_content(query: QueryIterableType):
     return [
-        parse_query(q)
+        parse_content(q)
         for q in query
     ]
 
-def extend_history(history: t.List[at.MessageParam], new_message: at.MessageParam):
-    prev_history = history[0:-1]
-    last_message = history[-1] if history else None
-    
-    if last_message and last_message["role"] == new_message["role"]:
-        new_history = prev_history + [at.MessageParam(
-            role=last_message["role"],
-            content=last_message["content"] + new_message["content"]
-        )]
+def tool_result_to_content(tool_result: ToolResult):
+    if isinstance(tool_result.content, str):
+        return [str_to_text_block(tool_result.content)]
+    elif isinstance(tool_result.content, File):
+        return [file_to_image(tool_result.content)]
+    elif isinstance(tool_result.content, list):
+        return [
+            parse_content(c)
+            for c in tool_result.content
+        ]
     else:
-        new_history = history + [new_message]
-    return new_history
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+
+BlockType = t.Union[at.TextBlockParam, at.ImageBlockParam, at.ToolUseBlockParam, at.ToolResultBlockParam, at.ContentBlock]
+
+def join_content(a: t.Union[t.Iterable[t.Union[at.TextBlockParam, at.ImageBlockParam]], str], b: t.Union[t.Iterable[t.Union[at.TextBlockParam, at.ImageBlockParam]], str]):
+    if isinstance(a, str):
+        a = [str_to_text_block(a)]
+    if isinstance(b, str):
+        b = [str_to_text_block(b)]
+    if a[0]["type"] == "text" and b[0]["type"] == "text":
+        return [at.TextBlockParam({
+            "type": "text",
+            "text": a[0]["text"] + b[0]["text"]
+        })]
+    return a + b
+
+def merge_messages(messages: t.List[at.MessageParam]):
+    merged: t.List[at.MessageParam] = []
+    for message in messages:
+        if merged and merged[-1]["role"] == message["role"]:
+            last_content = merged[-1]["content"]
+            merged[-1]["content"] = join_content(last_content, message["content"]) # type: ignore
+        else:
+            merged.append(message)
+    print(jsonpickle.dumps(merged, indent=2))
+    return merged
+
+def deltas_to_messages(deltas: t.Iterable[t.Union[QueryIterableType, Delta]]):
+    messages = []
+    for delta in deltas:
+        if isinstance(delta, Delta):
+            if delta.content["type"] == "text":
+                messages.append(at.MessageParam(
+                    role="assistant",
+                    content=[str_to_text_block(delta.content["data"])]
+                ))
+            elif delta.content["type"] == "tool_use":
+                messages.append(at.MessageParam(
+                    role="assistant",
+                    content=[at.ToolUseBlockParam(
+                        type="tool_use",
+                        name=delta.content["data"].name,
+                        input=delta.content["data"].input,
+                        id=delta.content["data"].id
+                    )]
+                ))
+            elif delta.content["type"] == "tool_result":
+                messages.append(at.MessageParam(
+                    role="user",
+                    content=[at.ToolResultBlockParam(
+                        type="tool_result",
+                        tool_use_id=delta.content["data"].id,
+                        content=tool_result_to_content(delta.content["data"]),
+                    )]
+                ))
+            else:
+                raise ValueError(f"Invalid delta type: {delta.content['type']}")
+        else:
+            messages.append(at.MessageParam(
+                role="user",
+                content=query_to_content(delta)
+            ))
+    
+    return merge_messages(messages)
+                
+        
 
 class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
     def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
         self.client = client
 
-    def stream(self, *, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[at.MessageParam], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
+    def stream(self, *, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[t.Union[Delta, QueryIterableType]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
         kwargs = {}
         if functions:
             kwargs["tools"] = functions_for_llm(functions)
@@ -77,13 +149,17 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
         if prompt:
             kwargs["system"] = prompt
         
-        if query:
-            history = extend_history(history, {"role": "user", "content": query_to_content(query)})
-        
+        #if query:
+            #history = extend_history(history, {"role": "user", "content": query_to_content(query)})
+        #    history += history + [query]
+        messages = deltas_to_messages(history)
         with self.client.messages.stream(
+            # TODO: this should be a parameter
             model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+            # TODO: this should be a parameter
             max_tokens=1000,
-            messages=history,
+            messages=messages,
+            # TODO: this should be a parameter
             extra_headers={
                 "anthropic-version": "2023-06-01",
                 "anthropic-beta": "computer-use-2024-10-22"
@@ -99,32 +175,33 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
                         function_blocks.append(event.content_block)
                 
                 elif event.type == "message_stop":
-                    history = extend_history(history, {
-                        "role": event.message.role,
-                        "content": event.message.content
-                    })
-                    
+                    #history = extend_history(history, {
+                    #    "role": event.message.role,
+                    #    "content": event.message.content
+                    #})
+
                     if event.message.stop_reason == "tool_use":
                         func_message_contents = []
                         for block in function_blocks:
-                            tool_use = ToolUse(name=block.name, input=block.input)
+                            tool_use = ToolUse(id=block.id, name=block.name, input=block.input)
                             yield Delta(content={
                                 "data": tool_use,
                                 "type": "tool_use"
                             })
-                            func_result = invoke_function(block.name, block.input)
+                            #func_result = invoke_function(block.name, block.input)
 
-                            yield Delta(content={"data": ToolResult(content=func_result), "type": "tool_result"})
+                            #yield Delta(content={"data": ToolResult(id=block.id, content=func_result), "type": "tool_result"})
                             
-                            func_message_contents.append({
-                                "tool_use_id": block.id,
-                                "type": "tool_result",
-                                "content": query_to_content(func_result)
-                            })
-                        func_message: at.MessageParam = {
-                            "role": "user",
-                            "content": func_message_contents
-                        }
-                        history = extend_history(history, func_message)
-                        history = yield from self.stream(prompt=prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
-        return history
+                            #func_message_contents.append({
+                            #    "tool_use_id": block.id,
+                            #    "type": "tool_result",
+                            #    "content": query_to_content(func_result)
+                            #})
+                        #func_message: at.MessageParam = {
+                        #    "role": "user",
+                        #    "content": func_message_contents
+                        #}
+                        #history = extend_history(history, func_message)
+                        #history =
+                        #yield from self.stream(prompt=prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
+        #return history

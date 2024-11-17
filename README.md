@@ -49,3 +49,5 @@ for msg in haiku_bot("dogs"):
 - [] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
 - [] Document .func decorator
 - [] Make LLM.__call__ function as primary decorator to avoid having to do .bot or .func
+- [] Abstract away underlying api message structure into four message types, system, user, assistant, tool, with functions to convert to and from
+- [] Return usage stats, such as tokens generated etc in `IterableResult`
