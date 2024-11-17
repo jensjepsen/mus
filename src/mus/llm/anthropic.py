@@ -138,7 +138,7 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
     def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
         self.client = client
 
-    def stream(self, *, prompt: t.Optional[str], query: t.Optional[QueryIterableType], history: t.List[t.Union[Delta, QueryIterableType]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
+    def stream(self, *, prompt: t.Optional[str], history: t.List[t.Union[Delta, QueryIterableType]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
         kwargs = {}
         if functions:
             kwargs["tools"] = functions_for_llm(functions)
@@ -149,9 +149,6 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
         if prompt:
             kwargs["system"] = prompt
         
-        #if query:
-            #history = extend_history(history, {"role": "user", "content": query_to_content(query)})
-        #    history += history + [query]
         messages = deltas_to_messages(history)
         with self.client.messages.stream(
             # TODO: this should be a parameter
@@ -175,33 +172,10 @@ class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
                         function_blocks.append(event.content_block)
                 
                 elif event.type == "message_stop":
-                    #history = extend_history(history, {
-                    #    "role": event.message.role,
-                    #    "content": event.message.content
-                    #})
-
                     if event.message.stop_reason == "tool_use":
-                        func_message_contents = []
                         for block in function_blocks:
                             tool_use = ToolUse(id=block.id, name=block.name, input=block.input)
                             yield Delta(content={
                                 "data": tool_use,
                                 "type": "tool_use"
                             })
-                            #func_result = invoke_function(block.name, block.input)
-
-                            #yield Delta(content={"data": ToolResult(id=block.id, content=func_result), "type": "tool_result"})
-                            
-                            #func_message_contents.append({
-                            #    "tool_use_id": block.id,
-                            #    "type": "tool_result",
-                            #    "content": query_to_content(func_result)
-                            #})
-                        #func_message: at.MessageParam = {
-                        #    "role": "user",
-                        #    "content": func_message_contents
-                        #}
-                        #history = extend_history(history, func_message)
-                        #history =
-                        #yield from self.stream(prompt=prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice)
-        #return history

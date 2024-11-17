@@ -14,7 +14,6 @@ LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
 
 class LLMClientStreamArgs(t.TypedDict, t.Generic[HISTORY_TYPE]):
     prompt: t.Optional[str]
-    query: t.Optional["QueryIterableType"]
     history: HISTORY_TYPE
     functions: t.List[t.Callable]
     invoke_function: t.Callable

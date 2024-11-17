@@ -86,7 +86,7 @@ class LLM:
         dedented_prompt = dedent(self.prompt) if self.prompt else None
         if dedented_query:
             history = history + [dedented_query]
-        for msg in self.client.stream(prompt=dedented_prompt, query=None, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice):
+        for msg in self.client.stream(prompt=dedented_prompt, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice):
             yield msg
             history = history + [msg]
             if msg.content["type"] == "tool_use":
