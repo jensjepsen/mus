@@ -30,7 +30,7 @@ def mock_client():
 
 @pytest.fixture
 def llm(mock_client):
-    return LLM(prompt="Test prompt", client=AnthropicLLM(client=mock_client))
+    return LLM(prompt="Test prompt", client=AnthropicLLM(client=mock_client), model="claude-3-5-sonnet-20241022")
 
 def test_llm_query(llm, mock_client):
     mock_client.set_response([

@@ -62,7 +62,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         self.model = model
 
     
-    def query(self, *, query: t.Optional[QueryType]=None, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+    def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         
@@ -112,11 +112,11 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         return history
 
     def __call__(self, query: QueryType, /, *, previous: t.Optional[IterableResult]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
-        _q = self.query(query=query, history=previous.history if previous is not None else [], **kwargs)
+        _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
         return IterableResult(_q)
     
     def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        for msg in self.query(query=query, functions=[structure], function_choice="any"):
+        for msg in self.query(query, functions=[structure], function_choice="any"):
             if msg.content["type"] == "tool_result":
                 return msg.content["data"].content
         else:
@@ -124,7 +124,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     
     def func(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         def decorated_function(query: t.Optional[QueryType]=None) -> LLMDecoratedFunctionReturnType:
-            for msg in self.query(query=query, functions=[function], function_choice="any"):
+            for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
                     return function(**(msg.content["data"].input))
             else:
