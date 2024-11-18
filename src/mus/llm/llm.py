@@ -1,17 +1,15 @@
 import typing as t
 
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, QueryIterableType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult
+from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History
 from ..functions import functions_map
 from ..types import DataClass
 import json
 
-from anthropic import Anthropic, AnthropicBedrock
-
 class IterableResult:
     def __init__(self, iterable: t.Iterable[Delta]):
         self.iterable = iterable
-        self.history = []
+        self.history: History = []
         self.has_iterated = False
         self.total = ""
 
@@ -44,23 +42,30 @@ class IterableResult:
         else:
             raise TypeError(f"unsupported operand type(s) for +: 'IterableResult' and '{type(other)}'")
 
-def wrap_client(client: LLM_CLIENTS):
-    if isinstance(client, Anthropic) or isinstance(client, AnthropicBedrock):
-        from .anthropic import AnthropicLLM
-        return AnthropicLLM(client=client)
-    else:
-        return client
+class _LLMInitAndQuerySharedKwargs(t.TypedDict, total=False):
+    functions: t.Optional[t.List[ToolCallableType]]
+    function_choice: t.Optional[t.Literal["auto", "any"]]
 
-class LLM:
-    def __init__(self, prompt: t.Optional[str]=None, *, client: LLM_CLIENTS, functions: t.Optional[t.List[ToolCallableType]]=None, function_choice: t.Literal["auto", "any"] = "auto") -> None:
-        self.client = wrap_client(client)
+class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
+    def __init__(self, 
+        prompt: t.Optional[str]=None,
+        *,
+        client: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE],
+        model: MODEL_TYPE,
+        client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
+        **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]
+    ) -> None:
+        self.client = client
         self.prompt = prompt
-        self.functions = functions
-        self.function_choice = function_choice
+        self.model = model
+        self.client_kwargs = client_kwargs
+        self.functions = kwargs.get("functions")
+        self.function_choice = kwargs.get("function_choice")
+
     
-    def query(self, query: t.Optional[QueryType]=None, functions: t.Optional[t.List[t.Callable]] = None, function_choice: t.Optional[t.Literal["auto", "any"]] = None, history: t.List[t.Any] = []):
-        functions = functions or self.functions or []
-        function_choice = function_choice or self.function_choice
+    def query(self, *, query: t.Optional[QueryType]=None, history: History = [], max_tokens: t.Optional[int]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+        functions = kwargs.get("functions") or self.functions or []
+        function_choice = kwargs.get("function_choice") or self.function_choice
         
 
         func_map = functions_map(functions)
@@ -70,23 +75,33 @@ class LLM:
                 result = json.dumps(result)
 
             return result
-        parsed_query: t.Optional[QueryIterableType] = None
+        parsed_query: t.Optional[Query] = None
         if query:
             if isinstance(query, str) or isinstance(query, File):
-                parsed_query = [query]
+                parsed_query = Query(val=[query])
             elif isinstance(query, list):
-                parsed_query = query
+                parsed_query = Query(val=query)
             elif isinstance(query, Query):
-                parsed_query = query.val
+                parsed_query = query
             else:
                 raise ValueError(f"Invalid query type: {type(query)}")
-            dedented_query = [dedent(q) if isinstance(q, str) else q for q in parsed_query]
-        else:
-            dedented_query = None
+            dedented_query = [dedent(q) if isinstance(q, str) else q for q in parsed_query.val]
+            parsed_query = Query(val=dedented_query)
+        
         dedented_prompt = dedent(self.prompt) if self.prompt else None
-        if dedented_query:
-            history = history + [dedented_query]
-        for msg in self.client.stream(prompt=dedented_prompt, history=history, functions=functions, invoke_function=invoke_function, function_choice=function_choice):
+        
+        if parsed_query:
+            history = history + [parsed_query]
+        
+        for msg in self.client.stream(
+            prompt=dedented_prompt,
+            history=history,
+            functions=functions,
+            function_choice=function_choice,
+            kwargs=self.client_kwargs,
+            model=self.model,
+            max_tokens=max_tokens
+        ):
             yield msg
             history = history + [msg]
             if msg.content["type"] == "tool_use":
@@ -94,17 +109,17 @@ class LLM:
                 fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
                 yield fd
                 history.append(fd)
-                history = yield from self.query(None, functions=functions, function_choice=function_choice, history=history)
+                history = yield from self.query(functions=functions, function_choice=function_choice, history=history, max_tokens=max_tokens)
                 
             
         return history
 
     def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None):
-        _q = self.query(query, history=previous.history if previous is not None else [])
+        _q = self.query(query=query, history=previous.history if previous is not None else [])
         return IterableResult(_q)
     
     def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        for msg in self.query(query, functions=[structure], function_choice="any"):
+        for msg in self.query(query=query, functions=[structure], function_choice="any"):
             if msg.content["type"] == "tool_result":
                 return msg.content["data"].content
         else:
@@ -112,7 +127,7 @@ class LLM:
     
     def func(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         def decorated_function(query: t.Optional[QueryType]=None) -> LLMDecoratedFunctionReturnType:
-            for msg in self.query(query, functions=[function], function_choice="any"):
+            for msg in self.query(query=query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
                     return function(**(msg.content["data"].input))
             else:

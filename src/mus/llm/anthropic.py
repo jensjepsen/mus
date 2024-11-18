@@ -2,9 +2,8 @@ import typing as t
 from anthropic import AnthropicBedrock, Anthropic
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass, Query, ToolSimpleReturnValue
+from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass, Query, ToolSimpleReturnValue, LLMClientStreamArgs
 from ..functions import get_schema
-import jsonpickle
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
     if hasattr(func, '__metadata__'):
@@ -50,10 +49,10 @@ def parse_content(query: t.Union[str, File]):
     else:
         raise ValueError(f"Invalid query type: {type(query)}")
 
-def query_to_content(query: QueryIterableType):
+def query_to_content(query: Query):
     return [
         parse_content(q)
-        for q in query
+        for q in query.val
     ]
 
 def tool_result_to_content(tool_result: ToolResult):
@@ -93,7 +92,7 @@ def merge_messages(messages: t.List[at.MessageParam]):
             merged.append(message)
     return merged
 
-def deltas_to_messages(deltas: t.Iterable[t.Union[QueryIterableType, Delta]]):
+def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
@@ -131,36 +130,45 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[QueryIterableType, Delta]]):
     
     return merge_messages(messages)
                 
-        
+class StreamArgs(t.TypedDict, total=False):
+    max_tokens: int
+    model: t.Required[at.ModelParam]
+    extra_headers: t.Dict[str, str]
 
-class AnthropicLLM(LLMClient[t.List[at.MessageParam]]):
+
+class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
     def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
         self.client = client
 
-    def stream(self, *, prompt: t.Optional[str], history: t.List[t.Union[Delta, QueryIterableType]], functions: t.List[t.Callable], invoke_function: t.Callable, function_choice: t.Literal["auto", "any"]) -> t.Iterable[Delta]:
-        kwargs = {}
+    def stream(self, *,
+            prompt: t.Optional[str],
+            model: at.ModelParam,
+            history: t.List[t.Union[Delta, Query]],
+            functions: t.List[t.Callable],
+            function_choice: t.Literal["auto", "any"],
+            max_tokens: t.Optional[int]=4096,
+            kwargs: t.Optional[StreamArgs]=None
+        ) -> t.Iterable[Delta]:
+        _kwargs: dict[str, t.Any] = {
+            **(kwargs or {})
+        }
         if functions:
-            kwargs["tools"] = functions_for_llm(functions)
+            _kwargs["tools"] = functions_for_llm(functions)
             if function_choice:
-                kwargs["tool_choice"] = {
+                _kwargs["tool_choice"] = {
                     "type": function_choice
                 }
         if prompt:
-            kwargs["system"] = prompt
+            _kwargs["system"] = prompt
+
         
         messages = deltas_to_messages(history)
         with self.client.messages.stream(
-            # TODO: this should be a parameter
-            model="anthropic.claude-3-5-sonnet-20241022-v2:0",
-            # TODO: this should be a parameter
-            max_tokens=1000,
+            max_tokens=max_tokens or 4096,
+            model=model,
             messages=messages,
-            # TODO: this should be a parameter
-            extra_headers={
-                "anthropic-version": "2023-06-01",
-                "anthropic-beta": "computer-use-2024-10-22"
-            },
-            **kwargs
+            # TODO: this should be a parameter,
+            **_kwargs
         ) as response:
             function_blocks: t.List[at.ToolUseBlock] = []
             for event in response:

@@ -1,5 +1,4 @@
 
-from anthropic import AnthropicBedrock, Anthropic
 import functools
 import pathlib
 import typing as t
@@ -8,7 +7,7 @@ import ast
 
 
 from .interpreter import DSLInterpreter
-from .llm import LLM, AnthropicLLM
+from .llm import LLM
 from .llm.types import File
 from .state import StateManager, StateType, State
 from .functions import tool

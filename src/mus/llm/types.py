@@ -8,24 +8,29 @@ from ..types import DataClass
 if t.TYPE_CHECKING:
     from anthropic import AnthropicBedrock, Anthropic
 
-HISTORY_TYPE = t.TypeVar("HISTORY_TYPE")
+@t.runtime_checkable
+class TypedDictLike(t.Protocol):
+    def __getitem__(self, key: str, /) -> object:
+        ...
+
 LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
-
-
-class LLMClientStreamArgs(t.TypedDict, t.Generic[HISTORY_TYPE]):
+STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
+MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
+class LLMClientStreamArgs(t.TypedDict, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     prompt: t.Optional[str]
-    history: HISTORY_TYPE
+    history: "History"
     functions: t.List[t.Callable]
-    invoke_function: t.Callable
     function_choice: t.Literal["auto", "any"]
-
-
-class LLMClient(ABC, t.Generic[HISTORY_TYPE]):
+    model: t.Required[MODEL_TYPE]
+    max_tokens: t.Optional[int]
+    kwargs: t.Optional[STREAM_EXTRA_ARGS]
+    
+class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     @abstractmethod
-    def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs]) -> t.Iterable["Delta"]:
+    def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.Iterable["Delta"]:
         pass
 
-
+History = t.List[t.Union["Delta", "Query"]]
 
 @dataclass
 class ToolUse:
