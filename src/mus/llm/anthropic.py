@@ -1,5 +1,5 @@
 import typing as t
-from anthropic import AnthropicBedrock, Anthropic
+from anthropic import AnthropicBedrock, Anthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
 from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass, Query, ToolSimpleReturnValue, LLMClientStreamArgs
@@ -147,6 +147,9 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             functions: t.List[t.Callable],
             function_choice: t.Literal["auto", "any"],
             max_tokens: t.Optional[int]=4096,
+            top_k: t.Optional[int]=None,
+            top_p: t.Optional[float]=None,
+            temperature: t.Optional[float]=None,
             kwargs: t.Optional[StreamArgs]=None
         ) -> t.Iterable[Delta]:
         _kwargs: dict[str, t.Any] = {
@@ -167,7 +170,9 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             max_tokens=max_tokens or 4096,
             model=model,
             messages=messages,
-            # TODO: this should be a parameter,
+            top_k=top_k or NotGiven(),
+            top_p=top_p or NotGiven(),
+            temperature=temperature or NotGiven(),
             **_kwargs
         ) as response:
             function_blocks: t.List[at.ToolUseBlock] = []

@@ -23,6 +23,9 @@ class LLMClientStreamArgs(t.TypedDict, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE])
     function_choice: t.Literal["auto", "any"]
     model: t.Required[MODEL_TYPE]
     max_tokens: t.Optional[int]
+    temperature: t.Optional[float]
+    top_k: t.Optional[int]
+    top_p: t.Optional[float]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):

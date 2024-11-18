@@ -2,10 +2,12 @@
 
 A small for fun library to play around with tool use in LLMs
 
-Currently supports the Anthropic Claude family of models on AWS Bedrock.
+Currently supports the Anthropic Claude family of models on AWS Bedrock, through the `anthropic[bedrock]` package.
 
 ## Installation
+```bash
 python -m pip install git+https://github.com/jensjepsen/mus.git
+```
 
 ## Usage
 ```python
@@ -52,11 +54,13 @@ for msg in haiku_bot("dogs"):
 - [ ] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
     - [X] Max tokens
     - [X] Model
-    - [ ] Top k
-    - [ ] Top p
-    - [ ] Temperature
+    - [X] Top k
+    - [X] Top p
+    - [X] Temperature
     - [X] Headers
 - [] Document .func decorator
 - [] Make LLM.__call__ function as primary decorator to avoid having to do .bot or .func
 - [] Abstract away underlying api message structure into four message types, system, user, assistant, tool, with functions to convert to and from
 - [] Return usage stats, such as tokens generated etc in `IterableResult`
+- OpenAI client
+- Bedrock Converse client
