@@ -111,7 +111,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             
         return history
 
-    def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+    def __call__(self, query: QueryType, /, *, previous: t.Optional[IterableResult]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
         _q = self.query(query=query, history=previous.history if previous is not None else [], **kwargs)
         return IterableResult(_q)
     
