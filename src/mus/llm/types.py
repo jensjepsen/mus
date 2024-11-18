@@ -16,16 +16,20 @@ class TypedDictLike(t.Protocol):
 LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
-class LLMClientStreamArgs(t.TypedDict, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
-    prompt: t.Optional[str]
-    history: "History"
-    functions: t.List[t.Callable]
-    function_choice: t.Literal["auto", "any"]
-    model: t.Required[MODEL_TYPE]
+
+class QueryStreamArgs(t.TypedDict, t.Generic[MODEL_TYPE], total=False):
     max_tokens: t.Optional[int]
     temperature: t.Optional[float]
     top_k: t.Optional[int]
     top_p: t.Optional[float]
+    
+
+class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs[MODEL_TYPE]):
+    model: t.Required[MODEL_TYPE]
+    prompt: t.Optional[str]
+    history: "History"
+    functions: t.Optional[t.List["ToolCallableType"]]
+    function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):

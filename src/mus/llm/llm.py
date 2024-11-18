@@ -1,7 +1,7 @@
 import typing as t
 
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History
+from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs
 from ..functions import functions_map
 from ..types import DataClass
 import json
@@ -42,7 +42,7 @@ class IterableResult:
         else:
             raise TypeError(f"unsupported operand type(s) for +: 'IterableResult' and '{type(other)}'")
 
-class _LLMInitAndQuerySharedKwargs(t.TypedDict, total=False):
+class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.List[ToolCallableType]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
 
@@ -51,21 +51,20 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         prompt: t.Optional[str]=None,
         *,
         client: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE],
-        model: MODEL_TYPE,
         client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
+        model: MODEL_TYPE,
         **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]
     ) -> None:
         self.client = client
         self.prompt = prompt
-        self.model = model
         self.client_kwargs = client_kwargs
-        self.functions = kwargs.get("functions")
-        self.function_choice = kwargs.get("function_choice")
+        self.default_args = kwargs
+        self.model = model
 
     
-    def query(self, *, query: t.Optional[QueryType]=None, history: History = [], max_tokens: t.Optional[int]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
-        functions = kwargs.get("functions") or self.functions or []
-        function_choice = kwargs.get("function_choice") or self.function_choice
+    def query(self, *, query: t.Optional[QueryType]=None, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+        kwargs = {**self.default_args, **kwargs}
+        functions = kwargs.get("functions") or []
         
 
         func_map = functions_map(functions)
@@ -96,11 +95,9 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         for msg in self.client.stream(
             prompt=dedented_prompt,
             history=history,
-            functions=functions,
-            function_choice=function_choice,
-            kwargs=self.client_kwargs,
             model=self.model,
-            max_tokens=max_tokens
+            kwargs=self.client_kwargs,
+            **kwargs
         ):
             yield msg
             history = history + [msg]
@@ -109,13 +106,13 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
                 fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
                 yield fd
                 history.append(fd)
-                history = yield from self.query(functions=functions, function_choice=function_choice, history=history, max_tokens=max_tokens)
+                history = yield from self.query(history=history, **kwargs)
                 
             
         return history
 
-    def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None):
-        _q = self.query(query=query, history=previous.history if previous is not None else [])
+    def __call__(self, query: QueryType, previous: t.Optional[IterableResult]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+        _q = self.query(query=query, history=previous.history if previous is not None else [], **kwargs)
         return IterableResult(_q)
     
     def fill(self, query: QueryType, structure: t.Type[DataClass]):
