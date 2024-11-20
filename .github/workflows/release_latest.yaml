@@ -1,0 +1,72 @@
+name: Release latest
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  release_latest:
+    name: Release latest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install Poetry
+        run: |
+            curl -sSL https://install.python-poetry.org | python3 -
+            echo "$HOME/.local/bin" >> $GITHUB_PATH
+        
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.in-project true
+            
+      - name: Install Dependencies
+        run: poetry install --no-interaction --no-root
+    
+      - name: Configure Git
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+
+      - name: Get current version
+        run: echo "CURRENT_VERSION=$(poetry version -s)" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: latest
+          release_name: Latest Release
+          body: |
+            This is the latest release of the project, automatically generated from the main branch.
+            Version: ${{ env.CURRENT_VERSION }}
+          draft: false
+          prerelease: false
+
+      - name: Build project
+        run: poetry build
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/your_project_name-${{ env.CURRENT_VERSION }}-py3-none-any.whl
+          asset_name: your_project_name-${{ env.CURRENT_VERSION }}-py3-none-any.whl
+          asset_content_type: application/octet-stream
+
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push origin latest --force
