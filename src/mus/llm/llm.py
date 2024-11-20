@@ -127,7 +127,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             a = self.bot(query)
             return a 
         else:
-            previous = kwargs.get("previous")
+            previous = kwargs.pop("previous", None)
             _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
             return IterableResult(_q)
     
@@ -138,7 +138,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         else:
             raise ValueError("No structured response found")
     
-    def func(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
+    def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
             for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
