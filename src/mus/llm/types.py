@@ -2,6 +2,10 @@ import typing as t
 from dataclasses import dataclass
 
 from abc import ABC, abstractmethod
+from pathlib import Path
+
+import io
+import base64
 
 from ..types import DataClass
 
@@ -91,6 +95,24 @@ class File:
     
     def __radd__(self, other):
         return Query([other, self])
+    
+    @staticmethod
+    def image(path: t.Union[str, Path], as_format: t.Literal["png", "jpeg"]="png"):
+        from PIL import Image
+        if isinstance(path, str):
+            path = Path(path)
+        img = Image.open(path)
+        # Create a BytesIO object
+        buffered = io.BytesIO()
+        # Save the image to the BytesIO object in PNG format
+        img.save(buffered, format=as_format.upper())
+        # Get the byte value of the image
+        img_byte = buffered.getvalue()
+        # Encode the bytes to base64
+        img_base64 = base64.b64encode(img_byte)
+        # Convert bytes to string
+        img_base64_string = img_base64.decode()
+        return File(b64type="image/png", content=img_base64_string)
 
 
 ToolSimpleReturnValue = t.Union[str, "File"]

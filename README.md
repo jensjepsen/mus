@@ -12,7 +12,7 @@ python -m pip install git+https://github.com/jensjepsen/mus.git
 ## Usage
 ```python
 # import stuff and make a client
-from mus import Mus, AnthropicLLM
+from mus import Mus, AnthropicLLM, File
 from anthropic import AnthropicBedrock
 m = Mus()
 client = AnthropicLLM(AnthropicBedrock(
@@ -39,6 +39,17 @@ for msg in bot("hello"):
 # Or we can collect them all at once, by converting the response to a string
 full_response = str(bot("What is 10 + 7?"))
 assert type(full_response) == str
+
+
+# Sending images to a bot
+
+for msg in bot(
+        "Could you describe this image? "
+        + File.image("tests/fixtures/cat.png")
+        + " Do it as a poem <3"
+    ):
+    m.print(msg)
+
 
 # Making a bot that can call functions
 
