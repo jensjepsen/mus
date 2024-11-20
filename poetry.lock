@@ -783,6 +783,25 @@ files = [
 ]
 
 [[package]]
+name = "sybil"
+version = "9.0.0"
+description = "Automated testing for the examples in your code and documentation."
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "sybil-9.0.0-py3-none-any.whl", hash = "sha256:dbcbd7f11a0d438aad22bc24f0bc0c651ad2dde7f3b1023e72e92ea4aed9e02b"},
+    {file = "sybil-9.0.0.tar.gz", hash = "sha256:0856c253e40d448d6e15d89044ef34c8b5d1f63f685f9371f4bbc9f75f072fa5"},
+]
+
+[package.dependencies]
+pytest = {version = ">=8", optional = true, markers = "extra == \"pytest\""}
+
+[package.extras]
+build = ["furo", "sphinx", "twine", "urllib3 (<2)", "wheel"]
+pytest = ["pytest (>=8)"]
+test = ["mypy", "myst-parser", "pytest (>=8)", "pytest-cov", "seedir", "testfixtures", "types-PyYAML"]
+
+[[package]]
 name = "typeguard"
 version = "4.4.1"
 description = "Run-time type checker for Python"
@@ -848,4 +867,4 @@ zstd = ["zstandard (>=0.18.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "7c1830f2600fce9d73d0fd208e28e00bfffcc0e0a9b622fb077ec1ca8e8941d3"
+content-hash = "4626780785f4cf747bba03b52bc8aefb830ac0f6d9cc380ce2534c0f4e027d53"

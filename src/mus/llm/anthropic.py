@@ -2,7 +2,7 @@ import typing as t
 from anthropic import AnthropicBedrock, Anthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, QueryIterableType, QuerySimpleType, File, ToolCallableType, DataClass, Query, ToolSimpleReturnValue, LLMClientStreamArgs
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query
 from ..functions import get_schema
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
@@ -70,7 +70,7 @@ def tool_result_to_content(tool_result: ToolResult):
 
 BlockType = t.Union[at.TextBlockParam, at.ImageBlockParam, at.ToolUseBlockParam, at.ToolResultBlockParam, at.ContentBlock]
 
-def join_content(a: t.Union[t.Iterable[t.Union[at.TextBlockParam, at.ImageBlockParam]], str], b: t.Union[t.Iterable[t.Union[at.TextBlockParam, at.ImageBlockParam]], str]):
+def join_content(a: t.Union[t.List[t.Union[at.TextBlockParam, at.ImageBlockParam]], str], b: t.Union[t.List[t.Union[at.TextBlockParam, at.ImageBlockParam]], str]):
     if isinstance(a, str):
         a = [str_to_text_block(a)]
     if isinstance(b, str):
@@ -131,8 +131,6 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     return merge_messages(messages)
                 
 class StreamArgs(t.TypedDict, total=False):
-    max_tokens: int
-    model: t.Required[at.ModelParam]
     extra_headers: t.Dict[str, str]
 
 
@@ -144,7 +142,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             prompt: t.Optional[str],
             model: at.ModelParam,
             history: t.List[t.Union[Delta, Query]],
-            functions: t.Optional[t.List[t.Callable]]=None,
+            functions: t.Optional[t.List[ToolCallableType]]=None,
             function_choice: t.Optional[t.Literal["auto", "any"]]=None,
             max_tokens: t.Optional[int]=4096,
             top_k: t.Optional[int]=None,

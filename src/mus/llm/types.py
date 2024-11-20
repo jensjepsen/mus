@@ -17,21 +17,20 @@ LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
 
-class QueryStreamArgs(t.TypedDict, t.Generic[MODEL_TYPE], total=False):
+class QueryStreamArgs(t.TypedDict, total=False):
     max_tokens: t.Optional[int]
     temperature: t.Optional[float]
     top_k: t.Optional[int]
     top_p: t.Optional[float]
-    
 
-class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs[MODEL_TYPE]):
+class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     model: t.Required[MODEL_TYPE]
     prompt: t.Optional[str]
     history: "History"
     functions: t.Optional[t.List["ToolCallableType"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
-    
+
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     @abstractmethod
     def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.Iterable["Delta"]:
@@ -103,6 +102,7 @@ def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
     __name__: str
+    __metadata__: t.Dict[str, t.Any]
     def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
 

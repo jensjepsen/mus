@@ -13,6 +13,7 @@ jsonpickle = "^3.4.2"
 typer = "^0.13.0"
 requests = "^2.32.3"
 typeguard = "^4.4.1"
+sybil = {extras = ["pytest"], version = "^9.0.0"}
 
 
 [tool.poetry.group.dev.dependencies]

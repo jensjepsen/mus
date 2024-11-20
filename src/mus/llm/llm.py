@@ -1,7 +1,7 @@
 import typing as t
 
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, LLM_CLIENTS, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs
+from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs
 from ..functions import functions_map
 from ..types import DataClass
 import json
@@ -46,6 +46,9 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.List[ToolCallableType]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
 
+class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
+    previous: t.Optional[IterableResult]
+
 class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
@@ -62,7 +65,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         self.model = model
 
     
-    def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
+    def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.Generator[Delta, None, History]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         
@@ -111,9 +114,22 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             
         return history
 
-    def __call__(self, query: QueryType, /, *, previous: t.Optional[IterableResult]=None, **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]):
-        _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
-        return IterableResult(_q)
+    @t.overload
+    def __call__(self, query: QueryType, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
+        ...
+
+    @t.overload
+    def __call__(self, query: t.Callable[LLMPromptFunctionArgs, QueryType], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
+        ...
+
+    def __call__(self, query: t.Union[QueryType, t.Callable[LLMPromptFunctionArgs, QueryType]], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Union[IterableResult, t.Callable[LLMPromptFunctionArgs, IterableResult]]:
+        if callable(query):
+            a = self.bot(query)
+            return a 
+        else:
+            previous = kwargs.get("previous")
+            _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
+            return IterableResult(_q)
     
     def fill(self, query: QueryType, structure: t.Type[DataClass]):
         for msg in self.query(query, functions=[structure], function_choice="any"):
@@ -123,7 +139,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             raise ValueError("No structured response found")
     
     def func(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
-        def decorated_function(query: t.Optional[QueryType]=None) -> LLMDecoratedFunctionReturnType:
+        def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
             for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
                     return function(**(msg.content["data"].input))
