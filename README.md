@@ -70,16 +70,19 @@ for msg in haiku_bot("dogs"):
 
 
 # Making a natural language function
-@m.llm("You calculate stuff", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0").fun
+@m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0").fun
 def calculate(expression: str):
     """
     Calculate a mathematical expression
     """
     return eval(expression) # bad idea IRL, but nice for demo
 
+# The input to the function is now a natural language query
 result = calculate("What is seven times three?")
+
+# While the return value is the result of the function
 print(result)
-assert result == 21 # the return type of the function is preserved
+assert result == 21 # and the return type of the function is preserved
 ```
 
 
