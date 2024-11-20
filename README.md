@@ -94,7 +94,7 @@ assert result == 21 # and the return type of the function is preserved
     - [X] Top p
     - [X] Temperature
     - [X] Headers
-- [ ] Document .func decorator
+- [X] Document .fun decorator
 - [X] Make LLM.__call__ function as primary decorator to avoid having to do .bot
 - [ ] Abstract away underlying api message structure
 - [ ] Allow for trimming historic messages
