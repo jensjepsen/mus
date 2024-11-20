@@ -45,12 +45,14 @@ jobs:
       - name: Build project
         run: poetry build
 
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push origin latest --force
+      
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: ./dist/mus*.whl
 
-      - name: Update latest tag
-        run: |
-          git tag -f latest
-          git push origin latest --force
+      
