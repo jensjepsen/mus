@@ -68,9 +68,14 @@ class DeltaToolResult(t.TypedDict):
 
 DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult
 
+class Usage(t.TypedDict):
+    input_tokens: int
+    output_tokens: int
+
 @dataclass
 class Delta:
     content: DeltaContent
+    usage: t.Optional[Usage] = None
 
     def __str__(self) -> str:
         if self.content["type"] == "text":

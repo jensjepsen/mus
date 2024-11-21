@@ -2,7 +2,7 @@ import typing as t
 from anthropic import AnthropicBedrock, Anthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage
 from ..functions import get_schema
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
@@ -182,6 +182,16 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
                         function_blocks.append(event.content_block)
                 
                 elif event.type == "message_stop":
+                    usage: Usage = {
+                        "input_tokens": event.message.usage.input_tokens, 
+                        "output_tokens": event.message.usage.output_tokens
+                    }
+                    yield Delta(content={
+                            "type": "text",
+                            "data": "",
+                        },
+                        usage=usage
+                    )
                     if event.message.stop_reason == "tool_use":
                         for block in function_blocks:
                             tool_use = ToolUse(id=block.id, name=block.name, input=block.input)

@@ -1,7 +1,7 @@
 import typing as t
 
 from textwrap import dedent
-from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs
+from .types import Delta, LLMClient, QueryType, File, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage
 from ..functions import functions_map
 from ..types import DataClass
 import json
@@ -12,6 +12,8 @@ class IterableResult:
         self.history: History = []
         self.has_iterated = False
         self.total = ""
+        self.usage = Usage(input_tokens=0, output_tokens=0)
+        
 
     def __iter__(self):
         def run():
@@ -25,6 +27,9 @@ class IterableResult:
                 self.total += f"Running tool: {msg.content['data'].name}"
             elif msg.content["type"] == "tool_result":
                 self.total += f"Tool applied"
+            if msg.usage:
+                self.usage["input_tokens"] += msg.usage["input_tokens"]
+                self.usage["output_tokens"] += msg.usage["output_tokens"]
             yield msg
         self.has_iterated = True
     

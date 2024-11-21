@@ -112,3 +112,10 @@ assert result == 21 # and the return type of the function is preserved
 - [ ] Return usage stats, such as tokens generated etc in `IterableResult`
 - [ ] OpenAI client
 - [ ] Bedrock Converse client
+- [ ] Error handling
+    - [ ] Handle errors from underlying sdks
+    - [ ] Define possible retry strategies
+        - [ ] How do we recover from wrong function input from llm?
+- [ ] Add debug mode
+
+

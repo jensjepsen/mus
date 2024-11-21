@@ -35,14 +35,32 @@ def llm(mock_client):
 def test_llm_query(llm, mock_client):
     mock_client.set_response([
         TextEvent(type="text", text="Hello", snapshot="Hello"),
-        at.MessageStopEvent(type="message_stop", message=at.Message(role="assistant", content=[{"type": "text", "text": "Hello"}], stop_reason="end_turn", model="anthropic.claude-3-5-sonnet-20240620-v1:0", id="test_tool", stop_sequence="0", type="message", usage=at.Usage(input_tokens="0", output_tokens="0")))
+        at.MessageStopEvent(
+            type="message_stop",
+            message=at.Message(
+                role="assistant",
+                content=[
+                    {"type": "text", "text": "Hello"}
+                ],
+                stop_reason="end_turn",
+                model="anthropic.claude-3-5-sonnet-20240620-v1:0",
+                id="test_tool",
+                stop_sequence="0",
+                type="message",
+                usage=at.Usage(input_tokens=50, output_tokens=30)
+            )
+        )
     ])
     
     result = list(llm.query("Test query"))
-    assert len(result) == 1
+    assert len(result) == 2
     assert isinstance(result[0], Delta)
     assert result[0].content["type"] == "text"
     assert result[0].content["data"] == "Hello"
+    assert isinstance(result[0], Delta)
+    assert result[1].usage is not None
+    assert result[1].usage["input_tokens"] == 50
+    assert result[1].usage["output_tokens"] == 30
 
 def test_llm_query_with_tool_use(llm, mock_client):
     mock_client.set_response([
@@ -69,8 +87,8 @@ def test_llm_query_with_tool_use(llm, mock_client):
                 stop_sequence="0",
                 type="message",
                 usage=at.Usage(
-                    input_tokens="0",
-                    output_tokens="0",
+                    input_tokens=10,
+                    output_tokens=10,
                 )
             )
         )
@@ -86,12 +104,12 @@ def test_llm_query_with_tool_use(llm, mock_client):
 
     result = list(llm.query("Test query", functions=[test_tool]))
     assert called, "Tool function was not called"
-    assert len(result) == 3
+    assert len(result) == 4
     assert result[0].content["type"] == "text"
-    assert result[1].content["type"] == "tool_use"
-    assert result[2].content["type"] == "tool_result"
-    assert isinstance(result[1].content["data"], ToolUse)
-    assert isinstance(result[2].content["data"], ToolResult)
+    assert result[2].content["type"] == "tool_use"
+    assert result[3].content["type"] == "tool_result"
+    assert isinstance(result[2].content["data"], ToolUse)
+    assert isinstance(result[3].content["data"], ToolResult)
 
 @patch('src.mus.llm.LLM.query')
 def test_llm_call(mock_query, llm):
