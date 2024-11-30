@@ -7,7 +7,7 @@ from ..types import DataClass
 import json
 
 class IterableResult:
-    def __init__(self, iterable: t.Iterable[Delta]):
+    def __init__(self, iterable: t.AsyncIterable[Delta]):
         self.iterable = iterable
         self.history: History = []
         self.has_iterated = False
@@ -15,12 +15,8 @@ class IterableResult:
         self.usage = Usage(input_tokens=0, output_tokens=0)
         
 
-    def __iter__(self):
-        def run():
-           self.history = yield from self.iterable
-
-        for msg in run():
-            self.history.append(msg)
+    async def __aiter__(self):
+        async for msg in self.iterable:
             if msg.content["type"] == "text":
                 self.total += msg.content["data"]
             elif msg.content["type"] == "tool_use":
@@ -30,16 +26,17 @@ class IterableResult:
             if msg.usage:
                 self.usage["input_tokens"] += msg.usage["input_tokens"]
                 self.usage["output_tokens"] += msg.usage["output_tokens"]
-            yield msg
+            if msg.content["type"] == "history":
+                self.history.extend(msg.content["data"])
+            else:
+                yield msg
         self.has_iterated = True
     
-    def __str__(self):
+    async def string(self):
         if not self.has_iterated:
-            _ = list(self)
+            async for a in self:
+                pass
         return self.total
-    
-    def string(self):
-        return str(self)
     
     def __add__(self, other):
         if isinstance(other, str):
@@ -70,14 +67,14 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         self.model = model
 
     
-    def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.Generator[Delta, None, History]:
+    async def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         
 
         func_map = functions_map(functions)
-        def invoke_function(func_name: str, input: t.Dict[str, t.Any]):
-            result = func_map[func_name](**input)
+        async def invoke_function(func_name: str, input: t.Dict[str, t.Any]):
+            result = await func_map[func_name](**input)
             if not is_tool_return_value(result):
                 result = json.dumps(result)
 
@@ -100,7 +97,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         if parsed_query:
             history = history + [parsed_query]
         
-        for msg in self.client.stream(
+        async for msg in self.client.stream(
             prompt=dedented_prompt,
             history=history,
             model=self.model,
@@ -110,14 +107,18 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             yield msg
             history = history + [msg]
             if msg.content["type"] == "tool_use":
-                func_result = invoke_function(msg.content["data"].name, msg.content["data"].input)
+                func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input)
                 fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
                 yield fd
                 history.append(fd)
-                history = yield from self.query(history=history, **kwargs)
+                async for msg in self.query(history=history, **kwargs):
+                    if msg.content["type"] == "history":
+                        history.extend(msg.content["data"])
+                    else:
+                        yield msg
                 
             
-        return history
+        yield Delta(content={"type": "history", "data": history})
 
     @t.overload
     def __call__(self, query: QueryType, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
@@ -136,16 +137,16 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
             return IterableResult(_q)
     
-    def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        for msg in self.query(query, functions=[structure], function_choice="any"):
+    async def fill(self, query: QueryType, structure: t.Type[DataClass]):
+        async for msg in self.query(query, functions=[structure], function_choice="any"):
             if msg.content["type"] == "tool_result":
                 return msg.content["data"].content
         else:
             raise ValueError("No structured response found")
     
-    def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
-        def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
-            for msg in self.query(query, functions=[function], function_choice="any"):
+    async def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
+        async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
+            async for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
                     return function(**(msg.content["data"].input))
             else:

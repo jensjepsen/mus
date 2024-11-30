@@ -37,7 +37,7 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
 
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     @abstractmethod
-    def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.Iterable["Delta"]:
+    def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.AsyncGenerator["Delta", None]:
         pass
 
 History = t.List[t.Union["Delta", "Query"]]
@@ -53,7 +53,6 @@ class ToolResult:
     id: str
     content: "ToolReturnValue"
 
-
 class DeltaText(t.TypedDict):
     type: t.Literal["text"]
     data: str
@@ -66,7 +65,11 @@ class DeltaToolResult(t.TypedDict):
     type: t.Literal["tool_result"]
     data: ToolResult
 
-DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult
+class DeltaHistory(t.TypedDict):
+    type: t.Literal["history"]
+    data: History
+
+DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult | DeltaHistory
 
 class Usage(t.TypedDict):
     input_tokens: int
@@ -129,8 +132,8 @@ def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
     __name__: str
-    __metadata__: t.Dict[str, t.Any]
-    def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
+    #__metadata__: t.Optional[t.Dict[str, t.Any]]
+    async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
 
 StructuredType = t.TypeVar("StructuredType", bound=DataClass)

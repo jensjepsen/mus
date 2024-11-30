@@ -1,5 +1,5 @@
 import typing as t
-from anthropic import AnthropicBedrock, Anthropic, NotGiven
+from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
 from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage
@@ -135,10 +135,10 @@ class StreamArgs(t.TypedDict, total=False):
 
 
 class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
-    def __init__(self, client: t.Union[AnthropicBedrock, Anthropic]):
+    def __init__(self, client: t.Union[AsyncAnthropicBedrock, AsyncAnthropic]):
         self.client = client
 
-    def stream(self, *,
+    async def stream(self, *,
             prompt: t.Optional[str],
             model: at.ModelParam,
             history: t.List[t.Union[Delta, Query]],
@@ -149,7 +149,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             top_p: t.Optional[float]=None,
             temperature: t.Optional[float]=None,
             kwargs: t.Optional[StreamArgs]=None
-        ) -> t.Iterable[Delta]:
+        ):
         _kwargs: dict[str, t.Any] = {
             **(kwargs or {})
         }
@@ -164,7 +164,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
 
         
         messages = deltas_to_messages(history)
-        with self.client.messages.stream(
+        async with self.client.messages.stream(
             max_tokens=max_tokens or 4096,
             model=model,
             messages=messages,
@@ -174,7 +174,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             **_kwargs
         ) as response:
             function_blocks: t.List[at.ToolUseBlock] = []
-            for event in response:
+            async for event in response:
                 if event.type == "text":
                     yield Delta(content={"type": "text", "data": event.text})
                 elif event.type == "content_block_stop":
