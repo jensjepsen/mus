@@ -16,8 +16,8 @@ class MockClient():
     
     def set_response(self, responses):
         mock_response = MagicMock()
-        mock_response.__iter__.return_value = iter(responses)
-        self.messages.stream.return_value.__enter__.return_value = mock_response
+        mock_response.__aiter__.return_value = iter(responses)
+        self.messages.stream.return_value.__aenter__.return_value = mock_response
 
 @dataclass
 class TestStructure:
@@ -32,7 +32,8 @@ def mock_client():
 def llm(mock_client):
     return LLM(prompt="Test prompt", client=AnthropicLLM(client=mock_client), model="claude-3-5-sonnet-20241022")
 
-def test_llm_query(llm, mock_client):
+@pytest.mark.asyncio
+async def test_llm_query(llm, mock_client):
     mock_client.set_response([
         TextEvent(type="text", text="Hello", snapshot="Hello"),
         at.MessageStopEvent(
@@ -52,8 +53,8 @@ def test_llm_query(llm, mock_client):
         )
     ])
     
-    result = list(llm.query("Test query"))
-    assert len(result) == 2
+    result = [msg async for msg in llm.query("Test query")]
+    assert len(result) == 3
     assert isinstance(result[0], Delta)
     assert result[0].content["type"] == "text"
     assert result[0].content["data"] == "Hello"
@@ -62,7 +63,8 @@ def test_llm_query(llm, mock_client):
     assert result[1].usage["input_tokens"] == 50
     assert result[1].usage["output_tokens"] == 30
 
-def test_llm_query_with_tool_use(llm, mock_client):
+@pytest.mark.asyncio
+async def test_llm_query_with_tool_use(llm, mock_client):
     mock_client.set_response([
         TextEvent(type="text", text="Using tool", snapshot="Using tool"),
         ContentBlockStopEvent(
@@ -96,64 +98,74 @@ def test_llm_query_with_tool_use(llm, mock_client):
 
     called = False
 
-    def test_tool(**kwargs):
+    async def test_tool(**kwargs):
         """Test tool function"""
         nonlocal called
         called = True
         return "Tool result"
 
-    result = list(llm.query("Test query", functions=[test_tool]))
+    result = [msg async for msg in llm.query("Test query", functions=[test_tool])]
+
     assert called, "Tool function was not called"
-    assert len(result) == 4
+    assert len(result) == 5
     assert result[0].content["type"] == "text"
     assert result[2].content["type"] == "tool_use"
     assert result[3].content["type"] == "tool_result"
     assert isinstance(result[2].content["data"], ToolUse)
     assert isinstance(result[3].content["data"], ToolResult)
 
+@pytest.mark.asyncio
 @patch('src.mus.llm.LLM.query')
-def test_llm_call(mock_query, llm):
-    mock_query.return_value = iter([Delta(content={"data": "Test response", "type": "text"})])
+async def test_llm_call(mock_query, llm):
+    async def return_value():
+        for d in [Delta(content={"data": "Test response", "type": "text"})]:
+            yield d
+    mock_query.return_value = return_value()
     result = llm("Test query")
 
     assert isinstance(result, IterableResult)
-    assert str(result) == "Test response"
+    assert (await result.string()) == "Test response"
 
+@pytest.mark.asyncio
 @patch('src.mus.llm.LLM.query')
-def test_llm_fill(mock_query, llm):
-    mock_query.return_value = iter(list([
-        Delta(content={"data": "Processing", "type": "text"}),
-        Delta(content={"data": ToolResult(content=TestStructure(field1="test", field2=123), id="abc"), "type": "tool_result"})
-    ]))
-    result = llm.fill("Test query", TestStructure)
-    assert isinstance(result, TestStructure)
-    assert result.field1 == "test"
-    assert result.field2 == 123
+async def test_llm_fill(mock_query, llm):
+    async def return_value():
+        for d in [Delta(content={"data": "Processing", "type": "text"}), Delta(content={"data": ToolResult(content="Tool output", id="abc"), "type": "tool_result"})]:
+            yield d
+    mock_query.return_value = return_value()
+    result = await llm.fill("Test query", TestStructure)
+    assert isinstance(result, TestStructure), f"Expected TestStructure, got {type(result)}"
+    assert result.field1 == "test", f"Expected 'test', got {result.field1}"
+    assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
+@pytest.mark.asyncio
 @patch('src.mus.llm.LLM.query')
-def test_llm_bot_decorator(mock_query, llm):
-    mock_query.return_value = iter([Delta(content={"type":"text", "data":"Test response"})])
+async def test_llm_bot_decorator(mock_query, llm):
+    async def return_value():
+        for d in [Delta(content={"data": "Test response", "type": "text"})]:
+            yield d
+    mock_query.return_value = return_value()
     
     @llm.bot
     def bot(query: str):
         return query
 
-    assert str(bot("Test query")) == "Test response"
+    assert await bot("Test query").string() == "Test response"
 
-def test_iterable_result():
+@pytest.mark.asyncio
+async def test_iterable_result():
     deltas = [
         Delta(content={"type": "text", "data": "Hello"}),
         Delta(content={"data": ToolUse(name="test_tool", input={}, id="abc"), "type": "tool_use"}),
         Delta(content={"data": ToolResult(content="Tool output", id="abc"), "type": "tool_result"})
     ]
-    result = IterableResult(deltas)
+    async def return_value():
+        for d in deltas:
+            yield d
     
-    assert str(result) == "HelloRunning tool: test_toolTool applied"
+    result = IterableResult(return_value())
     
-    with pytest.raises(TypeError):
-        _ = result + 1
-
-    assert result + " World" == "HelloRunning tool: test_toolTool applied World"
-
+    assert await result.string() == "HelloRunning tool: test_toolTool applied"
+    
 if __name__ == "__main__":
     pytest.main()

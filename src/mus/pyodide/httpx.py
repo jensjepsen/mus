@@ -1,7 +1,7 @@
 import urllib3
 import requests
 import urllib3.contrib.emscripten.fetch
-from httpx import Headers, Response, Request, SyncByteStream
+from httpx import Headers, Response, Request, AsyncByteStream
 
 __all__ = ["get_requests_transport"]
 
@@ -10,11 +10,11 @@ async def get_requests_transport():
     await urllib3.contrib.emscripten.fetch.wait_for_streaming_ready()
     return RequestsTransport()
 
-class Stream(SyncByteStream):
+class Stream(AsyncByteStream):
     def __init__(self, requests_response):
         self.requests_response = requests_response
 
-    def __iter__(self):
+    async def __aiter__(self):
         for chunk in self.requests_response.iter_content():
             if chunk:
                 yield chunk
@@ -23,7 +23,7 @@ class RequestsTransport:
     def __init__(self):
         self.session = requests.Session()
 
-    def handle_request(self, request: Request) -> Response:
+    async def handle_async_request(self, request: Request) -> Response:
         url = str(request.url)
         method = request.method
         headers = dict(request.headers)

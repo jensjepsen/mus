@@ -37,12 +37,6 @@ class IterableResult:
             async for a in self:
                 pass
         return self.total
-    
-    def __add__(self, other):
-        if isinstance(other, str):
-            return str(self) + other
-        else:
-            raise TypeError(f"unsupported operand type(s) for +: 'IterableResult' and '{type(other)}'")
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.List[ToolCallableType]]

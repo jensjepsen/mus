@@ -12,10 +12,11 @@ python -m pip install git+https://github.com/jensjepsen/mus.git
 ## Usage
 ```python
 # import stuff and make a client
+import asyncio
 from mus import Mus, AnthropicLLM, File
-from anthropic import AnthropicBedrock
+from anthropic import AsyncAnthropicBedrock
 m = Mus()
-client = AnthropicLLM(AnthropicBedrock(
+client = AnthropicLLM(AsyncAnthropicBedrock(
     aws_region="us-west-2",
 ))
 ```
@@ -29,71 +30,73 @@ client.put_tool_result("What is seven times three?", ToolResult(id="calc", conte
 -->
 
 ```python
-# Configuring a bot
-bot = m.llm("You are a nice bot", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+async def main():
+    # Configuring a bot
+    bot = m.llm("You are a nice bot", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
 
-# The response from the bot is a generator of deltas from the bot, so we can stream them as they come in
-for msg in bot("hello"):
-    m.print(msg)
+    # The response from the bot is a generator of deltas from the bot, so we can stream them as they come in
+    async for msg in bot("hello"):
+        m.print(msg)
 
-# Or we can collect them all at once, by converting the response to a string
-full_response = str(bot("What is 10 + 7?"))
-assert type(full_response) == str
-
-
-# Sending images to a bot
-
-for msg in bot(
-        "Could you describe this image? "
-        + File.image("tests/fixtures/cat.png")
-        + " Do it as a poem <3"
-    ):
-    m.print(msg)
+    # Or we can collect them all at once, by converting the response to a string
+    full_response = await bot("What is 10 + 7?").string()
+    assert type(full_response) == str
 
 
-# Making a bot that can call functions
+    # Sending images to a bot
 
-# We use types to annotations to tell the bot the types of the arguments
-# and add a docstring to the function to tell the bot what it does
-import typing as t
-def sum(a: t.Annotated[float, "The first operand"], b: t.Annotated[float, "The second operand"]):
-    """
-    Sum two numbers
-    """
-    return str(a + b)
-
-math_bot = m.llm(functions=[sum], client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
-
-for msg in math_bot("What is 10 + 7?"):
-    m.print(msg)
+    async for msg in bot(
+            "Could you describe this image? "
+            + File.image("tests/fixtures/cat.png")
+            + " Do it as a poem <3"
+        ):
+        m.print(msg)
 
 
-# Making a bot using a decorator
-@m.llm("You write nice haikus", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
-def haiku_bot(topic: str):
-    # The return value of the function will be the query for the bot
-    return f"""
-        Write a nice haiku about this topic: {topic}
-    """
+    # Making a bot that can call functions
 
-for msg in haiku_bot("dogs"):
-    print(msg)
+    # We use types to annotations to tell the bot the types of the arguments
+    # and add a docstring to the function to tell the bot what it does
+    import typing as t
+    async def sum(a: t.Annotated[float, "The first operand"], b: t.Annotated[float, "The second operand"]):
+        """
+        Sum two numbers
+        """
+        return str(a + b)
+
+    math_bot = m.llm(functions=[sum], client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+
+    async for msg in math_bot("What is 10 + 7?"):
+        m.print(msg)
 
 
-# Making a natural language function
-@m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0").fun
-def calculate(expression: str):
-    """
-    Calculate a mathematical expression
-    """
-    return eval(expression) # bad idea IRL, but nice for demo
+    # Making a bot using a decorator
+    @m.llm("You write nice haikus", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    def haiku_bot(topic: str):
+        # The return value of the function will be the query for the bot
+        return f"""
+            Write a nice haiku about this topic: {topic}
+        """
 
-# The input to the function is now a natural language query
-result = calculate("What is seven times three?")
+    async for msg in haiku_bot("dogs"):
+        print(msg)
 
-# While the return value is the result of the function
-print(result)
-assert result == 21 # and the return type of the function is preserved
+
+    # Making a natural language function
+    @m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0").fun
+    async def calculate(expression: str):
+        """
+        Calculate a mathematical expression
+        """
+        return eval(expression) # bad idea IRL, but nice for demo
+
+    # The input to the function is now a natural language query
+    result = await calculate("What is seven times three?")
+
+    # While the return value is the result of the function
+    print(result)
+    assert result == 21 # and the return type of the function is preserved
+asyncio.run(main())
 ```
 
 

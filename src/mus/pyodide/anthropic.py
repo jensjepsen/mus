@@ -51,7 +51,7 @@ def patch_anthropic():
 
     from partial_json_parser import loads as _loads
 
-    def loads(data: str, *args, **kwargs):
+    def loads(data: bytes, *args, **kwargs):
         kwargs.pop("partial_mode", None)
         return _loads(data.decode("utf-8"), *args, **kwargs)
     import sys
