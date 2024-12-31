@@ -8,7 +8,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-anthropic = {extras = ["bedrock"], version = "^0.39.0"}
+anthropic = {extras = ["bedrock"], version = "^0.42.0"}
 jsonpickle = "^3.4.2"
 typer = "^0.13.0"
 requests = "^2.32.3"
