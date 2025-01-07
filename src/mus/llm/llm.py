@@ -138,7 +138,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         else:
             raise ValueError("No structured response found")
     
-    async def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
+    def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
             async for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
