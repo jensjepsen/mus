@@ -178,7 +178,7 @@ LLMDecoratedFunctionReturnType = t.TypeVar("LLMDecoratedFunctionReturnType", cov
 
 @t.runtime_checkable
 class LLMDecoratedFunctionType(t.Protocol, t.Generic[LLMDecoratedFunctionReturnType]):
-    def __call__(self, *args: t.Any, **kwargs: t.Any) -> LLMDecoratedFunctionReturnType:
+    async def __call__(self, *args: t.Any, **kwargs: t.Any) -> LLMDecoratedFunctionReturnType:
         ...
 
 LLMPromptFunctionArgs = t.ParamSpec("LLMPromptFunctionArgs")

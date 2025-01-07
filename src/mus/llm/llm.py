@@ -142,7 +142,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
             async for msg in self.query(query, functions=[function], function_choice="any"):
                 if msg.content["type"] == "tool_use":
-                    return function(**(msg.content["data"].input))
+                    return await function(**(msg.content["data"].input))
             else:
                 raise ValueError("LLM did not invoke the function")
         return decorated_function
