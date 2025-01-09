@@ -178,7 +178,7 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
         if functions:
             _kwargs["toolConfig"] = {
                 "tools": functions_for_llm(functions),
-                **({"toolChoice": {function_choice: {}}} if function_choice else {})
+                #**({"toolChoice": {function_choice: {}}} if function_choice else {})
             }
             
         if prompt:
