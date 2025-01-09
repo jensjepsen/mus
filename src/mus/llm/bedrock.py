@@ -182,9 +182,9 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             }
             
         if prompt:
-            _kwargs["system"] = {
+            _kwargs["system"] = [{
                 "text": prompt
-            }
+            }]
 
         
         messages = deltas_to_messages(history)
