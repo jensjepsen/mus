@@ -127,7 +127,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                 role="user",
                 content=query_to_content(delta)
             ))
-    
+
     return merge_messages(messages)
                 
 class StreamArgs(t.TypedDict, total=False):

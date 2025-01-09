@@ -107,7 +107,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
                 history.append(fd)
                 async for msg in self.query(history=history, **kwargs):
                     if msg.content["type"] == "history":
-                        history.extend(msg.content["data"])
+                        history.extend(msg.content["data"][len(history):])
                     else:
                         yield msg
                 
