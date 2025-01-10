@@ -6,6 +6,10 @@ from ..functions import functions_map
 from ..types import DataClass
 import json
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class IterableResult:
     def __init__(self, iterable: t.AsyncIterable[Delta]):
         self.iterable = iterable
