@@ -45,6 +45,7 @@ class IterableResult:
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.List[ToolCallableType]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
+    no_stream: t.Optional[bool]
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
@@ -136,7 +137,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             return IterableResult(_q)
     
     async def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        async for msg in self.query(query, functions=[structure], function_choice="any"):
+        async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True):
             if msg.content["type"] == "tool_result":
                 return msg.content["data"].content
         else:
@@ -144,7 +145,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
-            async for msg in self.query(query, functions=[function], function_choice="any"):
+            async for msg in self.query(query, functions=[function], function_choice="any", no_stream=True):
                 if msg.content["type"] == "tool_use":
                     return await function(**(msg.content["data"].input))
             else:

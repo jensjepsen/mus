@@ -170,7 +170,8 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             top_k: t.Optional[int]=None,
             top_p: t.Optional[float]=None,
             temperature: t.Optional[float]=None,
-            kwargs: t.Optional[StreamArgs]=None
+            kwargs: t.Optional[StreamArgs]=None,
+            no_stream: t.Optional[bool]=None
         ):
         _kwargs: dict[str, t.Any] = {
             **(kwargs or {})
@@ -193,7 +194,7 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             top_p=top_p or NotGiven(),
             temperature=temperature or NotGiven(),
         """
-        response = self.client.converse_stream(
+        args = dict(
             modelId=model,
             messages=messages,
             inferenceConfig={ 
@@ -203,55 +204,96 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             },
             **_kwargs
         )
-        function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
-        current_function = None
-        for event in response.get("stream"):
-            if "contentBlockStart" in event:
-                start = event["contentBlockStart"]["start"]
-                if "toolUse" in start:
-                    current_function = {**start["toolUse"]}
-            if "contentBlockDelta" in event:
-                delta = event["contentBlockDelta"]["delta"]
-                if "text" in delta:
-                    yield Delta(content={
-                        "type": "text",
-                        "data": delta["text"]
-                    })
-                if "toolUse" in delta:
-                    tu = delta["toolUse"]
-                    if current_function:
-                        current_function["input"] = current_function.get("input", "") + tu["input"]
-            if "contentBlockStop" in event:
-                if current_function:
-                    function_blocks.append(
-                        bt.ToolUseBlockTypeDef(
-                            **{
-                                **current_function,
-                                **dict(input=json.loads(current_function["input"]))
-                            }
-                        )
-                    )
-                    current_function = None
-
-            if "messageStop" in event:
-                stop_reason = event["messageStop"]["stopReason"]
-                if stop_reason == "tool_use":
-                    for block in function_blocks:
-                        tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
+        if not no_stream:
+            response = self.client.converse_stream(
+                **args
+            )
+            function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
+            current_function = None
+            for event in response.get("stream"):
+                if "contentBlockStart" in event:
+                    start = event["contentBlockStart"]["start"]
+                    if "toolUse" in start:
+                        current_function = {**start["toolUse"]}
+                if "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"]["delta"]
+                    if "text" in delta:
                         yield Delta(content={
+                            "type": "text",
+                            "data": delta["text"]
+                        })
+                    if "toolUse" in delta:
+                        tu = delta["toolUse"]
+                        if current_function:
+                            current_function["input"] = current_function.get("input", "") + tu["input"]
+                if "contentBlockStop" in event:
+                    if current_function:
+                        function_blocks.append(
+                            bt.ToolUseBlockTypeDef(
+                                **{
+                                    **current_function,
+                                    **dict(input=json.loads(current_function["input"]))
+                                }
+                            )
+                        )
+                        current_function = None
+
+                if "messageStop" in event:
+                    stop_reason = event["messageStop"]["stopReason"]
+                    if stop_reason == "tool_use":
+                        for block in function_blocks:
+                            tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
+                            yield Delta(content={
+                                "data": tool_use,
+                                "type": "tool_use"
+                            })
+
+                if "metadata" in event:
+                    metadata = event["metadata"]
+                    usage: Usage = {
+                        "input_tokens": metadata["usage"]["inputTokens"], 
+                        "output_tokens": metadata["usage"]["outputTokens"]
+                    }
+                    yield Delta(content={
+                            "type": "text",
+                            "data": "",
+                        },
+                        usage=usage
+                    )
+        else:
+            response = self.client.converse(
+                **args
+            )
+
+            output = response.get("output")
+            tools: t.List[Delta] = []
+            if "message" in output:
+                message = output["message"]
+                for content in message["content"]:
+                    if text := content.get("text", None):
+                        yield Delta(content={
+                            "type": "text",
+                            "data": text
+                        })
+                    if toolUse := content.get("toolUse", None):
+                        tool_use = ToolUse(id=toolUse["toolUseId"], name=toolUse["name"], input=toolUse["input"])
+                        tools.append(Delta(content={
                             "data": tool_use,
                             "type": "tool_use"
-                        })
-
-            if "metadata" in event:
-                metadata = event["metadata"]
-                usage: Usage = {
-                    "input_tokens": metadata["usage"]["inputTokens"], 
-                    "output_tokens": metadata["usage"]["outputTokens"]
-                }
-                yield Delta(content={
-                        "type": "text",
-                        "data": "",
-                    },
-                    usage=usage
-                )        
+                        }))
+                
+            if response["stopReason"] == "tool_use":
+                for tool in tools:
+                    yield tool
+            
+            usage: Usage = {
+                "input_tokens": response["usage"]["inputTokens"], 
+                "output_tokens": response["usage"]["outputTokens"]
+            }
+            yield Delta(content={
+                    "type": "text",
+                    "data": "",
+                },
+                usage=usage
+            )
+            

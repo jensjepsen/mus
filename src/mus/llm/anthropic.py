@@ -148,7 +148,8 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             top_k: t.Optional[int]=None,
             top_p: t.Optional[float]=None,
             temperature: t.Optional[float]=None,
-            kwargs: t.Optional[StreamArgs]=None
+            kwargs: t.Optional[StreamArgs]=None,
+            no_stream: t.Optional[bool]=False
         ):
         _kwargs: dict[str, t.Any] = {
             **(kwargs or {})
