@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from textwrap import dedent
 
 import io
 import base64
@@ -138,20 +139,53 @@ class ToolCallableType(t.Protocol):
         ...
 
 StructuredType = t.TypeVar("StructuredType", bound=DataClass)
-
-QuerySimpleType = t.Union[str, File]
+QuerySimpleTypeWithoutAssistant = t.Union[str, File]
+QuerySimpleType = t.Union[QuerySimpleTypeWithoutAssistant, "Assistant"]
 QueryIterableType = t.List[QuerySimpleType]
-QueryType = t.Union[str, File, QueryIterableType, "Query"]
+QueryType = t.Union[QuerySimpleType, QueryIterableType, "Query"]
 
 def is_query_type(val: t.Any) -> t.TypeGuard[QueryType]:
     return isinstance(val, str) or isinstance(val, File) or isinstance(val, Query) or (isinstance(val, list) and all(is_query_type(v) for v in val))
 
+class Assistant:
+    def __init__(self, text: str):
+        self.val = text
+    
+    def __add__(self, other: QueryType):
+        if isinstance(other, Assistant):
+            return Assistant(self.val + other.val)
+        
+        return Query(self) + other
+
+    def __radd__(self, other: QueryType):
+        if isinstance(other, Assistant):
+            return Assistant(other.val + self.val)
+        
+        return other + Query(self)
+
 class Query:
+    @classmethod
+    def parse(cls, query: QueryType) -> "Query":
+        if isinstance(query, str) or isinstance(query, File) or isinstance(query, Assistant):
+            parsed_query = Query(val=[query])
+        elif isinstance(query, list):
+            parsed_query = Query(val=query)
+        elif isinstance(query, Query):
+            parsed_query = query
+        else:
+            raise ValueError(f"Invalid query type: {type(query)}")
+        dedented_query = [dedent(q) if isinstance(q, str) else q for q in parsed_query.val]
+        parsed_query = Query(val=dedented_query)
+        return parsed_query
+
     def __init__(self, val: t.Optional[QueryType]=None):
         self.set_val(val or [])
 
+    def to_deltas(self):
+        return [self]
+
     def set_val(self, val: QueryType):
-        if isinstance(val, str) or isinstance(val, File):
+        if isinstance(val, str) or isinstance(val, File) or isinstance(val, Assistant):
             self.val = t.cast(QueryIterableType, [val])
         elif isinstance(val, Query):
             self.val = val.val
@@ -159,7 +193,7 @@ class Query:
             self.val = val
 
     def __add__(self, other: QueryType):
-        if isinstance(other, str) or isinstance(other, File):
+        if isinstance(other, str) or isinstance(other, File) or isinstance(other, Assistant):
             return Query(self.val + [other])
         elif isinstance(other, Query):
             return Query(self.val + other.val)
@@ -167,13 +201,12 @@ class Query:
             return Query(self.val + other)
     
     def __radd__(self, other: QueryType):
-        if isinstance(other, str) or isinstance(other, File):
+        if isinstance(other, str) or isinstance(other, File) or isinstance(other, Assistant):
             return Query([other] + self.val)
         elif isinstance(other, Query):
             return Query(other.val + self.val)
         else:
-            return Query(other + self.val)   
-
+            return Query(other + self.val)
 
 LLMDecoratedFunctionReturnType = t.TypeVar("LLMDecoratedFunctionReturnType", covariant=True)
 

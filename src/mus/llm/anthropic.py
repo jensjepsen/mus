@@ -2,7 +2,7 @@ import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant
 from ..functions import get_schema
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
@@ -50,10 +50,22 @@ def parse_content(query: t.Union[str, File]):
         raise ValueError(f"Invalid query type: {type(query)}")
 
 def query_to_content(query: Query):
-    return [
-        parse_content(q)
-        for q in query.val
-    ]
+    for q in query.val:
+        if isinstance(q, Assistant):
+            yield at.MessageParam(
+                role="assistant",
+                content=[
+                    at.TextBlock(
+                        type="text",
+                        text=q.val
+                    )
+                ]
+            )
+        else:
+            yield at.MessageParam(
+                role="user",
+                content=[parse_content(q)]
+            )
 
 def tool_result_to_content(tool_result: ToolResult):
     if isinstance(tool_result.content, str):
@@ -123,10 +135,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
             else:
                 raise ValueError(f"Invalid delta type: {delta.content['type']}")
         else:
-            messages.append(at.MessageParam(
-                role="user",
-                content=query_to_content(delta)
-            ))
+            messages.extend(query_to_content(delta))
 
     return merge_messages(messages)
                 

@@ -80,21 +80,12 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
             return result
         parsed_query: t.Optional[Query] = None
         if query:
-            if isinstance(query, str) or isinstance(query, File):
-                parsed_query = Query(val=[query])
-            elif isinstance(query, list):
-                parsed_query = Query(val=query)
-            elif isinstance(query, Query):
-                parsed_query = query
-            else:
-                raise ValueError(f"Invalid query type: {type(query)}")
-            dedented_query = [dedent(q) if isinstance(q, str) else q for q in parsed_query.val]
-            parsed_query = Query(val=dedented_query)
+            parsed_query = Query.parse(query)
         
         dedented_prompt = dedent(self.prompt) if self.prompt else None
         
         if parsed_query:
-            history = history + [parsed_query]
+            history = history + parsed_query.to_deltas()
         
         async for msg in self.client.stream(
             prompt=dedented_prompt,
