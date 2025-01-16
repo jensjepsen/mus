@@ -129,8 +129,8 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
     
     async def fill(self, query: QueryType, structure: t.Type[DataClass]):
         async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True):
-            if msg.content["type"] == "tool_result":
-                return msg.content["data"].content
+            if msg.content["type"] == "tool_use":
+                return structure(**(msg.content["data"].input))
         else:
             raise ValueError("No structured response found")
     

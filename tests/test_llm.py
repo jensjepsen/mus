@@ -130,7 +130,7 @@ async def test_llm_call(mock_query, llm):
 @patch('src.mus.llm.LLM.query')
 async def test_llm_fill(mock_query, llm):
     async def return_value():
-        for d in [Delta(content={"data": "Processing", "type": "text"}), Delta(content={"data": ToolResult(content="Tool output", id="abc"), "type": "tool_result"})]:
+        for d in [Delta(content={"data": "Processing", "type": "text"}), Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test", "field2": 123}, id="abc")})]:
             yield d
     mock_query.return_value = return_value()
     result = await llm.fill("Test query", TestStructure)
