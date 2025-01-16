@@ -6,8 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+
+
 jobs:
   test:
     uses: ./.github/workflows/run-tests-job.yml
   release:
+    permissions: 
+        contents: 'write'
     uses: ./.github/workflows/release-latest.yml
+      
