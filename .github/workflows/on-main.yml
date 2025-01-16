@@ -9,3 +9,5 @@ on:
 jobs:
   test:
     uses: ./.github/workflows/run-tests-job.yml
+  release:
+    uses: ./.github/workflows/release-latest.yml

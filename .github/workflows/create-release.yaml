@@ -14,6 +14,7 @@ on:
         - major
 
 jobs:
+  
   create_release:
     name: Create Release
     runs-on: ubuntu-latest

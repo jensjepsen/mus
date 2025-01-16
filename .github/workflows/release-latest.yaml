@@ -1,14 +1,12 @@
 name: Release latest
 
 on:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-
+  workflow_call: {}
+  
 jobs:
   release_latest:
+    permissions:
+      contents: write
     name: Release latest
     runs-on: ubuntu-latest
     steps:
