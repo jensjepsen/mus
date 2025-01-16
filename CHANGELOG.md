@@ -1,3 +1,9 @@
+## v0.3.0 (2025-01-16)
+
+### Feat
+
+- test release pipeline
+
 ## v0.2.0 (2025-01-16)
 
 ### Feat
