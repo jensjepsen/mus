@@ -15,6 +15,7 @@ jobs:
   test:
     uses: ./.github/workflows/run-tests-job.yml
   bump:
+    needs: test
     if: "!startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
     steps:
@@ -25,12 +26,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
       - name: Create bump and changelog
         uses: commitizen-tools/commitizen-action@0.21.0
         with:
-          github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: main
 
   #release:
