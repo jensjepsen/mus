@@ -110,11 +110,11 @@ asyncio.run(main())
     - [X] Headers
 - [X] Document .fun decorator
 - [X] Make LLM.__call__ function as primary decorator to avoid having to do .bot
-- [ ] Abstract away underlying api message structure
+- [X] Abstract away underlying api message structure
 - [ ] Allow for trimming historic messages
-- [ ] Return usage stats, such as tokens generated etc in `IterableResult`
+- [X] Return usage stats, such as tokens generated etc in `IterableResult`
 - [ ] OpenAI client
-- [ ] Bedrock Converse client
+- [X] Bedrock Converse client
 - [ ] Error handling
     - [ ] Handle errors from underlying sdks
     - [ ] Define possible retry strategies
