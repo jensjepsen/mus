@@ -120,5 +120,9 @@ asyncio.run(main())
     - [ ] Define possible retry strategies
         - [ ] How do we recover from wrong function input from llm?
 - [ ] Add debug mode
+- [ ] Add pre-commit
+    - [ ] Bandit
+    - [ ] commitzen
+    - [ ] pyright
 
 
