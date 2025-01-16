@@ -1,7 +1,10 @@
 name: Release latest
 
 on:
-  workflow_call: {}
+  push:
+    tags:
+      - 'v*'
+  
   
 jobs:
   release_latest:
@@ -52,6 +55,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./dist/mus*.whl
-          tag_name: latest
 
       
