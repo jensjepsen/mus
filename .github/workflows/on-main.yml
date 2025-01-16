@@ -30,10 +30,10 @@ jobs:
           fetch-depth: 0
           persist-crendtials: false
       - name: Create bump and changelog
-        uses: commitizen-tools/commitizen-action@0.21.0
+        uses: commitizen-tools/commitizen-action@0.23.0
         with:
           github_token: ${{ secrets.PAT }}
-          branch: main
+          push: true
 
   #release:
   #  permissions: 
