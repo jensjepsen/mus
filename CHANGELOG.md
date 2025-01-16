@@ -1,3 +1,12 @@
+## v0.3.3 (2025-01-16)
+
+### Fix
+
+- try release pipeline
+- try release pipeline
+- try release pipeline
+- try release pipeline
+
 ## v0.3.2 (2025-01-16)
 
 ### Fix
