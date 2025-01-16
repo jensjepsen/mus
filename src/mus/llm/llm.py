@@ -133,6 +133,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
                 return structure(**(msg.content["data"].input))
         else:
             raise ValueError("No structured response found")
+        
     
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
