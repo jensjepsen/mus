@@ -13,10 +13,11 @@ concurrency:
 
 jobs:
   test:
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
     uses: ./.github/workflows/run-tests-job.yml
   bump:
-    needs: test
     if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Setup Python
