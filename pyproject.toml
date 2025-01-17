@@ -26,6 +26,7 @@ bump2version = "^1.0.1"
 pytest-asyncio = "^0.24.0"
 pytest-cov = "^6.0.0"
 coverage = {extras = ["toml"], version = "^7.6.10"}
+pytest-md-report = "^0.6.3"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
