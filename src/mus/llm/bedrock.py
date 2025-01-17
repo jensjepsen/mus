@@ -107,7 +107,7 @@ def parse_tool_content(c: t.Union[str, File]):
         else:
             raise ValueError("No image found")
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+        raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult):
     if isinstance(tool_result.content, list):

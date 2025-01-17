@@ -25,6 +25,7 @@ pytest = "^8.3.3"
 bump2version = "^1.0.1"
 pytest-asyncio = "^0.24.0"
 pytest-cov = "^6.0.0"
+coverage = {extras = ["toml"], version = "^7.6.10"}
 
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -41,6 +42,19 @@ include = ["src"]
 exclude = [
     "**/__pycache__",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "src"
+addopts = "--cov=src"
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "if (t\\.|typing\\.|)TYPE_CHECKING:",
+    "class .*\\bProtocol.*\\):",
+    "@(abc\\.)?abstractmethod",
+    ]
 
 [build-system]
 requires = ["poetry-core"]
