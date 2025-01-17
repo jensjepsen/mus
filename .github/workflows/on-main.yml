@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   test:
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
     uses: ./.github/workflows/run-tests-job.yml
   bump:
     if: "!startsWith(github.event.head_commit.message, 'bump:')"
