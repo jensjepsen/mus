@@ -3,20 +3,16 @@ name: Main push / PR
 on:
   push:
     branches: [ main ]
-
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
 
 concurrency:
   group: main
   cancel-in-progress: true
 
-
-
 jobs:
   test:
-    if: "!startsWith(github.event.head_commit.message, 'bump:')"
     uses: ./.github/workflows/run-tests-job.yml
   bump:
-    if: "!startsWith(github.event.head_commit.message, 'bump:')"
     needs: test
     runs-on: ubuntu-latest
     steps:
