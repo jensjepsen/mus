@@ -72,7 +72,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
         
 
         func_map = functions_map(functions)
-        async def invoke_function(func_name: str, input: t.Dict[str, t.Any]):
+        async def invoke_function(func_name: str, input: t.Mapping[str, t.Any]):
             result = await func_map[func_name](**input)
             if not is_tool_return_value(result):
                 result = json.dumps(result)
