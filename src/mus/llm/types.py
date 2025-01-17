@@ -48,7 +48,7 @@ History = t.List[t.Union["Delta", "Query"]]
 class ToolUse:
     id: str
     name: str
-    input: t.Dict[str, t.Any]
+    input: t.Mapping[str, t.Any]
 
 @dataclass
 class ToolResult:
