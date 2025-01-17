@@ -1,3 +1,10 @@
+## v0.3.8 (2025-01-17)
+
+### Fix
+
+- don't trigger main on bump
+- don't trigger main on bump
+
 ## v0.3.7 (2025-01-17)
 
 ### Fix
