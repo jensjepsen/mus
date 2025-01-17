@@ -45,4 +45,9 @@ jobs:
         format: markdown
         output: both
         badge: true
+        output: code-coverage.md
+    
+    - name: Add summary
+      run: cat code-coverage.md > $GITHUB_STEP_SUMMARY
+      
 
