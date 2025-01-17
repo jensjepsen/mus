@@ -3,7 +3,8 @@ name: Main push / PR
 on:
   push:
     branches: [ main ]
-    if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    tags-ignore: 
+      - v*
 
 concurrency:
   group: main
