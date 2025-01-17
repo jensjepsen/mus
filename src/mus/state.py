@@ -43,14 +43,17 @@ class StateManager:
         else:
             val = default_val
             state = State(val)
-        
+
         self.states[name] = state
         self.is_set.add(name)
         return state
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
-        return jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
+        result = jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
+        if not result:
+            raise ValueError("jsonpickle produced an empty result!")
+        return t.cast(str, result)
     
     def loads(self, data: str, **loads_kwargs) -> None:
-        decoded: t.Dict[str, t.Any] = jsonpickle.decode(data, **loads_kwargs)
+        decoded: t.Dict[str, t.Any] = t.cast(t.Dict[str, t.Any], jsonpickle.decode(data, **loads_kwargs))
         self.states = {name: State.from_dict(val) for name, val in decoded.items()}

@@ -7,7 +7,7 @@ from ..functions import get_schema
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
     if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"):
+        if definition := func.__metadata__.get("definition"): # type: ignore
             return definition
     if not func.__doc__:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
@@ -204,7 +204,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
                     )
                     if event.message.stop_reason == "tool_use":
                         for block in function_blocks:
-                            tool_use = ToolUse(id=block.id, name=block.name, input=block.input)
+                            tool_use = ToolUse(id=block.id, name=block.name, input=block.input) # type: ignore
                             yield Delta(content={
                                 "data": tool_use,
                                 "type": "tool_use"

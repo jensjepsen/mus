@@ -8,7 +8,7 @@ import json
 
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
-        func.__metadata__ = metadata
+        func.__metadata__ = metadata # type: ignore
         return func
     return decorator
 

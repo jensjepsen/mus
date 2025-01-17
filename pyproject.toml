@@ -36,6 +36,12 @@ version_files = [
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
 
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/__pycache__",
+]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

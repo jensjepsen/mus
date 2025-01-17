@@ -10,7 +10,7 @@ import json
 
 def func_to_tool(func: ToolCallableType):
     if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"):
+        if definition := func.__metadata__.get("definition"): # type: ignore
             return definition
     if not func.__doc__:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
@@ -45,9 +45,20 @@ def functions_for_llm(functions: t.List[ToolCallableType]):
     ]
 
 def file_to_image(file: File):
+    try:
+        type_, subtype = file.b64type.split("/", 1)
+    except ValueError:
+        raise ValueError(f"Invalid b64type: {file.b64type}, must be in format type/subtype")
+    if type_ != "image":
+        raise ValueError(f"Only supports image/[type], not: {file.b64type}")
+    elif subtype not in ["png", "jpeg"]:
+        raise ValueError(f"Only supports image/png and image/jpeg, not: {file.b64type}")
+    # now we know subtype is either png or jpeg, so we can use Literal
+    subtype = t.cast(t.Literal["png", "jpeg"], subtype)
+
     return bt.ContentBlockTypeDef(
         image=bt.ImageBlockTypeDef(
-            format=file.b64type.split("/", 1)[-1],
+            format=subtype,
             source=bt.ImageSourceTypeDef(
                 bytes=base64.b64decode(file.content)
             )
@@ -82,18 +93,33 @@ def query_to_messages(query: Query):
                 content=[parse_content(q)]
             )
 
+def parse_tool_content(c: t.Union[str, File]):
+    if isinstance(c, str):
+        return bt.ToolResultContentBlockOutputTypeDef({
+            "text": c
+        })
+    elif isinstance(c, File):
+        img = file_to_image(c)
+        if "image" in img:
+            return bt.ToolResultContentBlockTypeDef(
+                image=img["image"]
+            )
+        else:
+            raise ValueError("No image found")
+    else:
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+
 def tool_result_to_content(tool_result: ToolResult):
-    if isinstance(tool_result.content, str):
-        return [str_to_text_block(tool_result.content)]
-    elif isinstance(tool_result.content, File):
-        return [file_to_image(tool_result.content)]
-    elif isinstance(tool_result.content, list):
+    if isinstance(tool_result.content, list):
         return [
-            parse_content(c)
+            parse_tool_content(c)
             for c in tool_result.content
         ]
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+        return [
+            parse_tool_content(tool_result.content)
+        ]
+    
 
 def join_content(a: t.Union[t.List[bt.ContentBlockTypeDef], str], b: t.Union[t.List[bt.ContentBlockTypeDef], str]):
     if isinstance(a, str):
@@ -200,7 +226,7 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             top_p=top_p or NotGiven(),
             temperature=temperature or NotGiven(),
         """
-        args = dict(
+        args = bt.ConverseStreamRequestRequestTypeDef(
             modelId=model,
             messages=messages,
             inferenceConfig={ 
