@@ -34,15 +34,19 @@ class StateManager:
         self.is_set = set()
     
     def init(self, name: str, default_val: StateType=None) -> State[StateType]:
+        """
+        We check if a name is in states but not set by init, because it must then come from load, and should not be overwritten
+        """
         if name in self.states and not name in self.is_set:
-            s = self.states[name]
+            
+            state = self.states[name]
         else:
             val = default_val
-            s = State(val)
+            state = State(val)
         
-        self.states[name] = s
+        self.states[name] = state
         self.is_set.add(name)
-        return s
+        return state
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
         return jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
