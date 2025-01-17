@@ -49,6 +49,7 @@ jobs:
     - name: Add summary
       run: |
         cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+        echo "\n\n" >> $GITHUB_STEP_SUMMARY 
         cat md-report.md >> $GITHUB_STEP_SUMMARY
       
 
