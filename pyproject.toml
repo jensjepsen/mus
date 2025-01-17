@@ -15,16 +15,16 @@ requests = "^2.32.3"
 typeguard = "^4.4.1"
 sybil = {extras = ["pytest"], version = "^9.0.0"}
 pillow = "^11.0.0"
-pytest-asyncio = "^0.24.0"
 boto3 = "^1.35.95"
 boto3-stubs = {extras = ["bedrock-runtime"], version = "^1.35.95"}
 mypy-boto3-bedrock-runtime = "^1.35.93"
 jsonref = "^1.1.0"
 
-
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
 bump2version = "^1.0.1"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^6.0.0"
 
 [tool.commitizen]
 name = "cz_conventional_commits"

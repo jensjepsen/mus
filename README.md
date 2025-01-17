@@ -124,5 +124,6 @@ asyncio.run(main())
     - [ ] Bandit
     - [ ] commitzen
     - [ ] pyright
-
+- [ ] Allow passing stop sequences to llm
+- [ ] Add code coverage
 
