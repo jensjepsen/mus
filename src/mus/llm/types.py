@@ -27,6 +27,7 @@ class QueryStreamArgs(t.TypedDict, total=False):
     temperature: t.Optional[float]
     top_k: t.Optional[int]
     top_p: t.Optional[float]
+    stop_sequences: t.Optional[t.List[str]]
 
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     model: t.Required[MODEL_TYPE]

@@ -202,6 +202,7 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             top_k: t.Optional[int]=None,
             top_p: t.Optional[float]=None,
             temperature: t.Optional[float]=None,
+            stop_sequences: t.Optional[t.List[str]]=None,
             kwargs: t.Optional[StreamArgs]=None,
             no_stream: t.Optional[bool]=None
         ):
@@ -232,7 +233,8 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             inferenceConfig={ 
                 "maxTokens": max_tokens or 4096,
                 **({"temperature": temperature} if temperature else {}), # type: ignore
-                **({"topP": top_p} if top_p else {})
+                **({"topP": top_p} if top_p else {}),
+                **({"stopSequences": stop_sequences} if stop_sequences else {}),
             },
             **_kwargs
         )

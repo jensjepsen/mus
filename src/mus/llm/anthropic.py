@@ -157,6 +157,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             top_k: t.Optional[int]=None,
             top_p: t.Optional[float]=None,
             temperature: t.Optional[float]=None,
+            stop_sequences: t.Optional[t.List[str]]=None,
             kwargs: t.Optional[StreamArgs]=None,
             no_stream: t.Optional[bool]=False
         ):
@@ -180,6 +181,7 @@ class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
             messages=messages,
             top_k=top_k or NotGiven(),
             top_p=top_p or NotGiven(),
+            stop_sequences=stop_sequences or NotGiven(),
             temperature=temperature or NotGiven(),
             **_kwargs
         ) as response:
