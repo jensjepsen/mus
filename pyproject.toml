@@ -19,6 +19,7 @@ boto3 = "^1.35.95"
 boto3-stubs = {extras = ["bedrock-runtime"], version = "^1.35.95"}
 mypy-boto3-bedrock-runtime = "^1.35.93"
 jsonref = "^1.1.0"
+openai = "^1.61.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
