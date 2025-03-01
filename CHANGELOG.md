@@ -1,3 +1,10 @@
+## v0.5.2 (2025-03-01)
+
+### Fix
+
+- bump versions
+- move sybil to dev deps
+
 ## v0.5.1 (2025-03-01)
 
 ### Fix
