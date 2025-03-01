@@ -227,7 +227,7 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
             top_p=top_p or NotGiven(),
             temperature=temperature or NotGiven(),
         """
-        args = bt.ConverseStreamRequestRequestTypeDef(
+        args = bt.ConverseStreamRequestTypeDef(
             modelId=model,
             messages=messages,
             inferenceConfig={ 
