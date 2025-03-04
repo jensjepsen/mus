@@ -3,7 +3,7 @@ name = "mus"
 
 [tool.poetry]
 name = "mus"
-version = "0.5.2"
+version = "0.6.0"
 description = ""
 authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
 license = "MIT"
@@ -27,7 +27,7 @@ sybil = {extras = ["pytest"], version = "^9.0.0"}
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.5.2"
+version = "0.6.0"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",

@@ -1,3 +1,19 @@
+## v0.6.0 (2025-03-04)
+
+### Feat
+
+- optional dependencies
+- optional dependencies
+- optional dependencies
+- optional dependencies
+
+### Fix
+
+- update lockfile
+- update lockfile
+- update lockfile
+- update lockfile
+
 ## v0.5.2 (2025-03-01)
 
 ### Fix
