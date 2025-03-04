@@ -33,7 +33,7 @@ jobs:
     
     - name: Install Dependencies
       if: steps.cache.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root
+      run: poetry install --all-extras --no-interaction --no-root
     
     - name: Run tests
       run: poetry run python -m pytest --md-report --md-report-verbose 1 --md-report-output md-report.md --cov-report xml
