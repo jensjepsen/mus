@@ -8,6 +8,7 @@ description = ""
 authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+package-mode = true
 
 [tool.poetry.dependencies]
 python = "^3.12"
