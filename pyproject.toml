@@ -54,11 +54,11 @@ exclude_also = [
     ]
 
 [project.optional-dependencies]
-bedrock = ["boto3=^1.35.95", "boto3-stubs[bedrock-runtime=^1.35.95"]
-anthropic = ["boto3^=1.35.95", "boto3-stubs[anthropic-runtime=^1.35.95"]
-images = ["pillow=^11.0.0"]
-cli = ["typer=^0.13.0"]
-openai = ["openai=^1.61.1"]
+bedrock = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime(>=1.35.95,<2.0.0)]"]
+anthropic  = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[anthropic-runtime(>=1.35.95,<2.0.0)]"]
+images  = ["pillow(>=11.0.0,<12.0.0)"]
+cli  = ["typer(>=0.13.0,<0.14.0)"]
+openai  = ["openai(>=1.61.1,<2.0.0)"]
 
 [build-system]
 requires = ["poetry-core"]
