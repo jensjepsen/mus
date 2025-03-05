@@ -2,7 +2,7 @@
 
 A small for fun library to play around with tool use in LLMs
 
-Currently supports the Anthropic Claude family of models on AWS Bedrock, through the `anthropic[bedrock]` package.
+Currently supports the Bedrock, Anthropic and OpenAI API's.
 
 ## Installation
 ```bash
