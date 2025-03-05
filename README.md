@@ -6,7 +6,7 @@ Currently supports the Anthropic Claude family of models on AWS Bedrock, through
 
 ## Installation
 ```bash
-python -m pip install git+https://github.com/jensjepsen/mus.git
+python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/download/vX.X.X/mus-X.X.X-py3-none-any.whl"
 ```
 
 ## Usage
