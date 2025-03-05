@@ -1,10 +1,7 @@
 import typing as t
 import pydantic
-from anthropic import types as at
-from dataclasses import is_dataclass
 from .llm.types import ToolCallableType
 import jsonref
-import json
 
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
