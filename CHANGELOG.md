@@ -1,3 +1,9 @@
+## v0.6.4 (2025-03-05)
+
+### Fix
+
+- optional import of extra deps
+
 ## v0.6.3 (2025-03-05)
 
 ### Fix
