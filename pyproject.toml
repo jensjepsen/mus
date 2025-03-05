@@ -9,7 +9,7 @@ dependencies  = [
 
 [tool.poetry]
 name = "mus"
-version = "0.6.4"
+version = "0.6.5"
 description = ""
 authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
 license = "MIT"
@@ -39,7 +39,7 @@ sybil = {extras = ["pytest"], version = "^9.0.0"}
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.6.4"
+version = "0.6.5"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
