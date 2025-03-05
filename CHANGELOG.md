@@ -1,3 +1,9 @@
+## v0.6.3 (2025-03-05)
+
+### Fix
+
+- don't update optional deps
+
 ## v0.6.2 (2025-03-05)
 
 ### Fix
