@@ -1,13 +1,20 @@
 import urllib3
 import requests
-import urllib3.contrib.emscripten.fetch
 from httpx import Headers, Response, Request, AsyncByteStream
 
 __all__ = ["get_requests_transport"]
 
+async def wait_for_streaming_ready():
+    """
+    Wait for the streaming transport to be ready.
+    Wrapped in function to allow for easier mocking in tests.
+    """
+    import urllib3.contrib.emscripten.fetch
+    return await urllib3.contrib.emscripten.fetch.wait_for_streaming_ready()
+
 async def get_requests_transport():
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    await urllib3.contrib.emscripten.fetch.wait_for_streaming_ready()
+    await wait_for_streaming_ready()
     return RequestsTransport()
 
 class Stream(AsyncByteStream):
