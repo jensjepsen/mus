@@ -1,3 +1,9 @@
+## v0.7.0 (2025-03-09)
+
+### Feat
+
+- add reasoning support to bedrock
+
 ## v0.6.5 (2025-03-05)
 
 ### Fix
