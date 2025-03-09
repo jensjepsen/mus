@@ -59,6 +59,8 @@ class ToolResult:
 class DeltaText(t.TypedDict):
     type: t.Literal["text"]
     data: str
+    subtype: t.NotRequired[t.Literal["text", "reasoning"]]
+    metadata: t.NotRequired[t.Dict[str, t.Any]]
 
 class DeltaToolUse(t.TypedDict):
     type: t.Literal["tool_use"]

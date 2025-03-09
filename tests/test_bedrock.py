@@ -139,9 +139,80 @@ def test_deltas_to_messages():
     assert messages[2]['role'] == 'user'
     assert 'toolResult' in messages[2]['content'][0]
 
+def test_deltas_to_messages_with_reasoning():
+    deltas = [
+        Query(["User question"]),
+        # First delta with reasoning content
+        Delta(content={
+            "type": "text", 
+            "subtype": "reasoning",
+            "data": "Let me think about this problem step by step."
+        }),
+        # Second delta with more reasoning content
+        Delta(content={
+            "type": "text", 
+            "subtype": "reasoning",
+            "data": " First, I need to understand the context."
+        }),
+        # Regular text response after reasoning
+        Delta(content={"type": "text", "data": "Based on my analysis, the answer is..."})
+    ]
+    messages = deltas_to_messages(deltas)
+    assert len(messages) == 2
+    assert messages[0]['role'] == 'user'
+    assert messages[1]['role'] == 'assistant'
+    assert len(messages[1]['content']) == 2
+    assert messages[1]['content'][0]['reasoningContent']['reasoningText']['text'] == "Let me think about this problem step by step. First, I need to understand the context."
+    assert messages[1]['content'][1]['text'] == "Based on my analysis, the answer is..."
     
+def test_merge_messages_with_reasoning():
+    # Test merging messages with reasoning content
+    messages = [
+        {
+            'role': 'assistant', 
+            'content': [{
+                'reasoningContent': {
+                    'reasoningText': {
+                        'text': 'First reasoning part', 
+                        'signature': 'sig1'
+                    }
+                }
+            }]
+        },
+        {
+            'role': 'assistant', 
+            'content': [{
+                'reasoningContent': {
+                    'reasoningText': {
+                        'text': ' second reasoning part', 
+                        'signature': None
+                    }
+                }
+            }]
+        },
+        {
+            'role': 'assistant',
+            'content': [{'text': 'First text response'}]
+        },
+        {
+            'role': 'assistant',
+            'content': [{'text': ' continued text response'}]
+        }
+    ]
+    merged = merge_messages(messages)
+    assert len(merged) == 1
+    assert merged[0]['role'] == 'assistant'
     
+    # Check that we have two content blocks - one for reasoning and one for text
+    assert len(merged[0]['content']) == 2
     
+    # Check reasoning content was merged correctly
+    reasoning_block = merged[0]['content'][0]
+    assert reasoning_block['reasoningContent']['reasoningText']['text'] == 'First reasoning part second reasoning part'
+    assert reasoning_block['reasoningContent']['reasoningText']['signature'] == 'sig1'
+    
+    # Check text content was merged correctly
+    assert merged[0]['content'][1]['text'] == 'First text response continued text response'
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_stream(bedrock_llm):

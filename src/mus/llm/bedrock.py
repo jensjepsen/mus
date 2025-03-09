@@ -120,16 +120,32 @@ def tool_result_to_content(tool_result: ToolResult):
             parse_tool_content(tool_result.content)
         ]
     
+def has_reasoning_text(content: t.Union[bt.ContentBlockTypeDef, str]):
+    if isinstance(content, str):
+        return False
+    elif "reasoningContent" in content and "reasoningText" in content["reasoningContent"]:
+        return True
+    return False
 
 def join_content(a: t.Union[t.List[bt.ContentBlockTypeDef], str], b: t.Union[t.List[bt.ContentBlockTypeDef], str]):
     if isinstance(a, str):
         a = [str_to_text_block(a)]
     if isinstance(b, str):
         b = [str_to_text_block(b)]
-    if "text" in a[0] and "text" in b[0]:
-        return [bt.ContentBlockTypeDef({
-            "text": a[0]["text"] + b[0]["text"]
+    if "text" in a[-1] and "text" in b[0]:
+        return a[:-1] + [bt.ContentBlockTypeDef({
+            "text": a[-1]["text"] + b[0]["text"]
         })]
+    if has_reasoning_text(a[-1]) and has_reasoning_text(b[0]):
+        return a[:-1] + [bt.ContentBlockTypeDef({
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": a[-1]["reasoningContent"]["reasoningText"]["text"] + b[0]["reasoningContent"]["reasoningText"]["text"], # type: ignore
+                    "signature": a[-1]["reasoningContent"]["reasoningText"]["signature"] or b[0]["reasoningContent"]["reasoningText"]["signature"], # type: ignore
+                }
+            }
+        })]
+
     return a + b
 
 def merge_messages(messages: t.List[bt.MessageTypeDef]):
@@ -146,13 +162,33 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text":
+            if delta.content["type"] == "text" and delta.content.get("subtype", None) == "reasoning":
+                metadata = delta.content.get("metadata", {})
+                messages.append(bt.MessageTypeDef(
+                    role="assistant",
+                    content=[
+                        bt.ContentBlockTypeDef(
+                            reasoningContent=bt.ReasoningContentBlockTypeDef(**{
+                                **(
+                                    {
+                                        "reasoningText": bt.ReasoningTextBlockTypeDef(
+                                            text=delta.content["data"],
+                                            signature=metadata.get("signature", None)
+                                        )
+                                    } if not metadata.get("redactedContent", False)
+                                    else {}
+                                ),
+                                **({"redactedContent": metadata.get("redactedContent")} if metadata.get("redactedContent") else {})
+                            })
+                        )
+                    ]
+                ))
+            elif delta.content["type"] == "text":
                 messages.append(bt.MessageTypeDef(
                     role="assistant",
                     content=[str_to_text_block(delta.content["data"])]
                 ))
             elif delta.content["type"] == "tool_use":
-                
                 messages.append(bt.MessageTypeDef(
                     role="assistant",
                     content=[
@@ -183,9 +219,17 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
             messages.extend(query_to_messages(delta))
 
     return merge_messages(messages)
-                
+
+class reasoning_config(t.TypedDict):
+    type: t.Literal["enabled"]
+    budget_tokens: int
+
+class additionalModelRequestFields(t.TypedDict):
+    reasoning_config: t.Optional[reasoning_config]
+
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
+    additionalModelRequestFields: t.Optional[additionalModelRequestFields]
 
 
 class BedrockLLM(LLMClient[StreamArgs, str]):
@@ -255,6 +299,18 @@ class BedrockLLM(LLMClient[StreamArgs, str]):
                         yield Delta(content={
                             "type": "text",
                             "data": delta["text"]
+                        })
+                    if "reasoningContent" in delta:
+                        reasoning = delta["reasoningContent"]
+
+                        yield Delta(content={
+                            "type": "text",
+                            "data": reasoning.get("text", ""),
+                            "subtype": "reasoning",
+                            "metadata": {
+                                "signature": reasoning.get("signature", None),
+                                "redactedContent": reasoning.get("redactedContent", None)
+                            }
                         })
                     if "toolUse" in delta:
                         tu = delta["toolUse"]
