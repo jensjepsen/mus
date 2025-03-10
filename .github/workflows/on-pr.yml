@@ -1,0 +1,10 @@
+name: PR
+
+on:
+    pull_request:
+      types: [opened, synchronize, reopened]
+      branches: [ main ]
+
+jobs:
+    test:
+        uses: ./.github/workflows/run-tests-job.yml
