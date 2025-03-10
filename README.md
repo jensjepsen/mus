@@ -126,4 +126,10 @@ asyncio.run(main())
     - [ ] pyright
 - [X] Allow passing stop sequences to llm
 - [X] Add code coverage
+- [ ] Pyodide patching
+    - [ ] Anthropic
+    - [ ] OpenAI
+    - [ ] Bedrock
+    - [ ] A single method to patch everything
+    - [ ] Add tests that actually use pyodide?
 
