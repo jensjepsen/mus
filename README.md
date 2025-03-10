@@ -132,4 +132,5 @@ asyncio.run(main())
     - [ ] Bedrock
     - [ ] A single method to patch everything
     - [ ] Add tests that actually use pyodide?
+- [ ] Add pyodide example page
 
