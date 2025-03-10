@@ -133,4 +133,5 @@ asyncio.run(main())
     - [ ] A single method to patch everything
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
+- [ ] Remove need for using a wrapper client when passing clients to llm
 
