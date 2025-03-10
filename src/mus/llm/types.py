@@ -10,15 +10,12 @@ import base64
 
 from ..types import DataClass
 
-if t.TYPE_CHECKING:
-    from anthropic import AnthropicBedrock, Anthropic
-
 @t.runtime_checkable
 class TypedDictLike(t.Protocol):
     def __getitem__(self, key: str, /) -> object:
         ...
 
-LLM_CLIENTS = t.Union["Anthropic", "AnthropicBedrock", "LLMClient"]
+CLIENT_TYPE = t.TypeVar("CLIENT_TYPE")
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
 
@@ -38,10 +35,14 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
 
-class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
+class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
+    @abstractmethod 
+    def __init__(self, client: t.Optional[CLIENT_TYPE]=None) -> None:
+        ...
+    
     @abstractmethod
     def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.AsyncGenerator["Delta", None]:
-        pass
+        ...
 
 History = t.List[t.Union["Delta", "Query"]]
 

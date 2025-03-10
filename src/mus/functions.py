@@ -20,7 +20,7 @@ def remove_keys(obj: t.Any, keys: set):
     else:
         return obj
 
-def get_schema(name: str, fields: t.List[tuple[str, t.Type]]):
+def get_schema(name: str, fields: t.List[tuple[str, t.Type]]) -> t.Dict[str, object]:
     model_fields = {}
     for field_name, type in fields:
         try:

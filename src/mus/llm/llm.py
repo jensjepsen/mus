@@ -3,11 +3,9 @@ import logging
 import typing as t
 from textwrap import dedent
 
-from .types import Delta, LLMClient, QueryType, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage
+from .types import Delta, LLMClient, QueryType, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE
 from ..functions import functions_map
 from ..types import DataClass
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +49,11 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
 
-class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE]):
+class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
         *,
-        client: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE],
+        client: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
         client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
         model: MODEL_TYPE,
         **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]

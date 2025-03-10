@@ -1,12 +1,13 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant, LLMClientStreamArgs
 from ..functions import get_schema
 import base64
 
 from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
 from mypy_boto3_bedrock_runtime import type_defs as bt
 import json
+import boto3
 
 def func_to_tool(func: ToolCallableType):
     if hasattr(func, '__metadata__'):
@@ -231,58 +232,50 @@ class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
     additionalModelRequestFields: t.Optional[additionalModelRequestFields]
 
+STREAM_ARGS = StreamArgs
+MODEL_TYPE = str
+ALL_STREAM_ARGS = t.Union[StreamArgs]
 
-class BedrockLLM(LLMClient[StreamArgs, str]):
-    def __init__(self, client: BedrockRuntimeClient):
+class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
+    def __init__(self, client: t.Optional[BedrockRuntimeClient]=None):
+        if not client:
+            client = boto3.client("bedrock-runtime")
         self.client = client
 
-    async def stream(self, *,
-            prompt: t.Optional[str],
-            model: str,
-            history: t.List[t.Union[Delta, Query]],
-            functions: t.Optional[t.List[ToolCallableType]]=None,
-            function_choice: t.Optional[t.Literal["auto", "any"]]=None,
-            max_tokens: t.Optional[int]=4096,
-            top_k: t.Optional[int]=None,
-            top_p: t.Optional[float]=None,
-            temperature: t.Optional[float]=None,
-            stop_sequences: t.Optional[t.List[str]]=None,
-            kwargs: t.Optional[StreamArgs]=None,
-            no_stream: t.Optional[bool]=None
-        ):
-        _kwargs: dict[str, t.Any] = {
-            **(kwargs or {})
+    async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
+        extra_kwargs: dict[str, t.Any] = {
+            **(kwargs["kwargs"] or {})
         }
-        if functions:
-            _kwargs["toolConfig"] = {
+        if functions := kwargs.get("functions", None):
+            extra_kwargs["toolConfig"] = {
                 "tools": functions_for_llm(functions),
                 #**({"toolChoice": {function_choice: {}}} if function_choice else {})
             }
             
-        if prompt:
-            _kwargs["system"] = [{
+        if prompt := kwargs.get("prompt", None):
+            extra_kwargs["system"] = [{
                 "text": prompt
             }]
 
         
-        messages = deltas_to_messages(history)
+        messages = deltas_to_messages(kwargs.get("history"))
         """
         top_k=top_k or NotGiven(),
             top_p=top_p or NotGiven(),
             temperature=temperature or NotGiven(),
         """
         args = bt.ConverseStreamRequestTypeDef(
-            modelId=model,
+            modelId=kwargs.get("model"),
             messages=messages,
             inferenceConfig={ 
-                "maxTokens": max_tokens or 4096,
-                **({"temperature": temperature} if temperature else {}), # type: ignore
-                **({"topP": top_p} if top_p else {}),
-                **({"stopSequences": stop_sequences} if stop_sequences else {}),
+                "maxTokens": kwargs.get("max_tokens") or 4096,
+                **({"temperature": kwargs.get("temperature")} if kwargs.get("temperature", None) else {}), # type: ignore
+                **({"topP": kwargs.get("top_p")} if kwargs.get("top_p", None) else {}),
+                **({"stopSequences": kwargs.get("stop_sequences")} if kwargs.get("stop_sequences", None) else {}),
             },
-            **_kwargs
+            **extra_kwargs
         )
-        if not no_stream:
+        if not kwargs.get("no_stream", False):
             response = self.client.converse_stream(
                 **args
             )

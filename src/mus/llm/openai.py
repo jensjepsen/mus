@@ -115,8 +115,13 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Chat
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
 
-class OpenAILLM(LLMClient[StreamArgs, str]):
-    def __init__(self, client: openai.AsyncClient):
+STREAM_ARGS = StreamArgs
+MODEL_TYPE = str
+
+class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
+    def __init__(self, client: t.Optional[openai.AsyncClient]=None):
+        if not client:
+            client = openai.AsyncClient()
         self.client = client
 
     async def stream(self, *,
@@ -197,7 +202,8 @@ class OpenAILLM(LLMClient[StreamArgs, str]):
                     )
                     yield Delta(content={"type": "tool_use", "data": tool_use})
             
-            yield Delta(content={"type": "text", "data": ""}, usage={
-                "input_tokens": response.usage.prompt_tokens,
-                "output_tokens": response.usage.completion_tokens
-            })
+            if response.usage:
+                yield Delta(content={"type": "text", "data": ""}, usage={
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens
+                })

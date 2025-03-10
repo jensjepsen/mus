@@ -100,6 +100,23 @@ asyncio.run(main())
 ```
 
 
+## Contributing
+We use pipx, poetry and poethepoet.
+```bash
+python -m pip install pipx
+poetry install --all-extras
+```
+
+### Testing
+```bash
+poetry poe test
+```
+
+### Building
+```bash
+poetry build
+```
+
 ## TODO
 - [X] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
     - [X] Max tokens

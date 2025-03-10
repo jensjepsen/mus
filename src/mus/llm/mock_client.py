@@ -6,7 +6,7 @@ from collections import defaultdict
 class StreamArgs(t.TypedDict, total=False):
     pass
 
-class MockLLM(LLMClient[StreamArgs, str]):
+class MockLLM(LLMClient[StreamArgs, str, None]):
     def __init__(self, *args, **kwargs):
         self.responses: t.Dict[str, t.List[Delta]] = defaultdict(list)
 

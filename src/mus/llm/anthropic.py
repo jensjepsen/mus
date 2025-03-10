@@ -2,7 +2,7 @@ import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant, LLMClientStreamArgs
 from ..functions import get_schema
 
 def func_to_tool(func: ToolCallableType) -> at.ToolParam:
@@ -142,48 +142,42 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
 
+STREAM_ARGS = StreamArgs
+MODEL_TYPE = at.ModelParam
 
-class AnthropicLLM(LLMClient[StreamArgs, at.ModelParam]):
-    def __init__(self, client: t.Union[AsyncAnthropicBedrock, AsyncAnthropic]):
+
+class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]):
+    def __init__(self, client: t.Optional[t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]=None):
+        if not client:
+            client = AsyncAnthropic()
         self.client = client
 
-    async def stream(self, *,
-            prompt: t.Optional[str],
-            model: at.ModelParam,
-            history: t.List[t.Union[Delta, Query]],
-            functions: t.Optional[t.List[ToolCallableType]]=None,
-            function_choice: t.Optional[t.Literal["auto", "any"]]=None,
-            max_tokens: t.Optional[int]=4096,
-            top_k: t.Optional[int]=None,
-            top_p: t.Optional[float]=None,
-            temperature: t.Optional[float]=None,
-            stop_sequences: t.Optional[t.List[str]]=None,
-            kwargs: t.Optional[StreamArgs]=None,
-            no_stream: t.Optional[bool]=False
+    async def stream(self,
+        **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_ARGS, MODEL_TYPE]]
         ):
-        _kwargs: dict[str, t.Any] = {
+        extra_kwargs: dict[str, t.Any] = {
             **(kwargs or {})
         }
-        if functions:
-            _kwargs["tools"] = functions_for_llm(functions)
-            if function_choice:
-                _kwargs["tool_choice"] = {
+        if functions := kwargs.get("functions", None):
+            extra_kwargs["tools"] = functions_for_llm(functions)
+            if function_choice := kwargs.get("function_choice", None):
+                extra_kwargs["tool_choice"] = {
                     "type": function_choice
                 }
-        if prompt:
-            _kwargs["system"] = prompt
+        if prompt := kwargs.get("prompt", None):
+            extra_kwargs["system"] = prompt
 
         
-        messages = deltas_to_messages(history)
+        messages = deltas_to_messages(kwargs.get("history"))
         async with self.client.messages.stream(
-            max_tokens=max_tokens or 4096,
-            model=model,
+            max_tokens=kwargs.get("max_tokens", None) or 4096,
+            model=kwargs.get("model"),
             messages=messages,
-            top_k=top_k or NotGiven(),
-            top_p=top_p or NotGiven(),
-            stop_sequences=stop_sequences or NotGiven(),
-            temperature=temperature or NotGiven(),
-            **_kwargs
+            top_k=kwargs.get("top_k", None) or NotGiven(),
+            top_p=kwargs.get("top_p", None) or NotGiven(),
+            stop_sequences=kwargs.get("stop_sequences", None) or NotGiven(),
+            temperature=kwargs.get("temperature", None) or NotGiven(),
+            **extra_kwargs
         ) as response:
             function_blocks: t.List[at.ToolUseBlock] = []
             async for event in response:
