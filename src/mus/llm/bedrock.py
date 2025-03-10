@@ -244,7 +244,7 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
 
     async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
         extra_kwargs: dict[str, t.Any] = {
-            **(kwargs["kwargs"] or {})
+            **(kwargs.get("kwargs", None) or {})
         }
         if functions := kwargs.get("functions", None):
             extra_kwargs["toolConfig"] = {

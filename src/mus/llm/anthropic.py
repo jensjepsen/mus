@@ -156,7 +156,7 @@ class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicB
         **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_ARGS, MODEL_TYPE]]
         ):
         extra_kwargs: dict[str, t.Any] = {
-            **(kwargs or {})
+            **(kwargs.get("kwargs", None) or {})
         }
         if functions := kwargs.get("functions", None):
             extra_kwargs["tools"] = functions_for_llm(functions)
