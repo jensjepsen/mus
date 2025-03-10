@@ -113,7 +113,7 @@ asyncio.run(main())
 - [X] Abstract away underlying api message structure
 - [ ] Allow for trimming historic messages
 - [X] Return usage stats, such as tokens generated etc in `IterableResult`
-- [ ] OpenAI client
+- [X] OpenAI client
 - [X] Bedrock Converse client
 - [ ] Error handling
     - [ ] Handle errors from underlying sdks
@@ -124,6 +124,6 @@ asyncio.run(main())
     - [ ] Bandit
     - [ ] commitzen
     - [ ] pyright
-- [ ] Allow passing stop sequences to llm
-- [ ] Add code coverage
+- [X] Allow passing stop sequences to llm
+- [X] Add code coverage
 
