@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Annotated, List, Optional
 
-from src.mus.llm.anthropic import func_to_tool, dataclass_to_tool, functions_for_llm
+from mus.llm.anthropic import func_to_tool, dataclass_to_tool, functions_for_llm
 
 
 def sample_function(param1: str, param2: int) -> str:

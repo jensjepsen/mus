@@ -9,7 +9,7 @@ dependencies  = [
 
 [tool.poetry]
 name = "mus"
-version = "0.7.1"
+version = "0.7.0"
 description = ""
 authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
 license = "MIT"
@@ -43,7 +43,7 @@ sybil = {extras = ["pytest"], version = "^9.0.0"}
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.7.1"
+version = "0.7.0"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
@@ -82,5 +82,5 @@ build-backend = "poetry.core.masonry.api"
 #description = "Builds the type stubs for the project"
 
 [tool.poe.tasks.test]
-cmd = "python -m pytest"
+shell = "poetry run pytest"
 help = "Run the tests"

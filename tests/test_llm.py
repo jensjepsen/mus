@@ -5,10 +5,10 @@ from dataclasses import dataclass
 import anthropic.types as at
 from anthropic.lib.streaming import TextEvent, ContentBlockStopEvent
 
-from src.mus.llm import LLM
-from src.mus.llm.llm import IterableResult
-from src.mus.llm.types import Delta, ToolUse, ToolResult
-from src.mus.llm.anthropic import AnthropicLLM
+from mus.llm import LLM
+from mus.llm.llm import IterableResult
+from mus.llm.types import Delta, ToolUse, ToolResult
+from mus.llm.anthropic import AnthropicLLM
 
 class MockClient():
     def __init__(self):
@@ -115,7 +115,7 @@ async def test_llm_query_with_tool_use(llm, mock_client):
     assert isinstance(result[3].content["data"], ToolResult)
 
 @pytest.mark.asyncio
-@patch('src.mus.llm.LLM.query')
+@patch('mus.llm.LLM.query')
 async def test_llm_call(mock_query, llm):
     async def return_value():
         for d in [Delta(content={"data": "Test response", "type": "text"})]:
@@ -127,7 +127,7 @@ async def test_llm_call(mock_query, llm):
     assert (await result.string()) == "Test response"
 
 @pytest.mark.asyncio
-@patch('src.mus.llm.LLM.query')
+@patch('mus.llm.LLM.query')
 async def test_llm_fill(mock_query, llm):
     async def return_value():
         for d in [Delta(content={"data": "Processing", "type": "text"}), Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test", "field2": 123}, id="abc")})]:
@@ -139,7 +139,7 @@ async def test_llm_fill(mock_query, llm):
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
 @pytest.mark.asyncio
-@patch('src.mus.llm.LLM.query')
+@patch('mus.llm.LLM.query')
 async def test_llm_bot_decorator(mock_query, llm):
     async def return_value():
         for d in [Delta(content={"data": "Test response", "type": "text"})]:

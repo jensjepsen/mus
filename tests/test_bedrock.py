@@ -1,6 +1,6 @@
 import pytest
-from unittest.mock import Mock, AsyncMock
-from src.mus.llm.bedrock import (
+from unittest.mock import Mock
+from mus.llm.bedrock import (
     BedrockLLM,
     func_to_tool,
     dataclass_to_tool,
@@ -14,7 +14,7 @@ from src.mus.llm.bedrock import (
     merge_messages,
     deltas_to_messages,
 )
-from src.mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
 from dataclasses import dataclass
 import base64
 import json

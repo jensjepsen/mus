@@ -8,14 +8,14 @@ from httpx import Headers, Response, Request, URL
 import urllib3.contrib
 
 
-from src.mus.pyodide.httpx import get_requests_transport, RequestsTransport, Stream
+from mus.pyodide.httpx import get_requests_transport, RequestsTransport, Stream
 
 @pytest.fixture(autouse=True, scope="function")
 def mock_wait_for_streaming_ready():
     """Mock the wait_for_streaming_ready function."""
     wait_for_streaming_ready = AsyncMock()
     wait_for_streaming_ready.return_value = None
-    with patch("src.mus.pyodide.httpx.wait_for_streaming_ready", wait_for_streaming_ready):
+    with patch("mus.pyodide.httpx.wait_for_streaming_ready", wait_for_streaming_ready):
         yield wait_for_streaming_ready
 
 

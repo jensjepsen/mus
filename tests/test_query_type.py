@@ -1,4 +1,4 @@
-from src.mus.llm.types import Query, File, Assistant
+from mus.llm.types import Query, File, Assistant
 
 def test_query_text_plus_file():
     q = "Hello" + File(b64type="image/png", content="sadf")

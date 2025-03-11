@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Annotated
 
 # Import the functions to be tested
-from src.mus.functions import get_schema, functions_map
+from mus.functions import get_schema, functions_map
 
 # Test data
 def sample_function(param1: str, param2: int) -> str:

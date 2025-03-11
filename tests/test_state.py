@@ -1,5 +1,5 @@
 import pytest
-from src.mus.state import State, StateManager, Empty, encode_obj
+from mus.state import State, StateManager, Empty, encode_obj
 import jsonpickle
 
 @pytest.fixture
