@@ -9,7 +9,7 @@ dependencies  = [
 
 [tool.poetry]
 name = "mus"
-version = "0.7.0"
+version = "0.7.1"
 description = ""
 authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
 license = "MIT"
