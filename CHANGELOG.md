@@ -1,3 +1,9 @@
+## v0.7.3 (2025-03-14)
+
+### Fix
+
+- use threading for async in boto bedrock
+
 ## v0.7.2 (2025-03-11)
 
 ### Fix
