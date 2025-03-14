@@ -9,6 +9,43 @@ from mypy_boto3_bedrock_runtime import type_defs as bt
 import json
 import boto3
 
+import functools
+import anyio.to_thread
+
+P = t.ParamSpec("P")
+T = t.TypeVar("T")
+
+async def run_in_threadpool(func: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+    if kwargs:  # pragma: no cover
+        # run_sync doesn't accept 'kwargs', so bind them in here
+        func = functools.partial(func, **kwargs)
+    return await anyio.to_thread.run_sync(func, *args)
+
+
+class _StopIteration(Exception):
+    pass
+
+
+def _next(iterator: t.Iterator[T]) -> T:
+    # We can't raise `StopIteration` from within the threadpool iterator
+    # and catch it outside that context, so we coerce them into a different
+    # exception type.
+    try:
+        return next(iterator)
+    except StopIteration:
+        raise _StopIteration
+
+
+async def iterate_in_threadpool(
+    iterator: t.Iterable[T],
+) -> t.AsyncIterator[T]:
+    as_iterator = iter(iterator)
+    while True:
+        try:
+            yield await anyio.to_thread.run_sync(_next, as_iterator)
+        except _StopIteration:
+            break
+
 def func_to_tool(func: ToolCallableType):
     if hasattr(func, '__metadata__'):
         if definition := func.__metadata__.get("definition"): # type: ignore
@@ -276,12 +313,10 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             **extra_kwargs
         )
         if not kwargs.get("no_stream", False):
-            response = self.client.converse_stream(
-                **args
-            )
+            response = await run_in_threadpool(self.client.converse_stream, **args)
             function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
             current_function = None
-            for event in response.get("stream"):
+            async for event in iterate_in_threadpool(response.get("stream")):
                 if "contentBlockStart" in event:
                     start = event["contentBlockStart"]["start"]
                     if "toolUse" in start:
@@ -344,9 +379,7 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                         usage=usage
                     )
         else:
-            response = self.client.converse(
-                **args
-            )
+            response = await run_in_threadpool(self.client.converse, **args)
 
             output = response.get("output")
             tools: t.List[Delta] = []
