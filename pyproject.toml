@@ -29,7 +29,8 @@ openai  = ["openai(>=1.61.1,<2.0.0)"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.14.0)"]
 poetry = ["partial_json_parser>=0.2.1.1.post5"]
-all = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anthropic[bedrock](>=0.42.0,<1.0.0)", "openai(>=1.61.1,<2.0.0)", "pillow(>=11.0.0,<12.0.0)", "typer(>=0.13.0,<0.14.0)"]
+sandbox = ["extism>=1.0.0"]
+all = ["boto3(>=1.35.95,<2.0.0)", "extism>=1.0.0", "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anthropic[bedrock](>=0.42.0,<1.0.0)", "openai(>=1.61.1,<2.0.0)", "pillow(>=11.0.0,<12.0.0)", "typer(>=0.13.0,<0.14.0)"]
 
 
 [tool.poetry.group.dev.dependencies]
@@ -40,6 +41,7 @@ pytest-cov = "^6.0.0"
 coverage = {extras = ["toml"], version = "^7.6.10"}
 pytest-md-report = "^0.6.3"
 sybil = {extras = ["pytest"], version = "^9.0.0"}
+
 
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -74,12 +76,15 @@ exclude_also = [
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-#[tool.poe.poetry_hooks]
-#pre_build = "build-types"
+[tool.poe.poetry_hooks]
+pre_build = "setup-extism"
 
 #[tool.poe.tasks.build-types]
 #command = "shell:echo bob"
 #description = "Builds the type stubs for the project"
+
+[tool.poe.tasks.setup-extism]
+shell = "curl -Ls https://raw.githubusercontent.com/extism/python-pdk/main/install.sh | bash"
 
 [tool.poe.tasks.test]
 shell = "poetry run pytest"
