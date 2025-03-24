@@ -150,5 +150,7 @@ poetry build
     - [ ] A single method to patch everything
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
-- [ ] Remove need for using a wrapper client when passing clients to llm
+- [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
+- [ ] Remove all interpreter code
+- [ ] Extism first class support w. tests
 

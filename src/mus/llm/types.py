@@ -90,11 +90,20 @@ class Delta:
         if self.content["type"] == "text":
             return self.content["data"]
         elif self.content["type"] == "tool_use":
-            return f"\nRunning tool: {self.content["data"].name}\n"
+            return f"\nRunning tool: {self.content['data'].name}\n"
         elif self.content["type"] == "tool_result":
             return f"\nTool result: {self.content['data']}\n"
         else:
             raise ValueError(f"Invalid delta type: {self.content['type']}")
+    
+    """
+    def __add__(self, other: "Delta") -> "Delta":
+        if self.content["type"] == "history" and other.content["type"] == "history":
+            return Delta(content={"type": "history", "data": self.content["data"] + other.content["data"]})
+        elif self.content["type"] == "text" and other.content["type"] == "text":
+            return Delta(content={"type": "text", "data": self.content["data"] + other.content["data"]})
+        else:
+    """
 
 @dataclass
 class File:

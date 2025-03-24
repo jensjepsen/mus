@@ -7,6 +7,8 @@ from .types import Delta, LLMClient, QueryType, LLMDecoratedFunctionType, LLMDec
 from ..functions import functions_map
 from ..types import DataClass
 
+import anyio
+
 logger = logging.getLogger(__name__)
 
 class IterableResult:
@@ -16,8 +18,7 @@ class IterableResult:
         self.has_iterated = False
         self.total = ""
         self.usage = Usage(input_tokens=0, output_tokens=0)
-        
-
+    
     async def __aiter__(self):
         async for msg in self.iterable:
             if msg.content["type"] == "text":
@@ -30,6 +31,7 @@ class IterableResult:
                 self.usage["input_tokens"] += msg.usage["input_tokens"]
                 self.usage["output_tokens"] += msg.usage["output_tokens"]
             if msg.content["type"] == "history":
+                # TODO: Merge deltas here
                 self.history.extend(msg.content["data"])
             else:
                 yield msg
