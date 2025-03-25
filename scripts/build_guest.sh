@@ -4,6 +4,5 @@
 
 pip install --target wasm_deps -e .
 echo "Building guest wasm module"
-ls
-ls src/mus/guest
+ls wasm_deps/
 PYTHONPATH=./wasm_deps extism-py src/mus/guest/main.py -o guest.wasm
