@@ -68,4 +68,4 @@ def stream(kwargs: str) -> str:
     return q_id
 
 with extism.Plugin("guest.wasm", wasi=True) as plugin:
-    plugin.call("greet", "Alice")
+    plugin.call("greet", "Hello")

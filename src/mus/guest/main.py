@@ -43,12 +43,12 @@ class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
 
 @extism.plugin_fn
 def greet():
-  name = extism.input_str()
+  query = extism.input_str()
   m = mus.Mus()
   c = ProxyClient()
   b = m.llm(client=c, model="amazon.nova-lite-v1:0")
   async def main():
-    async for delta in b("Hello, " + name):
+    async for delta in b(query):
       print(str(delta))
   result = run(main())
   
