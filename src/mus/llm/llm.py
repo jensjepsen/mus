@@ -7,8 +7,6 @@ from .types import Delta, LLMClient, QueryType, LLMDecoratedFunctionType, LLMDec
 from ..functions import functions_map
 from ..types import DataClass
 
-import anyio
-
 logger = logging.getLogger(__name__)
 
 class IterableResult:
