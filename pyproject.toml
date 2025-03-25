@@ -77,14 +77,14 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poe.poetry_hooks]
-pre_build = "setup-extism"
+pre_build = "build-guest"
 
-#[tool.poe.tasks.build-types]
-#command = "shell:echo bob"
-#description = "Builds the type stubs for the project"
+[tool.poe.tasks]
+    [[tool.poe.tasks.build-guest.sequence]]
+    shell = "curl -Ls https://raw.githubusercontent.com/extism/python-pdk/main/install.sh | bash"
 
-[tool.poe.tasks.setup-extism]
-shell = "curl -Ls https://raw.githubusercontent.com/extism/python-pdk/main/install.sh | bash"
+    [[tool.poe.tasks.build-guest.sequence]]
+    shell = "extism-py"
 
 [tool.poe.tasks.test]
 shell = "poetry run pytest"
