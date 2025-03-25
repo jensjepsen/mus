@@ -21,6 +21,7 @@ python = "^3.12"
 
 [tool.poetry.requires-plugins]
 poethepoet = "^0.33.0"
+poetry-plugin-bundle = "^1.7.0"
 
 [project.optional-dependencies]
 bedrock = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)"]

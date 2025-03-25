@@ -2,5 +2,5 @@
 
 # This script is used to build the guest wasm module
 
-cp -r src/mus wasm_deps/mus
+pip install -e --target wasm_deps .
 PYTHONPATH=./wasm_deps extism-py src/mus/guest.py -o guest.wasm
