@@ -31,8 +31,8 @@ openai  = ["openai(>=1.61.1,<2.0.0)"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.14.0)"]
 poetry = ["partial_json_parser>=0.2.1.1.post5"]
-sandbox = ["extism"]
-all = ["boto3(>=1.35.95,<2.0.0)", "extism", "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anthropic[bedrock](>=0.42.0,<1.0.0)", "openai(>=1.61.1,<2.0.0)", "pillow(>=11.0.0,<12.0.0)", "typer(>=0.13.0,<0.14.0)"]
+sandbox = ["extism>=1.0.4"]
+all = ["boto3(>=1.35.95,<2.0.0)", "extism>=1.0.4", "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anthropic[bedrock](>=0.42.0,<1.0.0)", "openai(>=1.61.1,<2.0.0)", "pillow(>=11.0.0,<12.0.0)", "typer(>=0.13.0,<0.14.0)"]
 
 
 [tool.poetry.group.dev.dependencies]
