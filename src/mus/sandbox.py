@@ -3,14 +3,13 @@ from mus import BedrockLLM
 import boto3
 import asyncio
 import jsonpickle
-import concurrent.futures
 import threading
 import queue
 import uuid
 import typing as t
 import asyncio
-
-client = BedrockLLM(boto3.client("bedrock-runtime", region_name="us-east-1"))
+import os
+from .llm.llm import LLMClient
 
 class Stop:
     pass
@@ -56,16 +55,22 @@ def poll_stream(q_id: str) -> str:
     else:
         return "[[STOP]]"
 
-@extism.host_fn(name="stream", namespace="host")
-def stream(kwargs: str) -> str:
-    kwargs = jsonpickle.loads(kwargs)
+def sandbox(client: LLMClient, code: str):
 
-    async def main(q_id, queue):
-        async for delta in client.stream(**kwargs):
-            queue.put(jsonpickle.dumps(delta))
-        queue.put(Stop())
-    q_id = run_coroutine_in_thread(main)
-    return q_id
+    @extism.host_fn(name="stream", namespace="host")
+    def stream(kwargs: str) -> str:
+        kwargs = jsonpickle.loads(kwargs)
 
-with extism.Plugin("guest.wasm", wasi=True) as plugin:
-    plugin.call("greet", "Hello")
+        async def main(q_id, queue):
+            async for delta in client.stream(**kwargs):
+                queue.put(jsonpickle.dumps(delta))
+            queue.put(Stop())
+        q_id = run_coroutine_in_thread(main)
+        return q_id
+
+    
+    guest_path = os.path.join(os.path.dirname(__file__), "guest.wasm")
+    if not os.path.exists(guest_path):
+        raise FileNotFoundError(f"Guest WASM file not found at {guest_path}")
+    with extism.Plugin(guest_path, wasi=True) as plugin:
+        plugin.call("run", code)

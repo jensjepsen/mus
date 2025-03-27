@@ -42,13 +42,17 @@ class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
       yield jsonpickle.loads(delta)
 
 @extism.plugin_fn
-def greet():
-  query = extism.input_str()
-  m = mus.Mus()
-  c = ProxyClient()
-  b = m.llm(client=c, model="amazon.nova-lite-v1:0")
-  async def main():
-    async for delta in b(query):
-      print(str(delta))
-  result = run(main())
+def run():
+  code = extism.input_str()
+  
+  code_with_run = f"""
+async def main():
+  {code}
+run(main())
+"""
+  client = ProxyClient()
+  globals = {
+    "client": client,
+  }
+  exec(code_with_run, globals)
   
