@@ -13,32 +13,19 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: '3.x'
+        python-version: '3.12'
     
-    - name: Install Poetry
+    - name: Install uv
       run: |
-        curl -sSL https://install.python-poetry.org | python3 -
+        python -m pip install uv
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     
-    - name: Configure Poetry
-      run: |
-        poetry config virtualenvs.in-project true
-    
-    - name: Cache Poetry virtualenv
-      uses: actions/cache@v4
-      id: cache
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-    
     - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: poetry install --all-extras --no-interaction --no-root
+      run: uv sync --all-extras
     
     - name: Run tests
-      run: poetry run pytest --md-report --md-report-verbose 1 --md-report-output md-report.md --cov-report xml
+      run: uv run pytest --md-report --md-report-verbose 1 --md-report-output md-report.md --cov-report xml
     
-
     - name: Code Coverage Summary Report
       uses: irongut/CodeCoverageSummary@v1.3.0
       with:
