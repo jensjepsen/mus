@@ -1,3 +1,12 @@
+## v0.7.5 (2025-03-28)
+
+### Fix
+
+- use uv
+- merge main
+- merge main
+- use uv
+
 ## v0.7.4 (2025-03-24)
 
 ### Fix
