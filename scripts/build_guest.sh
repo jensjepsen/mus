@@ -2,7 +2,9 @@
 
 # This script is used to build the guest wasm module
 
-pip install --target wasm_deps -e .
+python -m pip install --target wasm_deps -e .
+python -m pip install --target wasi_deps --platform any --platform wasi_0_0_0_wasm32 --python-version "3.12" --only-binary :all: --index-url https://benbrandt.github.io/wasi-wheels/ --extra-index-url https://pypi.org/simple --upgrade pydantic-core
+
 echo "Building guest wasm module"
 cp -r src/mus wasm_deps/mus
 ls wasm_deps
