@@ -1,26 +1,19 @@
 [project]
 name = "mus"
+version = "0.7.3"
+description = ""
+authors = [
+    {name="Jens Jepsen", email="jens.jepsen@gmail.com"}
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
 
 dependencies  = [
     "jsonpickle(>=3.4.2,<4.0.0)",
     "requests(>=2.32.3,<3.0.0)",
     "jsonref(>=1.1.0,<2.0.0)",
 ]
-
-[tool.poetry]
-name = "mus"
-version = "0.7.3"
-description = ""
-authors = ["Jens Jepsen <jens.jepsen@gmail.com>"]
-license = "MIT"
-readme = "README.md"
-package-mode = true
-
-[tool.poetry.dependencies]
-python = "^3.12"
-
-[tool.poetry.requires-plugins]
-poethepoet = "^0.33.0"
 
 [project.optional-dependencies]
 bedrock = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)"]
@@ -29,17 +22,20 @@ openai  = ["openai(>=1.61.1,<2.0.0)"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.14.0)"]
 poetry = ["partial_json_parser>=0.2.1.1.post5"]
+dev = [
+    "pytest(>=8.3.3,<9.0.0)",
+    "bump2version(>=1.0.1,<2.0.0)",
+    "pytest-asyncio(>=0.25.3,<1.0.0)",
+    "pytest-cov(>=6.0.0,<7.0.0)",
+    "coverage[toml](>=7.6.10,<8.0.0)",
+    "pytest-md-report(>=0.6.3,<1.0.0)",
+    "sybil[pytest](>=9.0.0,<10.0.0)",
+    "pyright(>=1.1.398,<2.0.0)",
+]
 all = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anthropic[bedrock](>=0.42.0,<1.0.0)", "openai(>=1.61.1,<2.0.0)", "pillow(>=11.0.0,<12.0.0)", "typer(>=0.13.0,<0.14.0)"]
 
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
-bump2version = "^1.0.1"
-pytest-asyncio = "^0.25.3"
-pytest-cov = "^6.0.0"
-coverage = {extras = ["toml"], version = "^7.6.10"}
-pytest-md-report = "^0.6.3"
-sybil = {extras = ["pytest"], version = "^9.0.0"}
+[tool.uv]
+native-tls = true
 
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -69,18 +65,3 @@ exclude_also = [
     "class .*\\bProtocol.*\\):",
     "@(abc\\.)?abstractmethod",
     ]
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-#[tool.poe.poetry_hooks]
-#pre_build = "build-types"
-
-#[tool.poe.tasks.build-types]
-#command = "shell:echo bob"
-#description = "Builds the type stubs for the project"
-
-[tool.poe.tasks.test]
-shell = "poetry run pytest"
-help = "Run the tests"

@@ -21,19 +21,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
       - name: Install Poetry
         run: |
-            curl -sSL https://install.python-poetry.org | python3 -
+            python -m pip install uv
             echo "$HOME/.local/bin" >> $GITHUB_PATH
-        
-      - name: Configure Poetry
-        run: |
-          poetry config virtualenvs.in-project true
-            
+              
       - name: Install Dependencies
-        run: poetry install --all-extras --no-interaction --no-root
+        run: uv sync --all-extras
     
       - name: Configure Git
         run: |
@@ -44,7 +40,7 @@ jobs:
         run: echo "CURRENT_VERSION=$(poetry version -s)" >> $GITHUB_ENV
       
       - name: Build project
-        run: poetry build
+        run: uv build
       
       - name: Release
         uses: softprops/action-gh-release@v2
