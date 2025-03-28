@@ -1,3 +1,5 @@
 {
-    "include": ["bob"]
+    "include": [
+        "src/**/*.py"
+    ],
 }
