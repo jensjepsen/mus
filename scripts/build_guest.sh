@@ -1,12 +1,9 @@
-#!/bin/bash
-
-# This script is used to build the guest wasm module
-
-curl -Ls https://raw.githubusercontent.com/extism/python-pdk/main/install.sh | bash
-
-python -m pip install --platform any --platform wasi_0_0_0_wasm32 --python-version "3.12" --only-binary :all: --target wasm_deps https://github.com/benbrandt/wasi-wheels/releases/download/pydantic-core%2Fv2.33.0/pydantic_core-2.33.0-cp312-cp312-wasi_0_0_0_wasm32.whl
+rm -r wasm_deps
+mkdir wasm_deps
+uv pip compile pyproject.toml --output-file wasm_deps/requirements.txt
+uvx --native-tls pip install --target wasm_deps --platform any --platform wasi_0_0_0_wasm32 --python-version "3.12" --only-binary :all: --index-url https://benbrandt.github.io/wasi-wheels/ --extra-index-url https://pypi.org/simple --upgrade -r wasm_deps/requirements.txt
 
 echo "Building guest wasm module"
 cp -r src/mus wasm_deps/mus
 ls wasm_deps
-PYTHONPATH=wasm_deps extism-py test.py -o guest.wasm
+PYTHONPATH=./wasm_deps extism-py src/mus/guest/main.py -o src/mus/guest.wasm
