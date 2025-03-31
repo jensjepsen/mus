@@ -1,3 +1,10 @@
+## v0.7.8 (2025-03-31)
+
+### Fix
+
+- Merge pull request #4 from jensjepsen/dependabot/pip/jsonpickle-gte-3.4.2-and-lt-5.0.0
+- Merge pull request #5 from jensjepsen/dependabot/pip/typer-gte-0.13.0-and-lt-0.16.0
+
 ## v0.7.7 (2025-03-30)
 
 ### Fix
