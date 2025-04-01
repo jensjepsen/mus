@@ -1,3 +1,5 @@
+curl -Ls https://raw.githubusercontent.com/extism/python-pdk/main/install.sh | bash
+
 rm -r wasm_deps
 mkdir wasm_deps
 uv pip compile pyproject.toml --output-file wasm_deps/requirements.txt
