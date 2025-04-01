@@ -5,7 +5,7 @@ import mus.llm.types
 import typing as t
 import jsonpickle
 import time
-def run(coro):
+def run_coro(coro):
     try:
         while True:
             try:
@@ -43,16 +43,19 @@ class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
 
 @extism.plugin_fn
 def run():
-  code = extism.input_str()
-  
+  code = extism.input_str().strip()
+  indented = code.split("\n")
+  code = "    " + "\n    ".join(indented)
   code_with_run = f"""
+import mus
 async def main():
-  {code}
-run(main())
+{code}
+run_coro(main())
 """
   client = ProxyClient()
   globals = {
     "client": client,
+    "run_coro": run_coro,
   }
   exec(code_with_run, globals)
   
