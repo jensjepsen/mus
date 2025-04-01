@@ -56,6 +56,7 @@ run_coro(main())
   globals = {
     "client": client,
     "run_coro": run_coro,
+    "print": print,
   }
   exec(code_with_run, globals)
   
