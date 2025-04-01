@@ -1,3 +1,48 @@
+## v0.8.0 (2025-04-01)
+
+### Feat
+
+- wasm sandbox
+- sandbox
+- sandbox
+- sandbox
+- sandobx
+- sandbox
+- sandbox
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- extism
+- sandbox
+- sandbox
+
+### Fix
+
+- update build script
+- add missing build script
+- use uv in pr
+- update pydantic version
+- sandbox
+- build
+- merge main
+- install pydantic core
+
 ## v0.7.8 (2025-03-31)
 
 ### Fix
