@@ -9,6 +9,7 @@ import uuid
 import typing as t
 import asyncio
 import os
+import inspect
 from .llm.llm import LLMClient
 
 class Stop:
@@ -55,22 +56,56 @@ def poll_stream(q_id: str) -> str:
     else:
         return "[[STOP]]"
 
-def sandbox(client: LLMClient, code: str):
+class SandboxableCallable(t.Protocol):
+    async def __call__(self, client: LLMClient) -> None:
+        ...
 
-    @extism.host_fn(name="stream", namespace="host")
-    def stream(kwargs: str) -> str:
-        kwargs = jsonpickle.loads(kwargs)
+class SandboxReturnCallable(t.Protocol):
+    def __call__(self, client: LLMClient) -> None:
+        ...
 
-        async def main(q_id, queue):
-            async for delta in client.stream(**kwargs):
-                queue.put(jsonpickle.dumps(delta))
-            queue.put(Stop())
-        q_id = run_coroutine_in_thread(main)
-        return q_id
+@t.overload
+def sandbox(callable: SandboxableCallable, /) -> SandboxReturnCallable:
+    ...
+
+@t.overload
+def sandbox(*, client: LLMClient, code: str) -> None:
+    ...
+
+def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optional[LLMClient]=None, code: t.Optional[str]=None) -> t.Optional[SandboxReturnCallable]:
+    if code and callable:
+        raise ValueError("Cannot provide both code and callable")
+    
+    if callable:
+        if code or client:
+            raise ValueError("Cannot provide code and client when passing a callable")
+        code = "\n".join([line.lstrip() for line in inspect.getsource(callable).split("\n")[2:]])
+    else:
+        if not code or not client:
+            raise ValueError("Must provide either both code and client or a callable")
 
     
-    guest_path = os.path.join(os.path.dirname(__file__), "guest.wasm")
-    if not os.path.exists(guest_path):
-        raise FileNotFoundError(f"Guest WASM file not found at {guest_path}")
-    with extism.Plugin(guest_path, wasi=True) as plugin:
-        plugin.call("run", code)
+    def inner(client: LLMClient):
+        @extism.host_fn(name="stream", namespace="host")
+        def stream(kwargs: str) -> str:
+            kwargs = jsonpickle.loads(kwargs)
+
+            async def main(q_id, queue):
+                async for delta in client.stream(**kwargs):
+                    queue.put(jsonpickle.dumps(delta))
+                queue.put(Stop())
+            q_id = run_coroutine_in_thread(main)
+            return q_id
+    
+        guest_path = os.path.join(os.path.dirname(__file__), "guest.wasm")
+        if not os.path.exists(guest_path):
+            raise FileNotFoundError(f"Guest WASM file not found at {guest_path}")
+        with extism.Plugin(guest_path, wasi=True) as plugin:
+            plugin.call("run", code)
+    
+    if callable:
+        # If a callable is provided, return another callable
+        return inner
+    else:
+        # If code is provided, run it directly
+        return inner(client)

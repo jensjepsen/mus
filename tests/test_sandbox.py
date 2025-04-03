@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from dataclasses import dataclass
 from mus.sandbox import sandbox
+from mus.llm.types import LLMClient
 
 
 class MockClient():
@@ -26,7 +27,18 @@ bot = m.llm(client=client, model="claude-3-5-sonnet-20241022")
 await bot("Test query").string()
 """
 
-    sandbox(mock_client, code)
+    sandbox(client=mock_client, code=code)
     
     assert mock_client.stream.called
+
+@pytest.mark.asyncio
+async def test_sandbox_as_decorator(mock_client):
+    @sandbox
+    async def decorated_func(client: LLMClient):
+        import mus
+        bot = mus.Mus().llm(client=client, model="claude-3-5-sonnet-20241022")
+        await (bot("Test query").string())
     
+    decorated_func(mock_client)
+
+    assert mock_client.stream.called
