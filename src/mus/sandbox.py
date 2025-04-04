@@ -11,6 +11,7 @@ import asyncio
 import os
 import inspect
 from .llm.llm import LLMClient
+import textwrap
 
 class Stop:
     pass
@@ -79,11 +80,13 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optiona
     if callable:
         if code or client:
             raise ValueError("Cannot provide code and client when passing a callable")
-        code = "\n".join([line.lstrip() for line in inspect.getsource(callable).split("\n")[2:]])
+        code = "\n".join(inspect.getsource(callable).split("\n")[2:])
     else:
         if not code or not client:
             raise ValueError("Must provide either both code and client or a callable")
 
+
+    code = textwrap.dedent(code)
     
     def inner(client: LLMClient):
         @extism.host_fn(name="stream", namespace="host")
