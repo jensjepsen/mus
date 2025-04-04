@@ -1,3 +1,16 @@
+## v0.9.0 (2025-04-04)
+
+### Feat
+
+- sandbox decorator
+
+### Fix
+
+- proper indent of sandboxed code
+- proper indent of sandboxed code
+- proper indent of sandboxed code
+- include print in sandbox
+
 ## v0.8.0 (2025-04-01)
 
 ### Feat
