@@ -4,7 +4,7 @@ import mus.llm
 import mus.llm.types
 import typing as t
 import jsonpickle
-import time
+
 def run_coro(coro):
     try:
         while True:
@@ -56,6 +56,7 @@ run_coro(main())
   globals = {
     "client": client,
     "run_coro": run_coro,
+    "print": print,
   }
   exec(code_with_run, globals)
   
