@@ -38,6 +38,8 @@ async def test_sandbox_as_decorator(mock_client):
         import mus
         bot = mus.Mus().llm(client=client, model="claude-3-5-sonnet-20241022")
         await (bot("Test query").string())
+        async for delta in bot("Test query"):
+            print(str(delta))
     
     decorated_func(mock_client)
 
