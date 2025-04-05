@@ -7,7 +7,7 @@ from anthropic.lib.streaming import TextEvent, ContentBlockStopEvent
 
 from mus.llm import LLM
 from mus.llm.llm import IterableResult
-from mus.llm.types import Delta, ToolUse, ToolResult, System
+from mus.llm.types import Delta, ToolUse, ToolResult, System, Query
 from mus.llm.anthropic import AnthropicLLM
 
 class MockClient():
@@ -179,6 +179,11 @@ async def test_dynamic_system_prompt():
 
     assert mock_client.stream.called
     assert mock_client.stream.call_args[1]['prompt'] == "Can be overwritten"
+    hist = mock_client.stream.call_args[1]['history']
+    assert len(hist) == 1
+    assert isinstance(hist[0], Query)
+    assert hist[0].val == ["Test query"]
+
 
 if __name__ == "__main__":
     pytest.main()

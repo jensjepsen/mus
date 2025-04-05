@@ -223,15 +223,13 @@ def test_system_plus_assistant():
     result = s + a
     assert isinstance(result, System)
     assert result.val == "System message"
-    assert isinstance(result.query, Query)
-    assert len(result.query.val) == 1
-    assert result.query.val[0] == "Assistant message"
+    assert isinstance(result.query, Assistant)
+    assert result.query == a
 
 def test_system_plus_string():
     s = System("System message")
     result = s + "User query"
     assert isinstance(result, System)
     assert result.val == "System message"
-    assert isinstance(result.query, Query)
-    assert len(result.query.val) == 1
-    assert result.query.val[0] == "User query"
+    assert isinstance(result.query, str)
+    assert result.query == "User query"
