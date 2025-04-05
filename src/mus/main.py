@@ -5,7 +5,6 @@ import typing as t
 import inspect
 import ast
 
-from .interpreter import DSLInterpreter
 from .llm import LLM
 from .llm.types import File
 from .state import StateManager, StateType, State
@@ -31,38 +30,8 @@ class Mus:
             "tool": self.tool
         }
 
-        self.interpreter = DSLInterpreter(functions=self.functions, variables={"bob": self})
-
     def state(self, name: str, default_val: StateType=None) -> State[StateType]:
         return self.state_manager.init(name, default_val)
-
-        
-
-    def interpret(self, **kwargs):
-        """Run an agent script or function"""
-        
-        functions = {
-            **self.functions,
-            **kwargs
-        }
-
-        self.interpreter.functions = functions
-
-        def execute(target: InterpretableCallable[InterpretableCallableWrappedParams]) -> t.Callable[InterpretableCallableWrappedParams, t.Any]:
-            func_source = inspect.getsource(target).split("\n", 1)[1]
-            first_stmt = ast.parse(func_source).body[0]
-            if isinstance(first_stmt, ast.FunctionDef):
-                func_contents = "\n".join(ast.unparse(stmt) for stmt in first_stmt.body)
-            else:
-                raise ValueError("Can only interpret functions")
-            def wrapper(*args: InterpretableCallableWrappedParams.args, **kwargs: InterpretableCallableWrappedParams.kwargs):
-                return self.interpreter.run(func_contents)
-            return wrapper
-        
-        return execute
-    
-    def run(self, code: str):
-        self.interpreter.run(code)
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
         return self.state_manager.dumps(**dumps_kwargs)
@@ -77,25 +46,3 @@ class Mus:
     def load(self, file: t.Union[pathlib.Path, str]):
         with open(file, "r") as f:
             self.loads(f.read())
-    
-def run_file(file: pathlib.Path, state_path: t.Optional[pathlib.Path]=None):
-    """Run an agent script from a file"""
-    if state_path:
-        if state_path.exists():
-            with open(state_path, "r") as f:
-                state = f.read()
-        else:
-            print(f"State file not found: {state_path}")
-            state = None
-    else:
-        state = None
-    bob = Mus()
-
-    if state:
-        bob.load(state)
-    with open(file, "r") as f:
-        bob.run(f.read())
-    if state_path:
-        new_state = bob.state_manager.dumps()
-        with open(state_path, "w") as f:
-            f.write(new_state)    
