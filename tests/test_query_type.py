@@ -9,6 +9,25 @@ def test_query_text_plus_file():
     assert q.val[0] == "Hello"
     assert q.val[1].content == "sadf"
 
+def test_query_dedent():
+    text = """\
+    Hello, this is a test.
+    Of some things."""
+    q = Query(text)
+    assert isinstance(q, Query)
+    assert len(q.val) == 1
+    assert isinstance(q.val[0], str)
+    assert q.val[0] == "Hello, this is a test.\nOf some things."
+
+    text2 = """\
+        Hello, again, this is a test.
+        Of some other things."""
+    q2 = Query(text2)
+    assert isinstance(q2, Query)
+    assert len(q2.val) == 1
+    assert isinstance(q2.val[0], str)
+    assert q2.val[0] == "Hello, again, this is a test.\nOf some other things."
+
 def test_query_text_plus_assistant():
     q = "Hello" + Assistant("I'm an assistant")
     assert isinstance(q, Query)

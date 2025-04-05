@@ -151,7 +151,6 @@ class ToolCallableType(t.Protocol):
     async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
 
-StructuredType = t.TypeVar("StructuredType", bound=DataClass)
 QuerySimpleTypeWithoutAssistant = t.Union[str, File]
 QuerySimpleType = t.Union[QuerySimpleTypeWithoutAssistant, "Assistant"]
 QueryIterableType = t.List[QuerySimpleType]
@@ -187,8 +186,7 @@ class Query:
             parsed_query = query
         else:
             raise ValueError(f"Invalid query type: {type(query)}")
-        dedented_query = [dedent(q) if isinstance(q, str) else q for q in parsed_query.val]
-        parsed_query = Query(val=dedented_query)
+        
         return parsed_query
 
     def __init__(self, val: t.Optional[QueryType]=None):
@@ -199,6 +197,8 @@ class Query:
 
     def set_val(self, val: QueryType):
         if isinstance(val, str) or isinstance(val, File) or isinstance(val, Assistant):
+            if isinstance(val, str):
+                val = dedent(val)
             self.val = t.cast(QueryIterableType, [val])
         elif isinstance(val, Query):
             self.val = val.val

@@ -21,11 +21,12 @@ def mock_client():
 
 @pytest.mark.asyncio
 async def test_sandbox(mock_client):
-    code = """import mus
-m = mus.Mus()
-bot = m.llm(client=client, model="claude-3-5-sonnet-20241022")
-await bot("Test query").string()
-"""
+    code = """\
+            import mus
+            m = mus.Mus()
+            bot = m.llm(client=client, model="claude-3-5-sonnet-20241022")
+            await bot("Test query").string()
+            """
 
     sandbox(client=mock_client, code=code)
     
