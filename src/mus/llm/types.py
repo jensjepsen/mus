@@ -148,15 +148,24 @@ class ToolCallableType(t.Protocol):
     #__metadata__: t.Optional[t.Dict[str, t.Any]]
     async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
-
-QuerySimpleTypeWithoutAssistant = t.Union[str, File]
-QuerySimpleType = t.Union[QuerySimpleTypeWithoutAssistant, "Assistant"]
+QuerySimpleType = t.Union[str, File, "Assistant"]
 QueryIterableType = t.List[QuerySimpleType]
 QueryType = t.Union[QuerySimpleType, QueryIterableType, "Query"]
+
 
 def is_query_type(val: t.Any) -> t.TypeGuard[QueryType]:
     return isinstance(val, str) or isinstance(val, File) or isinstance(val, Query) or (isinstance(val, list) and all(is_query_type(v) for v in val))
 
+class System:
+    def __init__(self, text: str, query: t.Optional[QueryType]=None):
+        self.val = text
+        self.query: t.Optional[QueryType] = query
+    
+    def __add__(self, other: t.Union[QueryType, "System"]):
+        if isinstance(other, System):
+            return System(self.val + other.val)
+        return System(self.val, other)
+    
 class Assistant:
     def __init__(self, text: str):
         self.val = text

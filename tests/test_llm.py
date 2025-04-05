@@ -7,7 +7,7 @@ from anthropic.lib.streaming import TextEvent, ContentBlockStopEvent
 
 from mus.llm import LLM
 from mus.llm.llm import IterableResult
-from mus.llm.types import Delta, ToolUse, ToolResult
+from mus.llm.types import Delta, ToolUse, ToolResult, System
 from mus.llm.anthropic import AnthropicLLM
 
 class MockClient():
@@ -166,6 +166,19 @@ async def test_iterable_result():
     result = IterableResult(return_value())
     
     assert await result.string() == "HelloRunning tool: test_toolTool applied"
+
+@pytest.mark.asyncio
+async def test_dynamic_system_prompt():
+    mock_client = MagicMock()
+    mock_client.stream.return_value.__aenter__.return_value = iter([
+        Delta(content={"type": "text", "data": "Hello"}),
+    ])
+    llm = LLM("A system prompt", client=mock_client, model="claude-3-5-sonnet-20241022")
     
+    await llm(System("Can be overwritten") + "Test query").string()
+
+    assert mock_client.stream.called
+    assert mock_client.stream.call_args[1]['prompt'] == "Can be overwritten"
+
 if __name__ == "__main__":
     pytest.main()
