@@ -8,8 +8,6 @@ from textwrap import dedent
 import io
 import base64
 
-from ..types import DataClass
-
 @t.runtime_checkable
 class TypedDictLike(t.Protocol):
     def __getitem__(self, key: str, /) -> object:

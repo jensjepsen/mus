@@ -9,7 +9,6 @@ from .llm import LLM
 from .llm.types import File
 from .state import StateManager, StateType, State
 from .functions import tool
-from .types import InterpretableCallable, InterpretableCallableWrappedParams
 
 class Mus:
     def __init__(self):
