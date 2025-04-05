@@ -180,6 +180,6 @@ poetry build
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
 - [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
-- [ ] Remove all interpreter code
-- [ ] Extism first class support w. tests
+- [X] Remove all interpreter code
+- [X] Extism first class support w. tests
 
