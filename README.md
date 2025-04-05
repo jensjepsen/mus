@@ -77,11 +77,10 @@ async def main():
         # The return value of the function will be the query for the bot
         # we can use the System class to add a system prompt to the bot,
         # making it dynamic
-        return System(f"""\
-                        You're really good at writing haikus. Current date is {datetime.datetime.now().isoformat()}
-                    """) + f"""\
-                        Write a nice haiku about this topic: {topic}
-                    """
+        return (
+            System(f"You're really good at writing haikus. Current date is {datetime.datetime.now().isoformat()}")
+            + f"Write a nice haiku about this topic: {topic}"
+        )
 
     async for msg in haiku_bot("dogs"):
         print(msg)
