@@ -127,7 +127,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             return IterableResult(_q)
     
     async def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True):
+        async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True): # type: ignore
             if msg.content["type"] == "tool_use":
                 return structure(**(msg.content["data"].input))
         else:
@@ -136,7 +136,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
-            async for msg in self.query(query, functions=[function], function_choice="any", no_stream=True):
+            async for msg in self.query(query, functions=[function], function_choice="any", no_stream=True): # type: ignore
                 if msg.content["type"] == "tool_use":
                     return await function(**(msg.content["data"].input))
             else:

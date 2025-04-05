@@ -11,6 +11,7 @@ import asyncio
 import os
 import inspect
 from .llm.llm import LLMClient
+from .llm.types import LLMClientStreamArgs
 import textwrap
 
 class Stop:
@@ -91,10 +92,10 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optiona
     def inner(client: LLMClient):
         @extism.host_fn(name="stream", namespace="host")
         def stream(kwargs: str) -> str:
-            kwargs = jsonpickle.loads(kwargs)
+            unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs)) # by design, this should be a valid LLMClientStreamArgs
 
             async def main(q_id, queue):
-                async for delta in client.stream(**kwargs):
+                async for delta in client.stream(**unpickled_kwargs):
                     queue.put(jsonpickle.dumps(delta))
                 queue.put(Stop())
             q_id = run_coroutine_in_thread(main)
@@ -111,4 +112,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optiona
         return inner
     else:
         # If code is provided, run it directly
+        if not client:
+            raise ValueError("Argument 'client' must be provided when passing argument 'code'")
+
         return inner(client)

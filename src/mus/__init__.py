@@ -1,3 +1,4 @@
+from .main import Mus
 from .llm.types import File, Query, ToolUse, ToolResult, Assistant
 from .llm.llm import IterableResult
 try:
