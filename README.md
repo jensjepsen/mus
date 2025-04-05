@@ -13,7 +13,7 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 ```python
 # import stuff and make a client
 import asyncio
-from mus import Mus, AnthropicLLM, File
+from mus import Mus, AnthropicLLM, File, System
 from anthropic import AsyncAnthropicBedrock
 m = Mus()
 client = AnthropicLLM(AsyncAnthropicBedrock(
@@ -24,6 +24,7 @@ client = AnthropicLLM(AsyncAnthropicBedrock(
 <!-- invisible-code-block: python
 # Setup the mock client for the examples
 from mus import ToolUse, ToolResult
+import datetime
 client.put_text("hello", "Hello")
 client.put_tool_use("What is seven times three?", ToolUse(id="calc", name="calculate", input={"expression": "7 * 3"}) )
 client.put_tool_result("What is seven times three?", ToolResult(id="calc", content="21"))
@@ -71,12 +72,16 @@ async def main():
 
 
     # Making a bot using a decorator
-    @m.llm("You write nice haikus", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    @m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
-        return f"""
-            Write a nice haiku about this topic: {topic}
-        """
+        # we can use the System class to add a system prompt to the bot,
+        # making it dynamic
+        return System(f"""\
+                        You're really good at writing haikus. Current date is {datetime.datetime.now().isoformat()}
+                    """) + f"""\
+                        Write a nice haiku about this topic: {topic}
+                    """
 
     async for msg in haiku_bot("dogs"):
         print(msg)
