@@ -211,7 +211,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                                     {
                                         "reasoningText": bt.ReasoningTextBlockTypeDef(
                                             text=delta.content["data"],
-                                            signature=metadata.get("signature", None)
+                                            signature=str(metadata.get("signature", None))
                                         )
                                     } if not metadata.get("redactedContent", False)
                                     else {}

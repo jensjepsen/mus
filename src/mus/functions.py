@@ -9,7 +9,7 @@ def tool(**metadata: t.Dict[str, t.Any]):
         return func
     return decorator
 
-def remove_keys(obj: t.Any, keys: set):
+def remove_keys(obj: t.Union[t.Dict[str, t.Any], t.Any], keys: set):
     if isinstance(obj, dict):
         return {
             key: remove_keys(val, keys)
@@ -33,7 +33,7 @@ def get_schema(name: str, fields: t.List[tuple[str, t.Type]]) -> t.Dict[str, obj
     dereffed = jsonref.replace_refs(schema)
     cleaned = remove_keys(dereffed, {"$defs"})
     
-    return cleaned
+    return cleaned # type: ignore
 
 def functions_map(functions: t.List[ToolCallableType]) -> t.Dict[str, ToolCallableType]:
     return {func.__name__: func for func in (functions or [])}

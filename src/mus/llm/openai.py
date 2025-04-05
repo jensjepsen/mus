@@ -1,8 +1,7 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Assistant, LLMClientStreamArgs
 from ..functions import get_schema
-import base64
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
@@ -82,7 +81,7 @@ def tool_result_to_content(tool_result: ToolResult) -> t.Union[str, t.List[t.Uni
     if isinstance(tool_result.content, list):
         return [parse_tool_content(c) for c in tool_result.content]
     else:
-        return parse_tool_content(tool_result.content)
+        return [parse_tool_content(tool_result.content)]
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[ChatCompletionMessageParam]:
     messages = []
@@ -124,39 +123,29 @@ class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             client = openai.AsyncClient()
         self.client = client
 
-    async def stream(self, *,
-            prompt: t.Optional[str],
-            model: str,
-            history: t.List[t.Union[Delta, Query]],
-            functions: t.Optional[t.List[ToolCallableType]]=None,
-            function_choice: t.Optional[t.Literal["auto", "any"]]=None,
-            max_tokens: t.Optional[int]=4096,
-            top_k: t.Optional[int]=None,
-            top_p: t.Optional[float]=None,
-            temperature: t.Optional[float]=None,
-            stop_sequences: t.Optional[t.List[str]]=None,
-            kwargs: t.Optional[StreamArgs]=None,
-            no_stream: t.Optional[bool]=None
-        ):
-        messages = deltas_to_messages(history)
-        if prompt:
+    async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
+        messages = deltas_to_messages(kwargs.get("history", []))
+        if prompt := kwargs.get("prompt", None):
             messages.insert(0, {"role": "system", "content": prompt})
 
-        tools = functions_for_llm(functions) if functions else NotGiven()
+        if functions := kwargs.get("functions", None):
+            tools = functions_for_llm(functions)
+        else:
+            tools = NotGiven()
         
-        stream = not no_stream
-        
+        stream = not kwargs.get("no_stream", False)
+        extra_kwargs = kwargs.get("kwargs", None) or {}
         response = await self.client.chat.completions.create(
-            model=model,
+            model=kwargs.get("model"),
             messages=messages,
             tools=tools,
-            tool_choice="auto" if function_choice == "auto" else NotGiven(),
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            stop=stop_sequences,
+            tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else NotGiven(),
+            max_tokens=kwargs.get("max_tokens"),
+            temperature=kwargs.get("temperature"),
+            top_p=kwargs.get("top_p"),
+            stop=kwargs.get("stop_sequences"),
             stream=stream,
-            **kwargs or {}
+            **extra_kwargs,
         )
 
         def is_stream(response) -> t.TypeGuard[openai.AsyncStream[ChatCompletionChunk]]:
@@ -174,9 +163,9 @@ class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                     for tool_call in delta.tool_calls:
                         if tool_call.function:
                             tool_use = ToolUse(
-                                id=tool_call.id,
-                                name=tool_call.function.name,
-                                input=json.loads(tool_call.function.arguments)
+                                id=str(tool_call.id),
+                                name=str(tool_call.function.name),
+                                input=json.loads(str(tool_call.function.arguments))
                             )
                             yield Delta(content={"type": "tool_use", "data": tool_use})
                 if chunk.usage:
