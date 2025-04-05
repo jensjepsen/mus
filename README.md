@@ -96,6 +96,35 @@ async def main():
     # While the return value is the result of the function
     print(result)
     assert result == 21 # and the return type of the function is preserved
+
+
+    # Sandboxing a bot
+    from mus import sandbox
+    @sandbox
+    async def sandbot(client):
+        """
+        All the code in this function will be sandboxed,
+        and run in a WASM interpreter.
+        """
+        import mus
+        m = mus.Mus()
+
+        async def run_some_code(code: str):
+            """
+            Runs python untrusted python code, which would be a pretty bad idea without sandboxing
+            """
+            return exec(code)
+
+
+        @m.llm(client=client, functions=[run_some_code], model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+        def danger_bot(task: str):
+            return "Generate python code to solve this task: " + task
+
+        async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
+            m.print(msg)
+        
+    sandbot(client)
+
 asyncio.run(main())
 ```
 

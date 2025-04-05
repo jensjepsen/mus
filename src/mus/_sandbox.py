@@ -1,6 +1,4 @@
 import extism
-from mus import BedrockLLM
-import boto3
 import asyncio
 import jsonpickle
 import threading

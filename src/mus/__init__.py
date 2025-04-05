@@ -1,17 +1,32 @@
 from .main import Mus
 from .llm.types import File, Query, ToolUse, ToolResult, Assistant
 from .llm.llm import IterableResult
+
+
+try:
+    import extism
+except ImportError:
+    pass
+else:
+    from ._sandbox import sandbox
+
 try:
     import anthropic
+except ImportError:
+    pass
+else:
     from .llm.anthropic import AnthropicLLM
-except ImportError:
-    pass
+
 try:
-    from .llm.bedrock import BedrockLLM
+    import boto3
 except ImportError:
     pass
+else:
+    from .llm.bedrock import BedrockLLM
+
 try:
     import openai
-    from .llm.openai import OpenAILLM
 except ImportError:
     pass
+else:
+    from .llm.openai import OpenAILLM

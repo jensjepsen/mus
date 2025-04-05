@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from dataclasses import dataclass
-from mus.sandbox import sandbox
+from mus import sandbox
 from mus.llm.types import LLMClient
 
 
