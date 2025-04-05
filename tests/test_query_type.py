@@ -1,4 +1,4 @@
-from mus.llm.types import Query, File, Assistant
+from mus.llm.types import Query, File, Assistant, System
 
 def test_query_text_plus_file():
     q = "Hello" + File(b64type="image/png", content="sadf")
@@ -206,3 +206,13 @@ def test_query_assistant_radd_with_assistant():
     result = a1 + a2
     assert isinstance(result, Assistant)
     assert result.val == "Assistant 1Assistant 2"
+
+def test_system_plus_query():
+    s = System("System message")
+    q = Query(["User query"])
+    result = s + q
+    assert isinstance(result, System)
+    assert result.val == "System message"
+    assert isinstance(result.query, Query)
+    assert len(result.query.val) == 1
+    assert result.query.val[0] == "User query"
