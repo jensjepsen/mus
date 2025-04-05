@@ -1,3 +1,10 @@
+## v0.9.3 (2025-04-05)
+
+### Fix
+
+- don't import sandbox functionality when in a sandbox
+- move sandbox to __init__.py and update readme with sandboxing
+
 ## v0.9.2 (2025-04-05)
 
 ### Fix
