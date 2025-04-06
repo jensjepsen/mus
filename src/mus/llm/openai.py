@@ -118,10 +118,11 @@ STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
 
 class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
-    def __init__(self, client: t.Optional[openai.AsyncClient]=None):
+    def __init__(self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient]=None):
         if not client:
             client = openai.AsyncClient()
         self.client = client
+        self.model = model
 
     async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
         messages = deltas_to_messages(kwargs.get("history", []))
@@ -136,7 +137,7 @@ class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
         stream = not kwargs.get("no_stream", False)
         extra_kwargs = kwargs.get("kwargs", None) or {}
         response = await self.client.chat.completions.create(
-            model=kwargs.get("model"),
+            model=self.model,
             messages=messages,
             tools=tools,
             tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else NotGiven(),

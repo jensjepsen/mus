@@ -14,11 +14,8 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 # import stuff and make a client
 import asyncio
 from mus import Mus, AnthropicLLM, File, System
-from anthropic import AsyncAnthropicBedrock
 m = Mus()
-client = AnthropicLLM(AsyncAnthropicBedrock(
-    aws_region="us-west-2",
-))
+model = AnthropicLLM(model="claude-3.5-sonnet")
 ```
 
 <!-- invisible-code-block: python
@@ -33,7 +30,7 @@ client.put_tool_result("What is seven times three?", ToolResult(id="calc", conte
 ```python
 async def main():
     # Configuring a bot
-    bot = m.llm("You are a nice bot", client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    bot = m.llm("You are a nice bot", model=model)
 
     # The response from the bot is a generator of deltas from the bot, so we can stream them as they come in
     async for msg in bot("hello"):
@@ -65,14 +62,14 @@ async def main():
         """
         return str(a + b)
 
-    math_bot = m.llm(functions=[sum], client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    math_bot = m.llm(functions=[sum], model=model)
 
     async for msg in math_bot("What is 10 + 7?"):
         m.print(msg)
 
 
     # Making a bot using a decorator
-    @m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0")
+    @m.llm("You write nice haikus", model=model)
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
         # we can use the System class to add a system prompt to the bot,
@@ -87,7 +84,7 @@ async def main():
 
 
     # Making a natural language function
-    @m.llm(client=client, model="anthropic.claude-3-5-sonnet-20241022-v2:0").fun
+    @m.llm(model=model).fun
     async def calculate(expression: str):
         """
         Calculate a mathematical expression
@@ -100,6 +97,35 @@ async def main():
     # While the return value is the result of the function
     print(result)
     assert result == 21 # and the return type of the function is preserved
+
+
+    # Sandboxing a bot
+    from mus import sandbox
+    @sandbox
+    async def sandbot(model):
+        """
+        All the code in this function will be sandboxed,
+        and run in a WASM interpreter.
+        """
+        import mus
+        m = mus.Mus()
+
+        async def run_some_code(code: str):
+            """
+            Runs python untrusted python code, which would be a pretty bad idea without sandboxing
+            """
+            return exec(code)
+
+
+        @m.llm(model=model, functions=[run_some_code])
+        def danger_bot(task: str):
+            return "Generate python code to solve this task: " + task
+
+        async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
+            m.print(msg)
+        
+    sandbot(model)
+
 asyncio.run(main())
 ```
 
@@ -155,6 +181,6 @@ poetry build
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
 - [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
-- [ ] Remove all interpreter code
-- [ ] Extism first class support w. tests
+- [X] Remove all interpreter code
+- [X] Extism first class support w. tests
 

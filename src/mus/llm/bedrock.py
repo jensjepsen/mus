@@ -274,10 +274,11 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
 class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
-    def __init__(self, client: t.Optional[BedrockRuntimeClient]=None):
+    def __init__(self, model: MODEL_TYPE, client: t.Optional[BedrockRuntimeClient]=None):
         if not client:
             client = boto3.client("bedrock-runtime")
         self.client = client
+        self.model = model
 
     async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
         extra_kwargs: dict[str, t.Any] = {
@@ -302,7 +303,7 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             temperature=temperature or NotGiven(),
         """
         args = bt.ConverseStreamRequestTypeDef(
-            modelId=kwargs.get("model"),
+            modelId=str(self.model),
             messages=messages,
             inferenceConfig={ 
                 "maxTokens": kwargs.get("max_tokens") or 4096,

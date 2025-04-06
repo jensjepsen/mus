@@ -55,16 +55,14 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
         *,
-        client: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
+        model: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
         client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
-        model: MODEL_TYPE,
         **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]
     ) -> None:
-        self.client = client
+        self.client = model
         self.prompt = prompt
         self.client_kwargs = client_kwargs
         self.default_args = kwargs
-        self.model = model
 
     
     async def query(self, query: t.Optional[QueryOrSystem]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
@@ -97,7 +95,6 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         async for msg in self.client.stream(
             prompt=dedented_prompt,
             history=history,
-            model=self.model,
             kwargs=self.client_kwargs,
             **kwargs
         ):

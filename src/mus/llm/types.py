@@ -25,7 +25,6 @@ class QueryStreamArgs(t.TypedDict, total=False):
     stop_sequences: t.Optional[t.List[str]]
 
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
-    model: t.Required[MODEL_TYPE]
     prompt: t.Optional[str]
     history: "History"
     functions: t.Optional[t.List["ToolCallableType"]]
@@ -35,7 +34,7 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
 
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     @abstractmethod 
-    def __init__(self, client: t.Optional[CLIENT_TYPE]=None) -> None:
+    def __init__(self, model: MODEL_TYPE, client: t.Optional[CLIENT_TYPE]=None) -> None:
         ...
     
     @abstractmethod
