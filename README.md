@@ -68,12 +68,20 @@ async def main():
 
 
     # Making a bot using a decorator
-    @m.llm("You write nice haikus", model=model)
+    @m.llm(model=model)
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
+<<<<<<< Updated upstream
         return f"""
             Write a nice haiku about this topic: {topic}
         """
+=======
+        # we can use the System class to add a system prompt to the bot, to make it dynamic
+        return (
+            System(f"You're really good at writing haikus. Current date is {datetime.datetime.now().isoformat()}")
+            + f"Write a nice haiku about this topic: {topic}"
+        )
+>>>>>>> Stashed changes
 
     async for msg in haiku_bot("dogs"):
         print(msg)
