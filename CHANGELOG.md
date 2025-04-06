@@ -1,3 +1,11 @@
+## v0.9.4 (2025-04-06)
+
+### Fix
+
+- simplify models and clients
+- simplify clients and models
+- simplify clients and models
+
 ## v0.9.3 (2025-04-05)
 
 ### Fix
