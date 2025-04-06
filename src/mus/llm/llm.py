@@ -3,7 +3,7 @@ import logging
 import typing as t
 from textwrap import dedent
 
-from .types import Delta, LLMClient, QueryType, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE
+from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE
 from ..functions import functions_map
 from ..types import DataClass
 
@@ -49,6 +49,8 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
 
+QueryOrSystem = t.Union[QueryType, System]
+
 class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
@@ -63,7 +65,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         self.default_args = kwargs
 
     
-    async def query(self, query: t.Optional[QueryType]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
+    async def query(self, query: t.Optional[QueryOrSystem]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         
@@ -76,10 +78,16 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
             return result
         parsed_query: t.Optional[Query] = None
+        prompt = self.prompt
         if query:
-            parsed_query = Query.parse(query)
+            if isinstance(query, System):
+                prompt = query.val
+                query = query.query
+
+            parsed_query = Query.parse(query) if query else None
+            
         
-        dedented_prompt = dedent(self.prompt) if self.prompt else None
+        dedented_prompt = dedent(prompt) if prompt else None
         
         if parsed_query:
             history = history + parsed_query.to_deltas()
@@ -107,14 +115,14 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         yield Delta(content={"type": "history", "data": history})
 
     @t.overload
-    def __call__(self, query: QueryType, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
+    def __call__(self, query: QueryOrSystem, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
         ...
 
     @t.overload
-    def __call__(self, query: t.Callable[LLMPromptFunctionArgs, QueryType], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
+    def __call__(self, query: t.Callable[LLMPromptFunctionArgs, QueryOrSystem], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
         ...
 
-    def __call__(self, query: t.Union[QueryType, t.Callable[LLMPromptFunctionArgs, QueryType]], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Union[IterableResult, t.Callable[LLMPromptFunctionArgs, IterableResult]]:
+    def __call__(self, query: t.Union[QueryOrSystem, t.Callable[LLMPromptFunctionArgs, QueryOrSystem]], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Union[IterableResult, t.Callable[LLMPromptFunctionArgs, IterableResult]]:
         if callable(query):
             a = self.bot(query)
             return a 
@@ -140,7 +148,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 raise ValueError("LLM did not invoke the function")
         return decorated_function
 
-    def bot(self, function: t.Callable[LLMPromptFunctionArgs, QueryType]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
+    def bot(self, function: t.Callable[LLMPromptFunctionArgs, QueryOrSystem]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
         def decorated(*args: LLMPromptFunctionArgs.args, **kwargs: LLMPromptFunctionArgs.kwargs):
             prompt = function(*args, **kwargs)
             return self(prompt)
