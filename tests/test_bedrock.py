@@ -25,7 +25,7 @@ def mock_bedrock_client():
 
 @pytest.fixture
 def bedrock_llm(mock_bedrock_client):
-    return BedrockLLM(mock_bedrock_client)
+    return BedrockLLM("a-model-id", mock_bedrock_client)
 
 def test_func_to_tool():
     def sample_func(param1: str, param2: int) -> str:

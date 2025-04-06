@@ -52,9 +52,9 @@ async def main():
 {code}
 run_coro(main())
 """
-  client = ProxyClient()
+  model = ProxyClient()
   globals = {
-    "client": client,
+    "model": model,
     "run_coro": run_coro,
     "print": print,
   }

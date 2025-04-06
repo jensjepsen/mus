@@ -16,9 +16,6 @@ class Stop:
     pass
 
 def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
-    """
-    Run a coroutine in a thread using asyncio.run (Python 3.7+)
-    """
     q_id = str(uuid.uuid4())
     q = queue.Queue()
     queues[q_id] = q
@@ -57,11 +54,11 @@ def poll_stream(q_id: str) -> str:
         return "[[STOP]]"
 
 class SandboxableCallable(t.Protocol):
-    async def __call__(self, client: LLMClient) -> None:
+    async def __call__(self, model: LLMClient) -> None:
         ...
 
 class SandboxReturnCallable(t.Protocol):
-    def __call__(self, client: LLMClient) -> None:
+    def __call__(self, model: LLMClient) -> None:
         ...
 
 @t.overload
@@ -69,31 +66,31 @@ def sandbox(callable: SandboxableCallable, /) -> SandboxReturnCallable:
     ...
 
 @t.overload
-def sandbox(*, client: LLMClient, code: str) -> None:
+def sandbox(*, model: LLMClient, code: str) -> None:
     ...
 
-def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optional[LLMClient]=None, code: t.Optional[str]=None) -> t.Optional[SandboxReturnCallable]:
+def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLMClient]=None, code: t.Optional[str]=None) -> t.Optional[SandboxReturnCallable]:
     if code and callable:
         raise ValueError("Cannot provide both code and callable")
     
     if callable:
-        if code or client:
+        if code or model:
             raise ValueError("Cannot provide code and client when passing a callable")
         code = "\n".join(inspect.getsource(callable).split("\n")[2:])
     else:
-        if not code or not client:
+        if not code or not model:
             raise ValueError("Must provide either both code and client or a callable")
 
 
     code = textwrap.dedent(code)
     
-    def inner(client: LLMClient):
+    def inner(model: LLMClient):
         @extism.host_fn(name="stream", namespace="host")
         def stream(kwargs: str) -> str:
             unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs)) # by design, this should be a valid LLMClientStreamArgs
 
             async def main(q_id, queue):
-                async for delta in client.stream(**unpickled_kwargs):
+                async for delta in model.stream(**unpickled_kwargs):
                     queue.put(jsonpickle.dumps(delta))
                 queue.put(Stop())
             q_id = run_coroutine_in_thread(main)
@@ -110,7 +107,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, client: t.Optiona
         return inner
     else:
         # If code is provided, run it directly
-        if not client:
+        if not model:
             raise ValueError("Argument 'client' must be provided when passing argument 'code'")
 
-        return inner(client)
+        return inner(model)

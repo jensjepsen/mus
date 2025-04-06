@@ -147,10 +147,11 @@ MODEL_TYPE = at.ModelParam
 
 
 class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]):
-    def __init__(self, client: t.Optional[t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]=None):
+    def __init__(self, model: MODEL_TYPE, client: t.Optional[t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]=None):
         if not client:
             client = AsyncAnthropic()
         self.client = client
+        self.model = model
 
     async def stream(self,
         **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_ARGS, MODEL_TYPE]]
@@ -171,7 +172,7 @@ class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicB
         messages = deltas_to_messages(kwargs.get("history"))
         async with self.client.messages.stream(
             max_tokens=kwargs.get("max_tokens", None) or 4096,
-            model=kwargs.get("model"),
+            model=self.model,
             messages=messages,
             top_k=kwargs.get("top_k", None) or NotGiven(),
             top_p=kwargs.get("top_p", None) or NotGiven(),

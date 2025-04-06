@@ -24,20 +24,20 @@ async def test_sandbox(mock_client):
     code = """\
             import mus
             m = mus.Mus()
-            bot = m.llm(client=client, model="claude-3-5-sonnet-20241022")
+            bot = m.llm(model=model)
             await bot("Test query").string()
             """
 
-    sandbox(client=mock_client, code=code)
+    sandbox(model=mock_client, code=code)
     
     assert mock_client.stream.called
 
 @pytest.mark.asyncio
 async def test_sandbox_as_decorator(mock_client):
     @sandbox
-    async def decorated_func(client: LLMClient):
+    async def decorated_func(model: LLMClient):
         import mus
-        bot = mus.Mus().llm(client=client, model="claude-3-5-sonnet-20241022")
+        bot = mus.Mus().llm(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
