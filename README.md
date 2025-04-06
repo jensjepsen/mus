@@ -11,16 +11,17 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 
 ## Usage
 ```python
-# import stuff and make a client
+# import stuff and make a model
 import asyncio
-from mus import Mus, AnthropicLLM, File
+from mus import Mus, AnthropicLLM, File, System
 m = Mus()
 model = AnthropicLLM(model="claude-3.5-sonnet")
 ```
 
 <!-- invisible-code-block: python
-# Setup the mock client for the examples
+# Setup the mock model for the examples
 from mus import ToolUse, ToolResult
+import datetime
 model.put_text("hello", "Hello")
 model.put_tool_use("What is seven times three?", ToolUse(id="calc", name="calculate", input={"expression": "7 * 3"}) )
 model.put_tool_result("What is seven times three?", ToolResult(id="calc", content="21"))
@@ -71,17 +72,11 @@ async def main():
     @m.llm(model=model)
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
-<<<<<<< Updated upstream
-        return f"""
-            Write a nice haiku about this topic: {topic}
-        """
-=======
         # we can use the System class to add a system prompt to the bot, to make it dynamic
         return (
             System(f"You're really good at writing haikus. Current date is {datetime.datetime.now().isoformat()}")
             + f"Write a nice haiku about this topic: {topic}"
         )
->>>>>>> Stashed changes
 
     async for msg in haiku_bot("dogs"):
         print(msg)
@@ -135,20 +130,23 @@ asyncio.run(main())
 
 
 ## Contributing
-We use pipx, poetry and poethepoet.
+We use pipx and uv.
+
+See uv docs on installation here: [uv installation](https://docs.astral.sh/uv/getting-started/installation/)
+
+### Install project:
 ```bash
-python -m pip install pipx
-poetry install --all-extras
+uv sync --all-extras
 ```
 
 ### Testing
 ```bash
-poetry poe test
+uv run pytest
 ```
 
 ### Building
 ```bash
-poetry build
+uv build
 ```
 
 ## TODO

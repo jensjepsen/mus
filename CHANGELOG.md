@@ -1,3 +1,16 @@
+## v0.10.0 (2025-04-06)
+
+### Feat
+
+- dynamic system prompt
+- dynamic system prompt
+- dynamic system prompt
+
+### Fix
+
+- tests
+- merge
+
 ## v0.9.4 (2025-04-06)
 
 ### Fix
