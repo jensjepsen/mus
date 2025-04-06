@@ -11,7 +11,7 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 
 ## Usage
 ```python
-# import stuff and make a client
+# import stuff and make a model
 import asyncio
 from mus import Mus, AnthropicLLM, File, System
 m = Mus()
@@ -19,12 +19,12 @@ model = AnthropicLLM(model="claude-3.5-sonnet")
 ```
 
 <!-- invisible-code-block: python
-# Setup the mock client for the examples
+# Setup the mock model for the examples
 from mus import ToolUse, ToolResult
 import datetime
-client.put_text("hello", "Hello")
-client.put_tool_use("What is seven times three?", ToolUse(id="calc", name="calculate", input={"expression": "7 * 3"}) )
-client.put_tool_result("What is seven times three?", ToolResult(id="calc", content="21"))
+model.put_text("hello", "Hello")
+model.put_tool_use("What is seven times three?", ToolUse(id="calc", name="calculate", input={"expression": "7 * 3"}) )
+model.put_tool_result("What is seven times three?", ToolResult(id="calc", content="21"))
 -->
 
 ```python

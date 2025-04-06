@@ -173,7 +173,7 @@ async def test_dynamic_system_prompt():
     mock_client.stream.return_value.__aenter__.return_value = iter([
         Delta(content={"type": "text", "data": "Hello"}),
     ])
-    llm = LLM("A system prompt", client=mock_client, model="claude-3-5-sonnet-20241022")
+    llm = LLM("A system prompt", model=mock_client)
     
     await llm(System("Can be overwritten") + "Test query").string()
 
