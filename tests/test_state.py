@@ -1,31 +1,31 @@
 import pytest
-from mus.state import State, StateManager, Empty, encode_obj
+from mus.state import StateReference, State, Empty, encode_obj
 import jsonpickle
 
 @pytest.fixture
 def state_manager():
-    return StateManager()
+    return State()
 
 def test_state_initialization():
-    state = State(42)
+    state = StateReference(42)
     assert state() == 42
 
 def test_state_update():
-    state = State(42)
+    state = StateReference(42)
     assert state(100) == 100
     assert state() == 100
 
 def test_state_empty():
-    state = State(42)
+    state = StateReference(42)
     assert state(Empty()) == 42
 
 def test_state_to_dict():
-    state = State(42)
+    state = StateReference(42)
     assert state.to_dict() == {"val": 42}
 
 def test_state_from_dict():
     data = {"val": 42}
-    state = State.from_dict(data)
+    state = StateReference.from_dict(data)
     assert state() == 42
 
 @pytest.mark.parametrize("value", [
@@ -36,7 +36,7 @@ def test_state_from_dict():
     None
 ])
 def test_state_with_different_types(value):
-    state = State(value)
+    state = StateReference(value)
     assert state() == value
     assert state.to_dict() == {"val": value}
 
@@ -109,7 +109,7 @@ def test_state_manager_dumps_loads_roundtrip(state_manager):
 
     dumped = state_manager.dumps()
     
-    new_state_manager = StateManager()
+    new_state_manager = State()
     new_state_manager.loads(dumped)
 
     assert new_state_manager.states["int_state"]() == 42

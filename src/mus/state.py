@@ -5,7 +5,7 @@ class Empty:
     ...
 
 StateType = t.TypeVar("StateType")
-class State(t.Generic[StateType]):
+class StateReference(t.Generic[StateType]):
     def __init__(self, val: StateType) -> None:
         self.val = val
 
@@ -19,8 +19,8 @@ class State(t.Generic[StateType]):
         return {"val": self.val}
     
     @staticmethod
-    def from_dict(data: t.Dict[str, t.Any]) -> "State":
-        return State(data["val"])
+    def from_dict(data: t.Dict[str, t.Any]) -> "StateReference":
+        return StateReference(data["val"])
 
 def encode_obj(obj: t.Any) -> t.Any:
     try:
@@ -28,12 +28,12 @@ def encode_obj(obj: t.Any) -> t.Any:
     except AttributeError:
         return obj
 
-class StateManager:
+class State:
     def __init__(self) -> None:
         self.states = {}
         self.is_set = set()
     
-    def init(self, name: str, default_val: StateType=None) -> State[StateType]:
+    def init(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
         """
         We check if a name is in states but not set by init, because it must then come from load, and should not be overwritten
         """
@@ -42,7 +42,7 @@ class StateManager:
             state = self.states[name]
         else:
             val = default_val
-            state = State(val)
+            state = StateReference(val)
 
         self.states[name] = state
         self.is_set.add(name)
@@ -56,4 +56,4 @@ class StateManager:
     
     def loads(self, data: str, **loads_kwargs) -> None:
         decoded: t.Dict[str, t.Any] = t.cast(t.Dict[str, t.Any], jsonpickle.decode(data, **loads_kwargs))
-        self.states = {name: State.from_dict(val) for name, val in decoded.items()}
+        self.states = {name: StateReference.from_dict(val) for name, val in decoded.items()}

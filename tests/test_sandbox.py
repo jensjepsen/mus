@@ -23,8 +23,7 @@ def mock_client():
 async def test_sandbox(mock_client):
     code = """\
             import mus
-            m = mus.Mus()
-            bot = m.llm(model=model)
+            bot = mus.LLM(model=model)
             await bot("Test query").string()
             """
 
@@ -37,7 +36,7 @@ async def test_sandbox_as_decorator(mock_client):
     @sandbox
     async def decorated_func(model: LLMClient):
         import mus
-        bot = mus.Mus().llm(model=model)
+        bot = mus.LLM(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))

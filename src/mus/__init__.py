@@ -1,6 +1,6 @@
-from .main import Mus
 from .llm.types import File, Query, ToolUse, ToolResult, Assistant, System
-from .llm.llm import IterableResult
+from .llm.llm import IterableResult, LLM
+from .state import State, StateReference
 import sys
 
 # If extism is already imported, we're probably in a WASM env already

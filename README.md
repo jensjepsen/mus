@@ -13,8 +13,8 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 ```python
 # import stuff and make a model
 import asyncio
-from mus import Mus, AnthropicLLM, File, System
-m = Mus()
+from mus import AnthropicLLM, File, System, LLM
+
 model = AnthropicLLM(model="claude-3.5-sonnet")
 ```
 
@@ -30,11 +30,11 @@ model.put_tool_result("What is seven times three?", ToolResult(id="calc", conten
 ```python
 async def main():
     # Configuring a bot
-    bot = m.llm("You are a nice bot", model=model)
+    bot = LLM("You are a nice bot", model=model)
 
     # The response from the bot is a generator of deltas from the bot, so we can stream them as they come in
     async for msg in bot("hello"):
-        m.print(msg)
+        print(msg, end="")
 
     # Or we can collect them all at once, by converting the response to a string
     full_response = await bot("What is 10 + 7?").string()
@@ -48,7 +48,7 @@ async def main():
             + File.image("tests/fixtures/cat.png")
             + " Do it as a poem <3"
         ):
-        m.print(msg)
+        print(msg, end="")
 
 
     # Making a bot that can call functions
@@ -62,14 +62,14 @@ async def main():
         """
         return str(a + b)
 
-    math_bot = m.llm(functions=[sum], model=model)
+    math_bot = LLM(functions=[sum], model=model)
 
     async for msg in math_bot("What is 10 + 7?"):
-        m.print(msg)
+        print(msg, end="")
 
 
     # Making a bot using a decorator
-    @m.llm(model=model)
+    @LLM(model=model)
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
         # we can use the System class to add a system prompt to the bot, to make it dynamic
@@ -79,11 +79,11 @@ async def main():
         )
 
     async for msg in haiku_bot("dogs"):
-        print(msg)
+        print(msg, end="")
 
 
     # Making a natural language function
-    @m.llm(model=model).fun
+    @LLM(model=model).fun
     async def calculate(expression: str):
         """
         Calculate a mathematical expression
@@ -107,7 +107,6 @@ async def main():
         and run in a WASM interpreter.
         """
         import mus
-        m = mus.Mus()
 
         async def run_some_code(code: str):
             """
@@ -116,12 +115,12 @@ async def main():
             return exec(code)
 
 
-        @m.llm(model=model, functions=[run_some_code])
+        @mus.LLM(model=model, functions=[run_some_code])
         def danger_bot(task: str):
             return "Generate python code to solve this task: " + task
 
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
-            m.print(msg)
+            print(msg, end="")
         
     sandbot(model)
 
