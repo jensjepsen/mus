@@ -96,6 +96,15 @@ def test_state_manager_multiple_states(state_manager):
     assert state2() == "world"
     assert state3() == [4, 5, 6]
 
+def test_state_manager_call_to_init(state_manager):
+    state1 = state_manager("state1", 42)
+    state2 = state_manager("state2", "hello")
+    state3 = state_manager("state3", [1, 2, 3])
+
+    assert state1() == 42
+    assert state2() == "hello"
+    assert state3() == [1, 2, 3]
+
 def test_state_manager_is_set(state_manager):
     state_manager.init("test", 42)
     assert "test" in state_manager.is_set

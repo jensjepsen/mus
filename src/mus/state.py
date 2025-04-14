@@ -47,6 +47,9 @@ class State:
         self.states[name] = state
         self.is_set.add(name)
         return state
+
+    def __call__(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
+        return self.init(name, default_val)
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
         result = jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
