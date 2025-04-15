@@ -1,11 +1,12 @@
 import typing as t
 import jsonpickle
+import pathlib
 
 class Empty:
     ...
 
 StateType = t.TypeVar("StateType")
-class State(t.Generic[StateType]):
+class StateReference(t.Generic[StateType]):
     def __init__(self, val: StateType) -> None:
         self.val = val
 
@@ -19,8 +20,8 @@ class State(t.Generic[StateType]):
         return {"val": self.val}
     
     @staticmethod
-    def from_dict(data: t.Dict[str, t.Any]) -> "State":
-        return State(data["val"])
+    def from_dict(data: t.Dict[str, t.Any]) -> "StateReference":
+        return StateReference(data["val"])
 
 def encode_obj(obj: t.Any) -> t.Any:
     try:
@@ -28,12 +29,12 @@ def encode_obj(obj: t.Any) -> t.Any:
     except AttributeError:
         return obj
 
-class StateManager:
+class State:
     def __init__(self) -> None:
         self.states = {}
         self.is_set = set()
     
-    def init(self, name: str, default_val: StateType=None) -> State[StateType]:
+    def init(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
         """
         We check if a name is in states but not set by init, because it must then come from load, and should not be overwritten
         """
@@ -42,11 +43,14 @@ class StateManager:
             state = self.states[name]
         else:
             val = default_val
-            state = State(val)
+            state = StateReference(val)
 
         self.states[name] = state
         self.is_set.add(name)
         return state
+
+    def __call__(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
+        return self.init(name, default_val)
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
         result = jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
@@ -54,6 +58,14 @@ class StateManager:
             raise ValueError("jsonpickle produced an empty result!")
         return t.cast(str, result)
     
+    def dump(self, file: t.Union[pathlib.Path, str], **dumps_kwargs: t.Any) -> None:
+        with open(file, "w") as f:
+            f.write(self.dumps(**dumps_kwargs))
+    
     def loads(self, data: str, **loads_kwargs) -> None:
         decoded: t.Dict[str, t.Any] = t.cast(t.Dict[str, t.Any], jsonpickle.decode(data, **loads_kwargs))
-        self.states = {name: State.from_dict(val) for name, val in decoded.items()}
+        self.states = {name: StateReference.from_dict(val) for name, val in decoded.items()}
+    
+    def load(self, file: t.Union[pathlib.Path, str]) -> None:
+        with open(file, "r") as f:
+            self.loads(f.read())

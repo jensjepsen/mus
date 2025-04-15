@@ -7,29 +7,17 @@ import ast
 
 from .llm import LLM
 from .llm.types import File
-from .state import StateManager, StateType, State
+from .state import StateReference, StateType, State
 from .functions import tool
 
-class Mus:
+class Musa:
     def __init__(self):
-        self.state_manager = StateManager()
+        self.state_manager = State()
         
-        self.llm = LLM
         self.tool = tool
         self.print = functools.partial(print, end="", flush=True)
 
-        self.functions = {
-            "llm": self.llm,
-            "print": self.print,
-            "range": range,
-            "input": input,
-            "File": File,
-            "state": self.state,
-            "sm": self.state_manager,
-            "tool": self.tool
-        }
-
-    def state(self, name: str, default_val: StateType=None) -> State[StateType]:
+    def state(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
         return self.state_manager.init(name, default_val)
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
