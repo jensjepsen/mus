@@ -1,5 +1,6 @@
 import typing as t
 import jsonpickle
+import pathlib
 
 class Empty:
     ...
@@ -57,6 +58,14 @@ class State:
             raise ValueError("jsonpickle produced an empty result!")
         return t.cast(str, result)
     
+    def dump(self, file: t.Union[pathlib.Path, str], **dumps_kwargs: t.Any) -> None:
+        with open(file, "w") as f:
+            f.write(self.dumps(**dumps_kwargs))
+    
     def loads(self, data: str, **loads_kwargs) -> None:
         decoded: t.Dict[str, t.Any] = t.cast(t.Dict[str, t.Any], jsonpickle.decode(data, **loads_kwargs))
         self.states = {name: StateReference.from_dict(val) for name, val in decoded.items()}
+    
+    def load(self, file: t.Union[pathlib.Path, str]) -> None:
+        with open(file, "r") as f:
+            self.loads(f.read())
