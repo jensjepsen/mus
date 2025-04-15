@@ -1,3 +1,15 @@
+## v0.11.0 (2025-04-15)
+
+### Feat
+
+- simplify llm and state classes
+- simplify llm and state
+- move state and llm from mus instance
+
+### Refactor
+
+- statemanager call to init
+
 ## v0.10.0 (2025-04-06)
 
 ### Feat
