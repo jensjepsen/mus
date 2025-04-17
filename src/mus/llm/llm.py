@@ -3,7 +3,7 @@ import logging
 import typing as t
 from textwrap import dedent
 
-from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE
+from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant
 from ..functions import functions_map
 from ..types import DataClass
 
@@ -92,6 +92,15 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         if parsed_query:
             history = history + parsed_query.to_deltas()
         
+        if parsed_query:
+            if isinstance(last := parsed_query.val[-1], Assistant):
+                # if the last part of the query is a prefill
+                # assistant message, with echo true, we send that as the
+                # first message, and then continue with the rest of the query
+                # this is helpful when doing structured generation
+                if last.echo:
+                    yield Delta(content={"type": "text", "data": last.val})
+
         async for msg in self.client.stream(
             prompt=dedented_prompt,
             history=history,
