@@ -9,4 +9,3 @@ class DataClass(t.Protocol):
     
     def __dataclass_fields__(self) -> t.Dict[str, t.Any]:
         ...
-

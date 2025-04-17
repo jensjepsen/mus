@@ -166,8 +166,9 @@ class System:
         return System(self.val, other)
     
 class Assistant:
-    def __init__(self, text: str):
+    def __init__(self, text: str, echo: bool=False):
         self.val = text
+        self.echo = echo
     
     def __add__(self, other: QueryType):
         if isinstance(other, Assistant):
