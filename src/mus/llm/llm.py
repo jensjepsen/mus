@@ -155,6 +155,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         elif strategy == "prefill":
             schema = to_schema(structure)
             first_prop = list(schema["schema"]["properties"].keys())[0]
+            query = Query.parse(query)
             agumented_query = (
                 query
                 + f"""

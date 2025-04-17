@@ -8,7 +8,7 @@ import json
 class FunctionSchema(t.TypedDict):
     name: str
     description: str
-    schema: t.Dict[str, object]
+    schema: t.Dict[str, t.Any]
 
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
@@ -40,7 +40,7 @@ def func_to_schema(func: ToolCallableType) -> FunctionSchema:
     )
     return p
 
-def schema_to_example(schema: t.Union[FunctionSchema, t.Dict[str, t.Any]]) -> t.Dict[str, object]:
+def schema_to_example(schema: t.Union[FunctionSchema, t.Dict[str, t.Any]]):
     if "schema" in schema:
         schema = schema.get("schema", {})
 
@@ -67,7 +67,7 @@ def dataclass_to_schema(dataclass) -> FunctionSchema:
     )
     return p    
 
-def typedict_to_schema(typed_dict: t.Type[t.TypedDict]) -> FunctionSchema:
+def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     if not typed_dict.__doc__:
         raise ValueError(f"TypedDict {typed_dict.__name__} is missing a docstring")
     if not hasattr(typed_dict, '__annotations__'):
@@ -80,12 +80,12 @@ def typedict_to_schema(typed_dict: t.Type[t.TypedDict]) -> FunctionSchema:
     )
     return p
 
-def to_schema(obj: t.Union[t.TypedDict, object, ToolCallableType]) -> FunctionSchema:
+def to_schema(obj: t.Union[dict, object, ToolCallableType]) -> FunctionSchema:
     if is_dataclass(obj):
         return dataclass_to_schema(obj)
     elif isinstance(obj, type) and t.is_typeddict(obj):
         return typedict_to_schema(obj)
-    elif callable(obj):
+    elif isinstance(obj, ToolCallableType):
         return func_to_schema(obj)
     else:
         raise ValueError(f"Unsupported type: {type(obj)}")
