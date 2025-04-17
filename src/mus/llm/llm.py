@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 
 from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant
-from ..functions import functions_map
+from ..functions import functions_map, to_schema, schema_to_example
 from ..types import DataClass
 
 logger = logging.getLogger(__name__)
@@ -140,12 +140,45 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
             return IterableResult(_q)
     
-    async def fill(self, query: QueryType, structure: t.Type[DataClass]):
-        async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True): # type: ignore
-            if msg.content["type"] == "tool_use":
-                return structure(**(msg.content["data"].input))
-        else:
-            raise ValueError("No structured response found")
+    async def fill(
+            self,
+            query: QueryType,
+            structure: t.Type[DataClass],
+            strategy: t.Literal["tool_use", "prefill"] = "tool_use",
+        ) -> DataClass:
+        if strategy == "tool_use":
+            async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True): # type: ignore
+                if msg.content["type"] == "tool_use":
+                    return structure(**(msg.content["data"].input))
+            else:
+                raise ValueError("No structured response found")
+        elif strategy == "prefill":
+            schema = to_schema(structure)
+            first_prop = list(schema["schema"]["properties"].keys())[0]
+            agumented_query = (
+                query
+                + f"""
+                Return a JSON object with that follows this structure:
+                <example>
+                    {schema_to_example(schema)}
+                </example>
+                """
+                + Assistant("""\
+                    ```
+                    {
+                        \"""" + first_prop + '": ', 
+                    echo=True)
+            )
+            result = (await self(agumented_query, stop_sequences=["```"]).string()).strip()
+            if result.startswith("```"):
+                result = result[3:]
+            if result.endswith("```"):
+                result = result[:-3]
+            try:
+                return structure(**json.loads(result))
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to decode JSON: {result}") from e
+
         
     
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):

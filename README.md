@@ -184,4 +184,5 @@ uv build
 - [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
 - [X] Remove all interpreter code
 - [X] Extism first class support w. tests
+- [ ] Add retries to fill 
 

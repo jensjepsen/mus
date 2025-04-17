@@ -147,6 +147,36 @@ async def test_llm_fill(mock_query, llm):
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
 @pytest.mark.asyncio
+async def test_llm_fill_strategy_prefill(mock_model):
+    
+        # below looks a little weird because the answer is prefilled, so it's missing the initial json
+    responses = [
+                Delta(
+                    content={
+                        "type": "text",
+                        "data": """
+                            "test",
+                        """
+                    }
+                ),
+                Delta(
+                    content={
+                        "type": "text",
+                        "data": """
+                            "field2": 1234
+                            }
+                        """
+                    }
+                )
+            ]
+    mock_model.set_response(responses)
+    llm = LLM(prompt="Test prompt", model=mock_model)
+    result = await llm.fill("Test query", TestStructure, strategy="prefill")
+    assert isinstance(result, TestStructure)
+    assert result.field1 == "test"
+    assert result.field2 == 1234
+
+@pytest.mark.asyncio
 @patch('mus.llm.LLM.query')
 async def test_llm_bot_decorator(mock_query, llm):
     async def return_value():
@@ -219,7 +249,6 @@ async def test_assistant_prefill_no_echo(mock_model):
     assert len(result) == 2
     assert result[0].content["type"] == "text"
     assert result[0].content["data"] == "Hello"
-    
     
 
 if __name__ == "__main__":
