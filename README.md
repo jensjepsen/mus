@@ -149,7 +149,9 @@ uv build
 ```
 
 ## TODO
-- [ ] Replace pydantic and jsonpickle with msgspec
+- [ ] Replace with msgspec
+    - [ ] Pydantic
+    - [ ] jsonpickle
 - [X] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
     - [X] Max tokens
     - [X] Model
