@@ -1,3 +1,15 @@
+## v0.12.0 (2025-04-17)
+
+### Feat
+
+- fill with prefill
+- prefill fill
+- prefill echo
+
+### Fix
+
+- types
+
 ## v0.11.0 (2025-04-15)
 
 ### Feat

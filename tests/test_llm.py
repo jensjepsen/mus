@@ -7,7 +7,7 @@ from anthropic.lib.streaming import TextEvent, ContentBlockStopEvent
 
 from mus.llm import LLM
 from mus.llm.llm import IterableResult
-from mus.llm.types import Delta, ToolUse, ToolResult, System, Query
+from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant
 from mus.llm.anthropic import AnthropicLLM
 
 class MockClient():
@@ -31,6 +31,14 @@ def mock_client():
 @pytest.fixture
 def llm(mock_client):
     return LLM(prompt="Test prompt", model=AnthropicLLM(model="claude-3-5-sonnet-20241022", client=mock_client))
+
+@pytest.fixture
+def mock_model():
+    class MockLLM(MagicMock):
+        def set_response(self, responses):
+            self.stream.return_value.__aiter__.return_value = iter(responses)
+    
+    return MockLLM()
 
 @pytest.mark.asyncio
 async def test_llm_query(llm, mock_client):
@@ -139,6 +147,36 @@ async def test_llm_fill(mock_query, llm):
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
 @pytest.mark.asyncio
+async def test_llm_fill_strategy_prefill(mock_model):
+    
+        # below looks a little weird because the answer is prefilled, so it's missing the initial json
+    responses = [
+                Delta(
+                    content={
+                        "type": "text",
+                        "data": """
+                            "test",
+                        """
+                    }
+                ),
+                Delta(
+                    content={
+                        "type": "text",
+                        "data": """
+                            "field2": 1234
+                            }
+                        """
+                    }
+                )
+            ]
+    mock_model.set_response(responses)
+    llm = LLM(prompt="Test prompt", model=mock_model)
+    result = await llm.fill("Test query", TestStructure, strategy="prefill")
+    assert isinstance(result, TestStructure)
+    assert result.field1 == "test"
+    assert result.field2 == 1234
+
+@pytest.mark.asyncio
 @patch('mus.llm.LLM.query')
 async def test_llm_bot_decorator(mock_query, llm):
     async def return_value():
@@ -184,6 +222,34 @@ async def test_dynamic_system_prompt():
     assert isinstance(hist[0], Query)
     assert hist[0].val == ["Test query"]
 
+
+@pytest.mark.asyncio
+async def test_assistant_prefill_echo(mock_model):
+    mock_model.set_response([
+        Delta(content={"type": "text", "data": "Hello"}),
+    ])
+    llm = LLM(prompt="Test prompt", model=mock_model)
+    result = [msg async for msg in llm.query("Hello" + Assistant("Test prefill", echo=True))]
+    
+
+    assert len(result) == 3
+    assert result[0].content["type"] == "text"
+    assert result[0].content["data"] == "Test prefill"
+    assert result[1].content["type"] == "text"
+    assert result[1].content["data"] == "Hello"
+
+@pytest.mark.asyncio
+async def test_assistant_prefill_no_echo(mock_model):
+    mock_model.set_response([
+        Delta(content={"type": "text", "data": "Hello"}),
+    ])
+    llm = LLM(prompt="Test prompt", model=mock_model)
+    result = [msg async for msg in llm.query("Hello" + Assistant("Test prefill", echo=False))]
+
+    assert len(result) == 2
+    assert result[0].content["type"] == "text"
+    assert result[0].content["data"] == "Hello"
+    
 
 if __name__ == "__main__":
     pytest.main()
