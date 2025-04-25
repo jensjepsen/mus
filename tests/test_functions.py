@@ -23,6 +23,13 @@ class SampleDataclass:
     field2: int
     field3: Annotated[Optional[List[str]], "An optional field"] = None
 
+@dataclass
+class SampleNestedDataclass:
+    """This is a sample nested dataclass."""
+    field1: str
+    field2: int
+    field3: SampleDataclass
+
 # Tests
 def test_get_schema():
     schema = get_schema("TestModel", [("param1", str), ("param2", int)])
@@ -89,6 +96,23 @@ def test_to_schema_dataclass():
     assert "field3" in json_schema["properties"]
     assert json_schema["properties"]["field1"]["type"] == "string"
     assert json_schema["properties"]["field2"]["type"] == "integer"
+
+def test_to_schema_nested_dataclass():
+    schema = to_schema(SampleNestedDataclass)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "SampleNestedDataclass"
+    assert schema["description"] == "This is a sample nested dataclass."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "SampleNestedDataclass"
+    assert "field1" in json_schema["properties"]
+    assert "field2" in json_schema["properties"]
+    assert "field3" in json_schema["properties"]
+    assert json_schema["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field2"]["type"] == "integer"
+    assert json_schema["properties"]["field3"]["type"] == "object"
+    assert json_schema["properties"]["field3"]["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field3"]["properties"]["field2"]["type"] == "integer"
+    
     
 
 def test_to_schema_invalid_type():

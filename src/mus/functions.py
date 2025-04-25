@@ -1,9 +1,9 @@
 import typing as t
-import pydantic
 from .llm.types import ToolCallableType
 import jsonref
 from dataclasses import is_dataclass
 import json
+import msgspec
 
 class FunctionSchema(t.TypedDict):
     name: str
@@ -90,20 +90,43 @@ def to_schema(obj: t.Union[dict, object, ToolCallableType]) -> FunctionSchema:
     else:
         raise ValueError(f"Unsupported type: {type(obj)}")
 
+# For posterity, this is the code when we used pydantic instead of msgspec
+# def get_schema(name: str, fields: t.List[tuple[str, t.Type]]) -> t.Dict[str, object]:
+#     model_fields = {}
+#     for field_name, type in fields:
+#         try:
+#             description = type.__metadata__[0]
+#         except (AttributeError, IndexError):
+#             description = None
+#         model_fields[field_name] = (type, pydantic.Field(..., description=description))
+#     temp_model: t.Type[pydantic.BaseModel] = pydantic.create_model(name, **model_fields)
+#     schema = temp_model.model_json_schema()
+#     dereffed = jsonref.replace_refs(schema)
+#     cleaned = remove_keys(dereffed, {"$defs"})
+    
+    return cleaned # type: ignore
+
+def struct_to_schema(t: type[msgspec.Struct]) -> dict:
+    schema = msgspec.json.schema(list[t])
+    return jsonref.replace_refs(schema, jsonschema=True, lazy_load=False, proxies=False)["items"] # type: ignore
+
 def get_schema(name: str, fields: t.List[tuple[str, t.Type]]) -> t.Dict[str, object]:
-    model_fields = {}
+    model_fields = []
     for field_name, type in fields:
         try:
             description = type.__metadata__[0]
         except (AttributeError, IndexError):
             description = None
-        model_fields[field_name] = (type, pydantic.Field(..., description=description))
-    temp_model: t.Type[pydantic.BaseModel] = pydantic.create_model(name, **model_fields)
-    schema = temp_model.model_json_schema()
+        if description:
+            type = t.Annotated[type, msgspec.Meta(description=description)]
+        model_fields.append((field_name, type))
+    temp_model: t.Type[msgspec.Struct] = msgspec.defstruct(name, model_fields)
+    schema = struct_to_schema(temp_model)
     dereffed = jsonref.replace_refs(schema)
     cleaned = remove_keys(dereffed, {"$defs"})
     
     return cleaned # type: ignore
+
 
 def functions_map(functions: t.List[ToolCallableType]) -> t.Dict[str, ToolCallableType]:
     return {func.__name__: func for func in (functions or [])}
