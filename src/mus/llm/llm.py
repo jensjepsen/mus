@@ -9,6 +9,23 @@ from ..types import DataClass
 
 logger = logging.getLogger(__name__)
 
+def merge_history(history: History) -> History:
+    merged = []
+    for msg in history:
+        if merged and isinstance(msg, Delta) and msg.content["type"] == "text" and msg.content.get("subtype", None) == "text":
+            if isinstance(merged[-1], Delta) and merged[-1].content["type"] == "text" and merged[-1].content.get("subtype", None) == "text":
+                merged[-1].content["data"] += msg.content["data"]
+            else:
+                merged.append(msg)
+                
+        else:
+            merged.append(msg)
+    
+    # prune empty text
+    merged = [m for m in merged if not (isinstance(m, Delta) and m.content["type"] == "text" and not m.content["data"].strip())]
+
+    return merged
+
 class IterableResult:
     def __init__(self, iterable: t.AsyncIterable[Delta]):
         self.iterable = iterable
@@ -30,7 +47,7 @@ class IterableResult:
                 self.usage["output_tokens"] += msg.usage["output_tokens"]
             if msg.content["type"] == "history":
                 # TODO: Merge deltas here
-                self.history.extend(msg.content["data"])
+                self.history.extend(merge_history(msg.content["data"]))
             else:
                 yield msg
         self.has_iterated = True
