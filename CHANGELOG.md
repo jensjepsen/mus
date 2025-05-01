@@ -1,3 +1,9 @@
+## v0.12.1 (2025-05-01)
+
+### Fix
+
+- don't include empty text
+
 ## v0.12.0 (2025-04-17)
 
 ### Feat
