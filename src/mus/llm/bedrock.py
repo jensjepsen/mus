@@ -222,10 +222,11 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                     ]
                 ))
             elif delta.content["type"] == "text":
-                messages.append(bt.MessageTypeDef(
-                    role="assistant",
-                    content=[str_to_text_block(delta.content["data"])]
-                ))
+                if delta.content["data"]:
+                    messages.append(bt.MessageTypeDef(
+                        role="assistant",
+                        content=[str_to_text_block(delta.content["data"])]
+                    ))
             elif delta.content["type"] == "tool_use":
                 messages.append(bt.MessageTypeDef(
                     role="assistant",

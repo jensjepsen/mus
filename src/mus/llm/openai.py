@@ -88,7 +88,8 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Chat
     for delta in deltas:
         if isinstance(delta, Delta):
             if delta.content["type"] == "text":
-                messages.append({"role": "assistant", "content": delta.content["data"]})
+                if delta.content["data"]:
+                    messages.append({"role": "assistant", "content": delta.content["data"]})
             elif delta.content["type"] == "tool_use":
                 tool_call: ChatCompletionMessageToolCallParam = {
                     "id": delta.content["data"].id,

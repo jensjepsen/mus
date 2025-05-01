@@ -109,10 +109,11 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     for delta in deltas:
         if isinstance(delta, Delta):
             if delta.content["type"] == "text":
-                messages.append(at.MessageParam(
-                    role="assistant",
-                    content=[str_to_text_block(delta.content["data"])]
-                ))
+                if delta.content["data"]:
+                    messages.append(at.MessageParam(
+                        role="assistant",
+                        content=[str_to_text_block(delta.content["data"])]
+                    ))
             elif delta.content["type"] == "tool_use":
                 messages.append(at.MessageParam(
                     role="assistant",
