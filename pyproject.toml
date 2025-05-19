@@ -68,10 +68,7 @@ changelog_file = "CHANGELOG.md"
 
 [tool.pyright]
 include = ["src"]
-exclude = [
-    "**/__pycache__",
-    "src/mus/guest/bindings"
-]
+exclude = ["src/mus/guest/bindings"]
 
 [tool.pytest.ini_options]
 pythonpath = "src"
