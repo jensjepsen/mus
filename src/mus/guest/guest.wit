@@ -1,0 +1,8 @@
+package local:muswasm;
+
+world muswasm {
+  import startstream: func(kwargs: string) -> result<string, string>;
+  import pollstream: func(qid: string) -> result<string, string>;
+  import print: func(s: string) -> result<_, string>;
+  export run: func(code: string) -> string;
+}

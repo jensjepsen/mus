@@ -11,7 +11,10 @@ import inspect
 from .llm.llm import LLMClient
 from .llm.types import LLMClientStreamArgs
 import textwrap
-
+from .guest.bindings import imports as guest_imports
+from .guest.bindings import types as guest_types
+from .guest.bindings import Root, RootImports
+from wasmtime import Store, Engine, Config
 class Stop:
     pass
 
@@ -35,30 +38,13 @@ def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
 
 queues = {}
 
-@extism.host_fn(name="print", namespace="host")
-def print_fn(msg: str):
-    print(msg, end="", flush=True)
-
-@extism.host_fn(name="poll_stream", namespace="host")
-def poll_stream(q_id: str) -> str:
-    if q_id in queues:
-        result = queues[q_id].get()
-        if isinstance(result, Exception):
-            raise result
-        elif isinstance(result, Stop):
-            del queues[q_id]
-            return "[[STOP]]"
-        else:
-            return str(result)
-    else:
-        return "[[STOP]]"
 
 class SandboxableCallable(t.Protocol):
     async def __call__(self, model: LLMClient) -> None:
         ...
 
 class SandboxReturnCallable(t.Protocol):
-    def __call__(self, model: LLMClient) -> None:
+    def __call__(self, model: LLMClient) -> str:
         ...
 
 @t.overload
@@ -66,10 +52,10 @@ def sandbox(callable: SandboxableCallable, /) -> SandboxReturnCallable:
     ...
 
 @t.overload
-def sandbox(*, model: LLMClient, code: str) -> None:
+def sandbox(*, model: LLMClient, code: str, fuel: t.Optional[int]=None) -> str:
     ...
 
-def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLMClient]=None, code: t.Optional[str]=None) -> t.Optional[SandboxReturnCallable]:
+def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLMClient]=None, code: t.Optional[str]=None, fuel: t.Optional[int]=None) -> t.Union[SandboxReturnCallable, str]:
     if code and callable:
         raise ValueError("Cannot provide both code and callable")
     
@@ -84,23 +70,42 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
 
     code = textwrap.dedent(code)
     
-    def inner(model: LLMClient):
-        @extism.host_fn(name="stream", namespace="host")
-        def stream(kwargs: str) -> str:
-            unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs)) # by design, this should be a valid LLMClientStreamArgs
-
-            async def main(q_id, queue):
-                async for delta in model.stream(**unpickled_kwargs):
-                    queue.put(jsonpickle.dumps(delta))
-                queue.put(Stop())
-            q_id = run_coroutine_in_thread(main)
-            return q_id
-    
-        guest_path = os.path.join(os.path.dirname(__file__), "guest.wasm")
-        if not os.path.exists(guest_path):
-            raise FileNotFoundError(f"Guest WASM file not found at {guest_path}")
-        with extism.Plugin(guest_path, wasi=True) as plugin:
-            plugin.call("run", code)
+    def inner(model: LLMClient) -> str:
+        class Host(guest_imports.Host):
+            def print(self, s: str) -> guest_types.Result[None, str]:
+                print(s, end="", flush=True)
+                return guest_types.Ok(None)
+            def startstream(self, kwargs: str) -> guest_types.Result[str, str]:
+                unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs))
+                async def main(q_id, queue):
+                    async for delta in model.stream(**unpickled_kwargs):
+                        queue.put(jsonpickle.dumps(delta))
+                    queue.put(Stop())
+                q_id = run_coroutine_in_thread(main)
+                return guest_types.Ok(q_id)
+            def pollstream(self, qid: str) -> guest_types.Result[str, str]:
+                if qid in queues:
+                    result = queues[qid].get()
+                    if isinstance(result, Exception):
+                        return guest_types.Err(str(result))
+                    elif isinstance(result, Stop):
+                        del queues[qid]
+                        return guest_types.Ok("[[STOP]]")
+                    else:
+                        return guest_types.Ok(str(result))
+                else:
+                    return guest_types.Ok("[[STOP]]")
+        config = Config()
+        if fuel:
+            config.consume_fuel = True
+        engine = Engine(config=config)
+        store = Store(engine=engine)
+        if fuel:
+            store.set_fuel(fuel)
+        root = Root(store, RootImports(host=Host()))
+                
+        return root.run(store, code)
+        
     
     if callable:
         # If a callable is provided, return another callable

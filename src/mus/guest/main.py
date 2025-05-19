@@ -1,9 +1,10 @@
-import extism
+import wit_world # type: ignore
 import mus
 import mus.llm
 import mus.llm.types
 import typing as t
 import jsonpickle
+import traceback
 
 def run_coro(coro):
     try:
@@ -19,44 +20,38 @@ def run_coro(coro):
 class ExtraArgs(t.TypedDict):
   pass
 
-@extism.import_fn("host", "stream") # type: ignore # exists in extism python-pdk
-def stream(kwargs: str) -> str: ...
-
-@extism.import_fn("host", "poll_stream") # type: ignore # exists in extism python-pdk
-def poll_stream(q_id: str) -> str: ...
-
-@extism.import_fn("host", "print") # type: ignore # exists in extism python-pdk
-def print(msg: str): ...
-
 
 
 class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
   def __init__(self):
     pass
   async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[ExtraArgs, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:
-    result = stream(jsonpickle.dumps(kwargs)) # type: ignore # returns str
+    result = wit_world.startstream(jsonpickle.dumps(kwargs)) # type: ignore # returns str
     
-    while delta := poll_stream(result):
+    while delta := wit_world.pollstream(result):
       if delta == "[[STOP]]":
         break
       yield jsonpickle.loads(delta) # type: ignore # returns Delta
 
-@extism.plugin_fn # type: ignore # exists in extism python-pdk
-def run():
-  code = extism.input_str().strip() # type: ignore # exists in extism python-pdk
-  indented = code.split("\n")
-  code = "    " + "\n    ".join(indented)
-  code_with_run = f"""
+class WitWorld(wit_world.WitWorld):
+  def run(self, code: str):  
+    try:
+      indented = code.split("\n")
+      code = "    " + "\n    ".join(indented)
+      code_with_run = f"""\
 import mus
 async def main():
 {code}
 run_coro(main())
 """
-  model = ProxyClient()
-  globals = {
-    "model": model,
-    "run_coro": run_coro,
-    "print": print,
-  }
-  exec(code_with_run, globals)
+      model = ProxyClient()
+      globals = {
+        "model": model,
+        "run_coro": run_coro,
+        "print": wit_world.print,
+      }
+      exec(code_with_run, globals)
+      return str("Done")
+    except Exception as e:
+      return str(e)
   
