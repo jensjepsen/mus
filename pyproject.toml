@@ -75,6 +75,9 @@ pythonpath = "src"
 testpaths = ["tests", "*.md"]
 addopts = "--cov=src"
 
+[tool.coverage.run]
+omit = ["src/mus/guest/bindings/*"]
+
 [tool.coverage.report]
 exclude_also = [
     "def __repr__",
