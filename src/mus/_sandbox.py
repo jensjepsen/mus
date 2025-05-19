@@ -1,4 +1,3 @@
-import extism
 import asyncio
 import jsonpickle
 import threading
