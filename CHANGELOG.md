@@ -1,3 +1,18 @@
+## v0.13.0 (2025-05-19)
+
+### Feat
+
+- wasmtime and fuel
+- wasmtime and fuel
+- wasmtime and fuel
+
+### Fix
+
+- pyright config
+- pyright config
+- don't typecheck bindigns
+- remove extism
+
 ## v0.12.2 (2025-05-01)
 
 ### Fix
