@@ -70,6 +70,7 @@ changelog_file = "CHANGELOG.md"
 include = ["src"]
 exclude = [
     "**/__pycache__",
+    "src/mus/guest/bindings"
 ]
 
 [tool.pytest.ini_options]
