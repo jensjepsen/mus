@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch, MagicMock
 from dataclasses import dataclass
 from mus import sandbox
 from mus.llm.types import LLMClient
+from wasmtime import Trap
 
 
 class MockClient():
@@ -22,9 +23,9 @@ def mock_client():
 @pytest.mark.asyncio
 async def test_sandbox(mock_client):
     code = """\
-            import mus
             bot = mus.LLM(model=model)
-            await bot("Test query").string()
+            async for delta in bot("Test query"):
+                print(str(delta))
             """
 
     sandbox(model=mock_client, code=code)
@@ -43,4 +44,19 @@ async def test_sandbox_as_decorator(mock_client):
     
     decorated_func(mock_client)
 
+    assert mock_client.stream.called
+
+@pytest.mark.asyncio
+async def test_sandbox_with_fuel(mock_client):
+    code = """\
+            bot = mus.LLM(model=model)
+            async for delta in bot("Test query"):
+                print(str(delta))
+            """
+    # Test with insufficient fuel
+    with pytest.raises(Trap):
+        sandbox(model=mock_client, code=code, fuel=10)
+
+    # Test with sufficient fuel
+    sandbox(model=mock_client, code=code, fuel=100_000_000)
     assert mock_client.stream.called
