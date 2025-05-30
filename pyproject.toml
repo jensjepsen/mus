@@ -40,7 +40,8 @@ dev = [
     "pytest-md-report(>=0.6.3,<1.0.0)",
     "sybil[pytest](>=9.0.0,<10.0.0)",
     "pyright(>=1.1.398,<2.0.0)",
-    "componentize-py>=0.17.0"
+    "componentize-py(>=0.17.0,<0.18.0)",
+    "mcp>=1.9.1"
 ]
 all = [
     "boto3(>=1.35.95,<2.0.0)", 
@@ -86,3 +87,4 @@ exclude_also = [
     "class .*\\bProtocol.*\\):",
     "@(abc\\.)?abstractmethod",
     ]
+

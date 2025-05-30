@@ -122,7 +122,7 @@ async def main():
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
             print(msg, end="")
         
-    sandbot(model)
+    await sandbot(model)
 
 asyncio.run(main())
 ```
