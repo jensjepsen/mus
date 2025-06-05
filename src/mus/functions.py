@@ -23,7 +23,7 @@ def func_to_schema(func: ToolCallableType) -> FunctionSchema:
     if not func.__doc__:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
     annotations = list(func.__annotations__.items())
-    if annotations[-1][0] == "return":
+    if annotations and annotations[-1][0] == "return":
         annotations = annotations[:-1]  # Remove the return annotation if present
     p = FunctionSchema(
         name=func.__name__,
