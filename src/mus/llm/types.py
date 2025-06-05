@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from textwrap import dedent
 
+if t.TYPE_CHECKING:
+    from ..functions import FunctionSchema
+
 import io
 import base64
 
@@ -27,7 +30,7 @@ class QueryStreamArgs(t.TypedDict, total=False):
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     prompt: t.Optional[str]
     history: "History"
-    functions: t.Optional[t.List["ToolCallableType"]]
+    functions: t.Optional[t.List["FunctionSchema"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]

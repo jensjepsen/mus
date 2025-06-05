@@ -85,7 +85,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     async def query(self, query: t.Optional[QueryOrSystem]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
-        
+        function_schemas = [to_schema(f) for f in functions]
 
         func_map = functions_map(functions)
         async def invoke_function(func_name: str, input: t.Mapping[str, t.Any]):
@@ -122,7 +122,14 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             prompt=dedented_prompt,
             history=history,
             kwargs=self.client_kwargs,
-            **kwargs
+            function_choice=kwargs.get("function_choice", None),
+            functions=function_schemas,
+            no_stream=kwargs.get("no_stream", None),
+            max_tokens=kwargs.get("max_tokens", None),
+            top_k=kwargs.get("top_k", None),
+            top_p=kwargs.get("top_p", None),
+            stop_sequences=kwargs.get("stop_sequences", None),
+            temperature=kwargs.get("temperature", None),
         ):
             yield msg
             history = history + [msg]

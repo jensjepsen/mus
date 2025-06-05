@@ -1,16 +1,12 @@
-import mcp.client
-import mcp.client.stdio
 import pytest
-import pytest_asyncio
-import io
 import anyio
 import datetime
 from pydantic import AnyUrl
 import mus
 
-from mcp import ClientSession, StdioServerParameters, types
+from mcp import ClientSession, types
 from mcp.shared.message import SessionMessage
-from mcp.types import JSONRPCMessage, BlobResourceContents, TextResourceContents
+from mcp.types import JSONRPCMessage
 import mus.mcp.server
 import json
 from contextlib import asynccontextmanager

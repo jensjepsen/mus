@@ -1,41 +1,25 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Assistant, LLMClientStreamArgs
-from ..functions import get_schema
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs
+from ..functions import FunctionSchema
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
 from openai._types import NotGiven
 import json
 
-def func_to_tool(func: ToolCallableType) -> ChatCompletionToolParam:
-    if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"):  # type: ignore
-            return definition
-    if not func.__doc__:
-        raise ValueError(f"Function {func.__name__} is missing a docstring")
+def func_to_tool(func: FunctionSchema) -> ChatCompletionToolParam:
     return {
         "type": "function",
         "function": {
-            "name": func.__name__,
-            "description": func.__doc__,
-            "parameters": get_schema(func.__name__, list(func.__annotations__.items()))
+            "name": func["name"],
+            "description": func["description"],
+            "parameters": func["schema"]
         }
     }
-
-def dataclass_to_tool(dataclass) -> ChatCompletionToolParam:
-    return {
-        "type": "function",
-        "function": {
-            "name": dataclass.__name__,
-            "description": dataclass.__doc__,
-            "parameters": get_schema(dataclass.__name__, list(dataclass.__annotations__.items()))
-        }
-    }
-
-def functions_for_llm(functions: t.List[ToolCallableType]) -> t.List[ChatCompletionToolParam]:
+def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[ChatCompletionToolParam]:
     return [
-        dataclass_to_tool(func) if is_dataclass(func) else func_to_tool(func)
+        func_to_tool(func)
         for func in (functions or [])
     ]
 

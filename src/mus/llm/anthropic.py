@@ -1,26 +1,17 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
-from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant, LLMClientStreamArgs
-from ..functions import get_schema
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs
+from ..functions import FunctionSchema
 
-def func_to_tool(func: ToolCallableType) -> at.ToolParam:
-    if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"): # type: ignore
-            return definition
-    if not func.__doc__:
-        raise ValueError(f"Function {func.__name__} is missing a docstring")
-    p = at.ToolParam(name=func.__name__, description=func.__doc__, input_schema=get_schema(func.__name__, list(func.__annotations__.items())))
+def func_to_tool(func: FunctionSchema) -> at.ToolParam:
+    p = at.ToolParam(name=func["name"], description=func["description"], input_schema=func["schema"])
     return p
 
-def dataclass_to_tool(dataclass) -> at.ToolParam:
-    p = at.ToolParam(name=dataclass.__name__, description=dataclass.__doc__, input_schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())))
-    return p
 
-def functions_for_llm(functions: t.List[ToolCallableType]) -> t.List[at.ToolParam]:
+def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[at.ToolParam]:
     return [
-        dataclass_to_tool(func) if is_dataclass(func) else func_to_tool(func)
+        func_to_tool(func)
         for func
         in (functions or [])
     ]

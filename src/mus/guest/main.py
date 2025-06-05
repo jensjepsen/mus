@@ -4,10 +4,10 @@ import mus.llm
 import mus.llm.types
 import typing as t
 import jsonpickle
-import traceback
 import sys
 import io
 import contextlib
+import time
 
 class StdOut(io.StringIO):
     def __init__(self, callback: t.Callable[[str], None]):
@@ -18,8 +18,6 @@ class StdOut(io.StringIO):
         self._callback(s)
         return super().write(s)
 
-import io
-import time
 
 class PollingFile(io.TextIOBase):
     """A file-like object that calls a polling function when read operations occur."""
@@ -120,8 +118,6 @@ def run_coro(coro):
 
 class ExtraArgs(t.TypedDict):
   pass
-
-
 
 class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
   def __init__(self):

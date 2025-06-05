@@ -107,4 +107,3 @@ def get_schema(name: str, fields: t.List[tuple[str, t.Type]]) -> t.Dict[str, obj
 
 def functions_map(functions: t.List[ToolCallableType]) -> t.Dict[str, ToolCallableType]:
     return {func.__name__: func for func in (functions or [])}
-

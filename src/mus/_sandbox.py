@@ -132,6 +132,8 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
                         try:
                             async for delta in model.stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
                                 queue.put(jsonpickle.dumps(delta))
+                        except Exception as e:
+                            queue.put(e)
                         finally:
                             queue.put(Stop())
                     q_id, q = run_coroutine_in_thread(main)
@@ -141,6 +143,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
                 def pollstream(self, qid: str) -> guest_types.Result[str, str]:
                     if qid in queues:
                         result = queues[qid].get()
+                        print(result)
                         if isinstance(result, Exception):
                             return guest_types.Err("Exception: " + str(result))
                         elif isinstance(result, Stop):
