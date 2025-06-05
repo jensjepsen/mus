@@ -10,11 +10,16 @@ def sample_function(param1: str, param2: int) -> str:
     """This is a sample function."""
     return f"{param1}: {param2}"
 
+
 class SampleTypedDict(TypedDict):
     """This is a sample TypedDict."""
     field1: str
     field2: int
     field3: Annotated[Optional[List[str]], "An optional field"]
+
+def sample_function_advanced(param1: str, param2: SampleTypedDict, param3: Optional[List[str]] = None) -> str:
+    """This is a sample function with advanced parameters."""
+    return f"{param1}: {param2}, {param3}"
 
 @dataclass
 class SampleDataclass:
@@ -22,6 +27,14 @@ class SampleDataclass:
     field1: str
     field2: int
     field3: Annotated[Optional[List[str]], "An optional field"] = None
+
+
+class NestedTypedDict(TypedDict):
+    """This is a nested TypedDict."""
+    field3: SampleTypedDict
+    field4: SampleDataclass
+
+
 
 # Tests
 def test_get_schema():
@@ -63,6 +76,32 @@ def test_to_schema_function():
     assert "param2" in json_schema["properties"]
     assert json_schema["properties"]["param1"]["type"] == "string"
     assert json_schema["properties"]["param2"]["type"] == "integer"
+
+def test_to_schema_function_advanced():
+    schema = to_schema(sample_function_advanced)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "sample_function_advanced"
+    assert schema["description"] == "This is a sample function with advanced parameters."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "sample_function_advanced"
+    assert "param1" in json_schema["properties"]
+    assert "param2" in json_schema["properties"]
+    assert "param3" in json_schema["properties"]
+    assert json_schema["properties"]["param1"]["type"] == "string"
+    assert json_schema["properties"]["param2"]["type"] == "object"
+    assert json_schema["properties"]["param3"]["type"] == "array"
+    # test required properties
+    assert json_schema["required"] == ["param1", "param2"]
+
+    assert json_schema["properties"]["param2"]["title"] == "SampleTypedDict"
+    assert "field1" in json_schema["properties"]["param2"]["properties"]
+    assert "field2" in json_schema["properties"]["param2"]["properties"]
+    assert json_schema["properties"]["param2"]["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["param2"]["properties"]["field2"]["type"] == "integer"
+
+    assert json_schema["properties"]["param3"]["type"] == "array"
+    assert json_schema["properties"]["param3"]["items"]["type"] == "string"
+
 
 def test_to_schema_typed_dict():
     schema = to_schema(SampleTypedDict)
@@ -107,6 +146,42 @@ def test_to_schema_no_docstring():
 
     with pytest.raises(ValueError, match="TypedDict NoDocstringTypedDict is missing a docstring"):
         to_schema(NoDocstringTypedDict)
+
+def test_to_schema_typed_dict_nested():
+    schema = to_schema(NestedTypedDict)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "NestedTypedDict"
+    assert schema["description"] == "This is a nested TypedDict."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "NestedTypedDict"
+    assert "field3" in json_schema["properties"]
+    assert "field4" in json_schema["properties"]
+    assert json_schema["properties"]["field3"] == {
+        "type": "object",
+        "properties": {
+            "field1": {"type": "string"},
+            "field2": {"type": "integer"},
+            "field3": {
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "required": ["field1", "field2"],
+        "title": "SampleTypedDict"
+    }
+    assert json_schema["properties"]["field4"] == {
+        "type": "object",
+        "properties": {
+            "field1": {"type": "string"},
+            "field2": {"type": "integer"},
+            "field3": {
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "required": ["field1", "field2"],
+        "title": "SampleDataclass"
+    }
 
 def test_schema_to_example():
     schema = {
