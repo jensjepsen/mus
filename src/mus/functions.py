@@ -1,7 +1,5 @@
 import typing as t
-import pydantic
 from .llm.types import ToolCallableType
-import jsonref
 from dataclasses import is_dataclass
 import json
 
