@@ -3,16 +3,38 @@ from .llm.types import ToolCallableType
 from dataclasses import is_dataclass
 import json
 
+
 class FunctionSchema(t.TypedDict):
     name: str
     description: str
     schema: t.Dict[str, t.Any]
+
+class ToolCallable(t.TypedDict):
+    function: ToolCallableType
+    schema: FunctionSchema
+
+
+def is_tool_callable(obj: t.Any) -> t.TypeGuard[ToolCallable]:
+    """Check if an object is a ToolCallable."""
+    return isinstance(obj, dict) and "function" in obj and "schema" in obj
 
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
         func.__metadata__ = metadata # type: ignore
         return func
     return decorator
+
+def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.List[ToolCallable]:
+    """Parse a list of tool callables into a list of ToolCallable."""
+    return [
+        func
+        if is_tool_callable(func)
+        else ToolCallable(
+            function=func, # type: ignore # will be a ToolCallableType
+            schema=to_schema(func)
+        )
+        for func in (tools or [])
+    ]
 
 def func_to_schema(func: ToolCallableType) -> FunctionSchema:
     if hasattr(func, '__metadata__'):
@@ -188,6 +210,3 @@ def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, o
     }
         
     return schema
-
-def functions_map(functions: t.List[ToolCallableType]) -> t.Dict[str, ToolCallableType]:
-    return {func.__name__: func for func in (functions or [])}

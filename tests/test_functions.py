@@ -3,7 +3,7 @@ from typing import List, Optional, Annotated, TypedDict
 import pytest
 
 # Import the functions to be tested
-from mus.functions import get_schema, functions_map, to_schema, FunctionSchema, schema_to_example
+from mus.functions import get_schema, to_schema, FunctionSchema, schema_to_example, parse_tools, ToolCallable
 
 # Test data
 def sample_function(param1: str, param2: int) -> str:
@@ -44,21 +44,6 @@ def test_get_schema():
     assert "param2" in schema["properties"]
     assert schema["properties"]["param1"]["type"] == "string"
     assert schema["properties"]["param2"]["type"] == "integer"
-
-def test_functions_map():
-    functions = [sample_function, SampleDataclass]
-    func_map = functions_map(functions)
-    assert len(func_map) == 2
-    assert "sample_function" in func_map
-    assert "SampleDataclass" in func_map
-    assert func_map["sample_function"] == sample_function
-    assert func_map["SampleDataclass"] == SampleDataclass
-
-
-
-def test_functions_map_empty_input():
-    func_map = functions_map(None)
-    assert len(func_map) == 0
 
 def test_get_schema_with_metadata():
     schema = get_schema("TestModel", [("param1", Annotated[str, "This is a string with metadata"]), ("param2", int)])
@@ -252,3 +237,34 @@ def test_schema_to_example_function_schema():
     }
 
     
+def test_parse_tools():
+    async def func1(param1: str, param2: int) -> str:
+        """This is func1."""
+        return f"{param1}: {param2}"
+    async def func2(param1: str) -> str:
+        """This is func2."""
+        return f"Hello {param1}"
+    
+    prespecified_tool = ToolCallable(
+        function=func2,
+        schema=to_schema(func2)
+    )
+
+    tools = parse_tools([func1, prespecified_tool])
+    assert len(tools) == 2
+
+    assert tools[0]["function"] == func1
+    assert tools[0]["schema"]["name"] == "func1"
+    assert tools[0]["schema"]["description"] == "This is func1."
+    assert tools[0]["schema"]["schema"]["title"] == "func1"
+    assert "param1" in tools[0]["schema"]["schema"]["properties"]
+    assert "param2" in tools[0]["schema"]["schema"]["properties"]
+    assert tools[0]["schema"]["schema"]["properties"]["param1"]["type"] == "string"
+    assert tools[0]["schema"]["schema"]["properties"]["param2"]["type"] == "integer"
+
+    assert tools[1]["function"] == func2
+    assert tools[1]["schema"]["name"] == "func2"
+    assert tools[1]["schema"]["description"] == "This is func2."
+    assert tools[1]["schema"]["schema"]["title"] == "func2"
+    assert "param1" in tools[1]["schema"]["schema"]["properties"]
+    assert tools[1]["schema"]["schema"]["properties"]["param1"]["type"] == "string"
