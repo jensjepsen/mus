@@ -16,7 +16,16 @@ def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[at.ToolParam]
         in (functions or [])
     ]
 
+def is_valid_image_mime_type(mime_type: str) -> t.TypeGuard[t.Literal["image/png", "image/jpeg", "image/gif", "image/webp"]]:
+    """
+    Check if the mime type is a valid image type.
+    """
+    return mime_type in ["image/png", "image/jpeg", "image/gif", "image/webp"]
+
 def file_to_image(file: File) -> at.ImageBlockParam:
+    if not is_valid_image_mime_type(file.b64type):
+        raise ValueError(f"Only supports image/png and image/jpeg, not: {file.b64type}")
+    
     return at.ImageBlockParam({
         "type": "image",
         "source": {

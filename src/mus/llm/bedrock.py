@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
 from ..functions import FunctionSchema
 import base64
 
@@ -129,15 +129,17 @@ def parse_tool_content(c: t.Union[str, File]):
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult):
-    if isinstance(tool_result.content, list):
+    if is_tool_simple_return_value(tool_result.content):
+        return [
+            parse_tool_content(tool_result.content)
+        ]
+    elif isinstance(tool_result.content, list):
         return [
             parse_tool_content(c)
             for c in tool_result.content
         ]
     else:
-        return [
-            parse_tool_content(tool_result.content)
-        ]
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
     
 def has_reasoning_text(content: t.Union[bt.ContentBlockTypeDef, str]):
     if isinstance(content, str):

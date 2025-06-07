@@ -144,6 +144,9 @@ ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnVal
 def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
     return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
 
+def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
+    return isinstance(val, str) or isinstance(val, File)
+
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
     __name__: str

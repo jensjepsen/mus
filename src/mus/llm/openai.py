@@ -1,6 +1,6 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value
 from ..functions import FunctionSchema
 
 import openai
@@ -23,15 +23,15 @@ def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[ChatCompletio
         for func in (functions or [])
     ]
 
+def is_valid_image_mime_type(mime_type: str) -> t.TypeGuard[t.Literal["image/png", "image/jpeg", "image/gif", "image/webp"]]:
+    """
+    Check if the mime type is a valid image type.
+    """
+    return mime_type in ["image/png", "image/jpeg", "image/gif", "image/webp"]
+
 def file_to_image(file: File) -> str:
-    try:
-        type_, subtype = file.b64type.split("/", 1)
-    except ValueError:
-        raise ValueError(f"Invalid b64type: {file.b64type}, must be in format type/subtype")
-    if type_ != "image":
-        raise ValueError(f"Only supports image/[type], not: {file.b64type}")
-    elif subtype not in ["png", "jpeg"]:
-        raise ValueError(f"Only supports image/png and image/jpeg, not: {file.b64type}")
+    if not is_valid_image_mime_type(file.b64type):
+        raise ValueError(f"Only supports image/png, image/jpeg image/gif and image/webp, not: {file.b64type}")
     
     return f"data:{file.b64type};base64,{file.content}"
 
@@ -53,7 +53,7 @@ def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
             messages.append({"role": "user", "content": content})
     return messages
 
-def parse_tool_content(c: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
+def parse_tool_content(c: ToolSimpleReturnValue) -> t.Union[str, t.Dict[str, str]]:
     if isinstance(c, str):
         return c
     elif isinstance(c, File):
@@ -62,10 +62,12 @@ def parse_tool_content(c: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult) -> t.Union[str, t.List[t.Union[str, t.Dict[str, str]]]]:
-    if isinstance(tool_result.content, list):
+    if is_tool_simple_return_value(tool_result.content):
+        return [parse_tool_content(tool_result.content)]
+    elif isinstance(tool_result.content, list):
         return [parse_tool_content(c) for c in tool_result.content]
     else:
-        return [parse_tool_content(tool_result.content)]
+        raise ValueError(f"Invalid tool result content type: {type(tool_result.content)}")
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[ChatCompletionMessageParam]:
     messages = []
