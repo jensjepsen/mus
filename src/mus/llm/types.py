@@ -107,7 +107,7 @@ class Delta:
 
 @dataclass
 class File:
-    b64type: t.Literal["image/png"]
+    b64type: str
     content: str
 
     def to_b64(self):
@@ -139,7 +139,7 @@ class File:
 
 
 ToolSimpleReturnValue = t.Union[str, "File"]
-ToolReturnValue = t.Union[t.List[ToolSimpleReturnValue], ToolSimpleReturnValue]
+ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
 
 def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
     return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))

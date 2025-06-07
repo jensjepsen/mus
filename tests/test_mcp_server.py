@@ -1,66 +1,10 @@
 import pytest
-import anyio
-import datetime
 from pydantic import AnyUrl
 import mus
 
-from mcp import ClientSession, types
-from mcp.shared.message import SessionMessage
-from mcp.types import JSONRPCMessage
+from mcp import types
 import mus.mcp.server
-import json
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def make_client(server: mus.mcp.server.MCPServer):
-    """Fixture to create and return an MCP client instance."""
-
-    read_stream_writer, read_stream = anyio.create_memory_object_stream()
-    write_stream, write_stream_reader = anyio.create_memory_object_stream()
-
-    async def send(line: str) -> None:
-        """Send data to the MCP server."""
-        hello = line
-        await  read_stream_writer.send(SessionMessage(message=JSONRPCMessage(**json.loads(line))))
-    
-    async def receive() -> str:
-        """Receive data from the MCP server."""
-        line = await write_stream_reader.receive()
-        line = line.message.model_dump_json()
-        
-        return line
-    
-    server.set_stdio(receive, send)
-
-    async def run_server():
-        """Run the MCP server."""
-        try: 
-            return await server.run()
-        except anyio.EndOfStream as e:
-            print(f"Server stopped due to end of stream: {e}")
-            return None
-
-    
-    # Start the server in a background task
-    async with anyio.create_task_group() as tg:
-        task = tg.start_soon(run_server)
-        try:
-            async with ClientSession(read_stream, write_stream, read_timeout_seconds=datetime.timedelta(seconds=10)) as session:
-                await session.initialize()
-                try:
-                    yield session
-                except anyio.EndOfStream:
-                    # Handle end of stream gracefully
-                    print("End of stream reached, closing client session.")
-                finally:
-                    read_stream.close()
-                    write_stream.close()
-        except anyio.EndOfStream:
-            # Handle end of stream gracefully
-            print("End of stream reached, closing client session.")
-        finally:
-            read_stream.close()
-            write_stream.close()
+from mus.mcp.client import make_client
 
 @pytest.mark.asyncio
 async def test_mcp_server_invalid_tool_not_async():

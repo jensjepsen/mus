@@ -76,9 +76,15 @@ class ToolReturnValueText(TypedDict):
     type: Literal["text"]
     text: str
 
+class ToolReturnValueImage(TypedDict):
+    """Tool return value for images"""
+    type: Literal["image"]
+    data: str
+    mimeType: str
+
 class ToolsCallResponse(TypedDict):
     """Tool return value"""
-    content: list[ToolReturnValueText]
+    content: list[ToolReturnValueText | ToolReturnValueImage]
 
 # JSON RPC types
 
@@ -306,11 +312,21 @@ class MCPServer:
             if isinstance(result, str):
                 result = ToolReturnValueText(type="text", text=result)
             elif isinstance(result, File):
-                raise JsonRpcError(-32603, "File return type is not supported yet")
+                result = ToolReturnValueImage(
+                    type="image",
+                    data=result.content,
+                    mimeType=result.b64type,
+                )
+            elif isinstance(result, list):
+                result = [
+                    ToolReturnValueText(type="text", text=r) if isinstance(r, str) else
+                    ToolReturnValueImage(type="image", data=r.content, mimeType=r.b64type) if isinstance(r, File) else
+                    r for r in result
+                ]
             else:
                 raise JsonRpcError(-32603, "Invalid tool return type")
             return {
-                "content": [result]
+                "content": [result] if not isinstance(result, list) else result
             }
             
         raise JsonRpcError(-32601, f"Tool not found: {name}")
