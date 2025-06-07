@@ -6,6 +6,28 @@ from mus.mcp.server import MCPServer
 from mus.llm.types import File
 
 @pytest.mark.asyncio
+async def test_mcp_client_make_client():
+    server = MCPServer()
+
+    @server.tool
+    async def dummy_tool() -> str:
+        """A dummy tool for testing."""
+        return "dummy response"
+
+    async with make_client(server) as client:
+        assert client is not None, "Expected client to be created successfully"
+        
+        tools = await get_tools(client)
+        assert len(tools) == 1, "Expected one tool to be returned"
+        assert tools[0]["schema"]["name"] == "dummy_tool", "Expected tool name to match"
+        assert tools[0]["schema"]["description"] == "A dummy tool for testing.", "Expected tool description to match"
+        assert callable(tools[0]["function"]), "Expected function to be callable"
+
+        # Test the tool
+        result = await tools[0]["function"]()
+        assert result == "dummy response", "Expected result of dummy_tool to be 'dummy response'"
+
+@pytest.mark.asyncio
 async def test_mcp_client_tool_to_function():
     server = MCPServer()
 
