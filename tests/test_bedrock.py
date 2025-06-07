@@ -2,8 +2,6 @@ import pytest
 from unittest.mock import Mock
 from mus.llm.bedrock import (
     BedrockLLM,
-    func_to_tool,
-    dataclass_to_tool,
     functions_for_llm,
     file_to_image,
     str_to_text_block,
@@ -15,9 +13,9 @@ from mus.llm.bedrock import (
     deltas_to_messages,
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
+from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
-import json
 
 @pytest.fixture
 def mock_bedrock_client():
@@ -27,27 +25,41 @@ def mock_bedrock_client():
 def bedrock_llm(mock_bedrock_client):
     return BedrockLLM("a-model-id", mock_bedrock_client)
 
-def test_func_to_tool():
-    def sample_func(param1: str, param2: int) -> str:
-        """Sample function docstring"""
+@pytest.mark.asyncio
+async def test_bedrock_stream_called(bedrock_llm, mock_bedrock_client):
+    mock_bedrock_client.converse_stream.return_value = {
+        "stream": iter([])
+    }
+    async def dummy_tool(hello: int) -> str:
+        """Dummy tool for testing"""
+        return "dummy response"
+    parsed_function = to_schema(dummy_tool)
+    async for _ in bedrock_llm.stream(prompt="Test prompt", model="test-model", history=[], functions=[parsed_function]):
         pass
+    mock_bedrock_client.converse_stream.assert_called_once_with(
+        modelId="a-model-id",
+        messages=[],
+        system=[
+            {
+                "text": "Test prompt",
+            }
+        ],
+        inferenceConfig={
+            "maxTokens": 4096,
+        },
+        toolConfig={
+            "tools": [{
+                "toolSpec":{
+                    "name": parsed_function['name'],
+                    "description": parsed_function['description'],
+                    "inputSchema": {
+                        "json": parsed_function['schema']
+                    }
+                }
+            }]
+        }
+    )
 
-    tool = func_to_tool(sample_func)
-    assert tool['toolSpec']['name'] == 'sample_func'
-    assert tool['toolSpec']['description'] == 'Sample function docstring'
-    assert 'inputSchema' in tool['toolSpec']
-
-def test_dataclass_to_tool():
-    @dataclass
-    class SampleDataclass:
-        """Sample dataclass docstring"""
-        field1: str
-        field2: int
-
-    tool = dataclass_to_tool(SampleDataclass)
-    assert tool['toolSpec']['name'] == 'SampleDataclass'
-    assert tool['toolSpec']['description'] == 'Sample dataclass docstring'
-    assert 'inputSchema' in tool['toolSpec']
 
 def test_functions_for_llm():
     def func1():
@@ -59,7 +71,7 @@ def test_functions_for_llm():
     @dataclass
     class DataClass1: pass
 
-    result = functions_for_llm([func1, func2, DataClass1])
+    result = functions_for_llm([to_schema(func1), to_schema(func2), to_schema(DataClass1)])
     assert len(result) == 3
     assert all('toolSpec' in item for item in result)
 

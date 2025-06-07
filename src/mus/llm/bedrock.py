@@ -1,7 +1,6 @@
 import typing as t
-from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, ToolCallableType, Query, Usage, Assistant, LLMClientStreamArgs
-from ..functions import get_schema
+from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
+from ..functions import FunctionSchema
 import base64
 
 from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
@@ -46,38 +45,20 @@ async def iterate_in_threadpool(
         except _StopIteration:
             break
 
-def func_to_tool(func: ToolCallableType):
-    if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"): # type: ignore
-            return definition
-    if not func.__doc__:
-        raise ValueError(f"Function {func.__name__} is missing a docstring")
-    p = bt.ToolTypeDef(
+def func_schema_to_tool(func_schema: FunctionSchema):
+    return bt.ToolTypeDef(
         toolSpec=bt.ToolSpecificationTypeDef(
-            name=func.__name__,
-            description=func.__doc__,
+            name=func_schema["name"],
+            description=func_schema["description"],
             inputSchema=bt.ToolInputSchemaTypeDef(
-                json=get_schema(func.__name__, list(func.__annotations__.items()))
+                json=func_schema["schema"]
             )
         )
     )
-    return p
 
-def dataclass_to_tool(dataclass):
-    p = bt.ToolTypeDef(
-        toolSpec=bt.ToolSpecificationTypeDef(
-                name=dataclass.__name__,
-                description=dataclass.__doc__,
-                inputSchema=bt.ToolInputSchemaTypeDef(
-                    json=get_schema(dataclass.__name__, list(dataclass.__annotations__.items()))
-                )
-            )
-    )
-    return p
-
-def functions_for_llm(functions: t.List[ToolCallableType]):
+def functions_for_llm(functions: t.List[FunctionSchema]):
     return [
-        dataclass_to_tool(func) if is_dataclass(func) else func_to_tool(func)
+        func_schema_to_tool(func)
         for func
         in (functions or [])
     ]
@@ -148,15 +129,17 @@ def parse_tool_content(c: t.Union[str, File]):
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult):
-    if isinstance(tool_result.content, list):
+    if is_tool_simple_return_value(tool_result.content):
+        return [
+            parse_tool_content(tool_result.content)
+        ]
+    elif isinstance(tool_result.content, list):
         return [
             parse_tool_content(c)
             for c in tool_result.content
         ]
     else:
-        return [
-            parse_tool_content(tool_result.content)
-        ]
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
     
 def has_reasoning_text(content: t.Union[bt.ContentBlockTypeDef, str]):
     if isinstance(content, str):
