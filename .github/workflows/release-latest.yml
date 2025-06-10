@@ -41,7 +41,7 @@ jobs:
       
       - name: Build project
         run: uv build
-      
+
       - name: Release
         run: |
           gh create release v${{ env.CURRENT_VERSION }} ./dist/mus*.whl --title "Release v${{ env.CURRENT_VERSION }}"
