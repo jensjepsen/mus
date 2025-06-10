@@ -1,3 +1,9 @@
+## v0.14.1 (2025-06-10)
+
+### Fix
+
+- jensjepsen/dependabot/pip/wasmtime-33.0.0
+
 ## v0.14.0 (2025-06-10)
 
 ### Feat
