@@ -28,7 +28,7 @@ openai  = ["openai(>=1.61.1,<2.0.0)"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.16.0)"]
 pyodide = ["partial_json_parser>=0.2.1.1.post5"]
-sandbox = ["wasmtime==32.0.0"]
+sandbox = ["wasmtime==33.0.0"]
 dev = [
     "pytest(>=8.3.3,<9.0.0)",
     "bump2version(>=1.0.1,<2.0.0)",
