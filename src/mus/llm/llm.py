@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 
 from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant
-from ..functions import functions_map, to_schema, schema_to_example
+from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
 from ..types import DataClass
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class IterableResult:
         return self.total
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
-    functions: t.Optional[t.List[ToolCallableType]]
+    functions: t.Optional[t.List[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     no_stream: t.Optional[bool]
 
@@ -85,11 +85,17 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     async def query(self, query: t.Optional[QueryOrSystem]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
+        tools = parse_tools(functions)
         
+        function_schemas = [tool["schema"] for tool in tools]
 
-        func_map = functions_map(functions)
+        func_map = {
+            tool["schema"]["name"]: tool
+            for tool in tools
+        }
+
         async def invoke_function(func_name: str, input: t.Mapping[str, t.Any]):
-            result = await func_map[func_name](**input)
+            result = await func_map[func_name]["function"](**input)
             if not is_tool_return_value(result):
                 result = json.dumps(result)
 
@@ -122,7 +128,14 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             prompt=dedented_prompt,
             history=history,
             kwargs=self.client_kwargs,
-            **kwargs
+            function_choice=kwargs.get("function_choice", None),
+            functions=function_schemas,
+            no_stream=kwargs.get("no_stream", None),
+            max_tokens=kwargs.get("max_tokens", None),
+            top_k=kwargs.get("top_k", None),
+            top_p=kwargs.get("top_p", None),
+            stop_sequences=kwargs.get("stop_sequences", None),
+            temperature=kwargs.get("temperature", None),
         ):
             yield msg
             history = history + [msg]

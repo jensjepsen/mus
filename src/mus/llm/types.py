@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from textwrap import dedent
 
+if t.TYPE_CHECKING:
+    from ..functions import FunctionSchema
+
 import io
 import base64
 
@@ -27,7 +30,7 @@ class QueryStreamArgs(t.TypedDict, total=False):
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     prompt: t.Optional[str]
     history: "History"
-    functions: t.Optional[t.List["ToolCallableType"]]
+    functions: t.Optional[t.List["FunctionSchema"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
@@ -104,7 +107,7 @@ class Delta:
 
 @dataclass
 class File:
-    b64type: t.Literal["image/png"]
+    b64type: str
     content: str
 
     def to_b64(self):
@@ -136,10 +139,13 @@ class File:
 
 
 ToolSimpleReturnValue = t.Union[str, "File"]
-ToolReturnValue = t.Union[t.List[ToolSimpleReturnValue], ToolSimpleReturnValue]
+ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
 
 def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
     return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
+
+def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
+    return isinstance(val, str) or isinstance(val, File)
 
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
