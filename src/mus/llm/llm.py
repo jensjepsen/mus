@@ -2,6 +2,7 @@ import json
 import logging
 import typing as t
 from textwrap import dedent
+import sys
 
 from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
@@ -68,6 +69,39 @@ class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
 
 QueryOrSystem = t.Union[QueryType, System]
 
+def get_exception_depth():
+    """Get the depth of the current exception's traceback"""
+    _, _, exc_traceback = sys.exc_info()
+    if exc_traceback is None:
+        return 0
+    
+    depth = 0
+    tb = exc_traceback
+    while tb is not None:
+        depth += 1
+        tb = tb.tb_next
+    return depth
+
+
+async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
+    import inspect
+    try:
+        result = await func_map[func_name]["function"](**input)
+    except TypeError as e:
+        depth = get_exception_depth()
+        if depth == 1 and type(e).__name__ == "TypeError":
+            return json.dumps({
+                "error": f"Tool {func_name} was called with incorrect arguments: {input}. Please check the function signature and the input provided.",
+            })
+        else:
+            raise e from e
+        
+    if not is_tool_return_value(result):
+        result = json.dumps(result)
+
+    return result
+
+
 class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
@@ -94,12 +128,6 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             for tool in tools
         }
 
-        async def invoke_function(func_name: str, input: t.Mapping[str, t.Any]):
-            result = await func_map[func_name]["function"](**input)
-            if not is_tool_return_value(result):
-                result = json.dumps(result)
-
-            return result
         parsed_query: t.Optional[Query] = None
         prompt = self.prompt
         if query:
@@ -140,7 +168,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             yield msg
             history = history + [msg]
             if msg.content["type"] == "tool_use":
-                func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input)
+                func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input, func_map)
                 fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
                 yield fd
                 history.append(fd)

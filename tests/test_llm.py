@@ -1,12 +1,14 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from dataclasses import dataclass
+import json
 
 import anthropic.types as at
 from anthropic.lib.streaming import TextEvent, ContentBlockStopEvent
 
 from mus.llm import LLM
-from mus.llm.llm import IterableResult, merge_history
+from mus.llm.llm import IterableResult, merge_history, invoke_function
+from mus.functions import parse_tools
 from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File
 from mus.llm.anthropic import AnthropicLLM
 
@@ -492,5 +494,62 @@ async def test_history_with_mixed_query_types():
     assert merged[4] == query_list
     assert merged[5].content["data"] == "Text after"
 
+@pytest.mark.asyncio
+async def test_invoke_function():
+    async def sample_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return str(a + b)
+    
+    tools = parse_tools([sample_function])
+    func_map = {
+        tool["schema"]["name"]: tool
+        for tool in tools
+    }
+
+    input_data = {"a": 3, "b": 5}
+    result = await invoke_function("sample_function", input_data, func_map)
+
+    assert result == "8", f"Expected '8', got {result}"
+
+@pytest.mark.asyncio
+async def test_invoke_function_wrong_args():
+    async def sample_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return str(a + b)
+    
+    tools = parse_tools([sample_function])
+    func_map = {
+        tool["schema"]["name"]: tool
+        for tool in tools
+    }
+
+    input_data = {"a": 3}
+    return_val = await invoke_function("sample_function", input_data, func_map)
+    assert type(return_val) == str, f"Expected str, got {type(return_val)}"
+    result = json.loads(return_val)
+    assert "error" in result, f"Expected error, got {result}"
+    assert f"Tool sample_function was called with incorrect arguments" in result["error"], f"Expected error message not found, got {result['error']}"
+
+@pytest.mark.asyncio
+async def test_invoke_function_internal_scope_wrong_args():
+    def bad_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return str(a + b)
+
+    async def sample_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return bad_function(a) # type: ignore # this will raise an error because bad_function expects two arguments
+    
+    tools = parse_tools([sample_function])
+    func_map = {
+        tool["schema"]["name"]: tool
+        for tool in tools
+    }
+
+    input_data = {"a": 3, "b": 5} # these are the correct arguments, but the function will fail internally
+
+    with pytest.raises(TypeError) as exc_info:
+        await invoke_function("sample_function", input_data, func_map)
+    
 if __name__ == "__main__":
     pytest.main()
