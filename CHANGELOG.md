@@ -1,3 +1,21 @@
+## v0.14.0 (2025-06-10)
+
+### Feat
+
+- mcp
+- mcp
+- mcp
+
+### Refactor
+
+- cleanup types
+- parse tools
+- don't depend on pydantic
+- don't depend on pydantic
+- don't depend on pydantic
+- use local schema
+- simplify passing tools to clients
+
 ## v0.13.0 (2025-05-19)
 
 ### Feat
