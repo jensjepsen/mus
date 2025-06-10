@@ -45,4 +45,6 @@ jobs:
       - name: Release
         run: |
           gh release create v${{ env.CURRENT_VERSION }} ./dist/mus*.whl --title "Release v${{ env.CURRENT_VERSION }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
