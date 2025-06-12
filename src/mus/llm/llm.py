@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant
+from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
 from ..types import DataClass
 
@@ -63,6 +63,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.List[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     no_stream: t.Optional[bool]
+    cache: t.Optional[CacheOptions]
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
@@ -164,6 +165,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             top_p=kwargs.get("top_p", None),
             stop_sequences=kwargs.get("stop_sequences", None),
             temperature=kwargs.get("temperature", None),
+            cache=kwargs.get("cache", None),
         ):
             yield msg
             history = history + [msg]

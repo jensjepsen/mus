@@ -20,6 +20,10 @@ CLIENT_TYPE = t.TypeVar("CLIENT_TYPE")
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
 
+class CacheOptions(t.TypedDict):
+    cache_system_prompt: t.Optional[bool]
+    cache_tools: t.Optional[bool]
+
 class QueryStreamArgs(t.TypedDict, total=False):
     max_tokens: t.Optional[int]
     temperature: t.Optional[float]
@@ -34,6 +38,7 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
+    cache: t.Optional[CacheOptions]
 
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     @abstractmethod 

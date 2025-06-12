@@ -268,24 +268,40 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
         extra_kwargs: dict[str, t.Any] = {
             **(kwargs.get("kwargs", None) or {})
         }
+        cache_config = kwargs.get("cache", None)
         if functions := kwargs.get("functions", None):
-            extra_kwargs["toolConfig"] = {
-                "tools": functions_for_llm(functions),
+            toolConfig: bt.ToolConfigurationTypeDef = {
+                "tools": functions_for_llm(functions)
                 #**({"toolChoice": {function_choice: {}}} if function_choice else {})
             }
+            if cache_config and cache_config.get("cache_tools", True):
+                toolConfig["tools"] = [
+                    *toolConfig["tools"],
+                    {
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    }
+                ]
+            extra_kwargs["toolConfig"] = toolConfig
             
         if prompt := kwargs.get("prompt", None):
-            extra_kwargs["system"] = [{
-                "text": prompt
-            }]
+            system: list[bt.SystemContentBlockTypeDef] = [
+                {
+                    "text": prompt,
+                }
+            ]
+            if cache_config and cache_config.get("cache_system_prompt", True):
+                system.append({
+                    "cachePoint": {
+                        "type": "default"
+                    }
+                })
+            extra_kwargs["system"] = system
 
         
         messages = deltas_to_messages(kwargs.get("history"))
-        """
-        top_k=top_k or NotGiven(),
-            top_p=top_p or NotGiven(),
-            temperature=temperature or NotGiven(),
-        """
+        
         args = bt.ConverseStreamRequestTypeDef(
             modelId=str(self.model),
             messages=messages,

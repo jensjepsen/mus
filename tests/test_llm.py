@@ -550,6 +550,28 @@ async def test_invoke_function_internal_scope_wrong_args():
 
     with pytest.raises(TypeError) as exc_info:
         await invoke_function("sample_function", input_data, func_map)
+
+@pytest.mark.asyncio
+async def test_pass_cache_options():
+    mock_client = MagicMock()
+    mock_client.stream.return_value.__aenter__.return_value = iter([
+        Delta(content={"type": "text", "data": "Hello"}),
+    ])
+    llm = LLM(prompt="Test prompt", model=mock_client, cache={
+        "cache_system_prompt": True,
+        "cache_tools": True
+    })
     
-if __name__ == "__main__":
-    pytest.main()
+    await llm(System("Can be overwritten") + "Test query").string()
+
+    assert mock_client.stream.called
+    assert mock_client.stream.call_args[1]['cache'] == {
+        "cache_system_prompt": True,
+        "cache_tools": True
+    }
+
+    # no cache
+
+    llm_no_cache = LLM(prompt="Test prompt", model=mock_client, cache=None)
+    await llm_no_cache(System("Can be overwritten") + "Test query").string()
+    assert mock_client.stream.call_args[1]['cache'] is None
