@@ -24,7 +24,7 @@ def tool(**metadata: t.Dict[str, t.Any]):
         return func
     return decorator
 
-def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.List[ToolCallable]:
+def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.Sequence[ToolCallable]:
     """Parse a list of tool callables into a list of ToolCallable."""
     return [
         func

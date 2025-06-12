@@ -56,7 +56,7 @@ def func_schema_to_tool(func_schema: FunctionSchema):
         )
     )
 
-def functions_for_llm(functions: t.List[FunctionSchema]):
+def functions_for_llm(functions: t.Sequence[FunctionSchema]):
     return [
         func_schema_to_tool(func)
         for func
@@ -371,7 +371,9 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     metadata = event["metadata"]
                     usage: Usage = {
                         "input_tokens": metadata["usage"]["inputTokens"], 
-                        "output_tokens": metadata["usage"]["outputTokens"]
+                        "output_tokens": metadata["usage"]["outputTokens"],
+                        "cache_read_input_tokens": metadata["usage"].get("cacheReadInputTokens", 0),
+                        "cache_written_input_tokens": metadata["usage"].get("cacheWrittenInputTokens", 0)
                     }
                     yield Delta(content={
                             "type": "text",
@@ -402,10 +404,12 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             if response["stopReason"] == "tool_use":
                 for tool in tools:
                     yield tool
-            
+
             usage: Usage = {
                 "input_tokens": response["usage"]["inputTokens"], 
-                "output_tokens": response["usage"]["outputTokens"]
+                "output_tokens": response["usage"]["outputTokens"],
+                "cache_read_input_tokens": response["usage"].get("cacheReadInputTokens", 0),
+                "cache_written_input_tokens": response["usage"].get("cacheWrittenInputTokens", 0)
             }
             yield Delta(content={
                     "type": "text",
@@ -413,4 +417,3 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 },
                 usage=usage
             )
-            

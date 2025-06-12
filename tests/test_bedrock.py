@@ -236,7 +236,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
             {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param": "value"}'}}}},
             {'contentBlockStop': {}},
             {'messageStop': {'stopReason': 'tool_use'}},
-            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20}}},
+            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWrittenInputTokens': 7}}},
         ]
     }
     bedrock_llm.client.converse_stream.return_value = mock_response
@@ -251,7 +251,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
     assert len(results) == 3
     assert results[0].content['type'] == 'text'
     assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20}
+    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 3, 'cache_written_input_tokens': 7}
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):
@@ -265,7 +265,7 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
             }
         },
         'stopReason': 'tool_use',
-        'usage': {'inputTokens': 10, 'outputTokens': 20},
+        'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 7, 'cacheWrittenInputTokens': 3},
     }
     bedrock_llm.client.converse.return_value = mock_response
 
@@ -280,7 +280,7 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
     assert len(results) == 3
     assert results[0].content['type'] == 'text'
     assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20}
+    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 7, 'cache_written_input_tokens': 3}
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_cache_options(bedrock_llm):

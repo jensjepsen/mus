@@ -34,7 +34,7 @@ class QueryStreamArgs(t.TypedDict, total=False):
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     prompt: t.Optional[str]
     history: "History"
-    functions: t.Optional[t.List["FunctionSchema"]]
+    functions: t.Optional[t.Sequence["FunctionSchema"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
@@ -85,6 +85,8 @@ DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult | DeltaHistory
 class Usage(t.TypedDict):
     input_tokens: int
     output_tokens: int
+    cache_read_input_tokens: int
+    cache_written_input_tokens: int
 
 @dataclass
 class Delta:

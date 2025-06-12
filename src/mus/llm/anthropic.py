@@ -9,7 +9,7 @@ def func_to_tool(func: FunctionSchema) -> at.ToolParam:
     return p
 
 
-def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[at.ToolParam]:
+def functions_for_llm(functions: t.Sequence[FunctionSchema]) -> t.List[at.ToolParam]:
     return [
         func_to_tool(func)
         for func
@@ -192,7 +192,9 @@ class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicB
                 elif event.type == "message_stop":
                     usage: Usage = {
                         "input_tokens": event.message.usage.input_tokens, 
-                        "output_tokens": event.message.usage.output_tokens
+                        "output_tokens": event.message.usage.output_tokens,
+                        "cache_read_input_tokens": event.message.usage.cache_read_input_tokens or 0,
+                        "cache_written_input_tokens": event.message.usage.cache_creation_input_tokens or 0,
                     }
                     yield Delta(content={
                             "type": "text",

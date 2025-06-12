@@ -33,7 +33,7 @@ class IterableResult:
         self.history: History = []
         self.has_iterated = False
         self.total = ""
-        self.usage = Usage(input_tokens=0, output_tokens=0)
+        self.usage = Usage(input_tokens=0, output_tokens=0, cache_read_input_tokens=0, cache_written_input_tokens=0)
     
     async def __aiter__(self):
         async for msg in self.iterable:
@@ -46,6 +46,8 @@ class IterableResult:
             if msg.usage:
                 self.usage["input_tokens"] += msg.usage["input_tokens"]
                 self.usage["output_tokens"] += msg.usage["output_tokens"]
+                self.usage["cache_read_input_tokens"] += msg.usage.get("cache_read_input_tokens", 0)
+                self.usage["cache_written_input_tokens"] += msg.usage.get("cache_written_input_tokens", 0)
             if msg.content["type"] == "history":
                 # TODO: Merge deltas here
                 self.history.extend(merge_history(msg.content["data"]))
@@ -60,7 +62,7 @@ class IterableResult:
         return self.total
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
-    functions: t.Optional[t.List[ToolCallableType | ToolCallable]]
+    functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
