@@ -87,7 +87,6 @@ def get_exception_depth():
 
 
 async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
-    import inspect
     try:
         result = await func_map[func_name]["function"](**input)
     except TypeError as e:
