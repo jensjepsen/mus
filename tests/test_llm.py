@@ -99,27 +99,26 @@ async def test_llm_fill(mock_model):
 
 @pytest.mark.asyncio
 async def test_llm_fill_strategy_prefill(mock_model):
-    
-        # below looks a little weird because the answer is prefilled, so it's missing the initial json
+    # below looks a little weird because the answer is prefilled, so it's missing the initial json
     responses = [
-                Delta(
-                    content={
-                        "type": "text",
-                        "data": """
-                            "test",
-                        """
+        Delta(
+            content={
+                "type": "text",
+                "data": """
+                    "test",
+                """
+            }
+        ),
+        Delta(
+            content={
+                "type": "text",
+                "data": """
+                    "field2": 1234
                     }
-                ),
-                Delta(
-                    content={
-                        "type": "text",
-                        "data": """
-                            "field2": 1234
-                            }
-                        """
-                    }
-                )
-            ]
+                """
+            }
+        )
+    ]
     mock_model.set_response(responses)
     llm = LLM(prompt="Test prompt", model=mock_model)
     result = await llm.fill("Test query", TestStructure, strategy="prefill")

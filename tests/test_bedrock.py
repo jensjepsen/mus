@@ -13,7 +13,7 @@ from mus.llm.bedrock import (
     deltas_to_messages,
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
-from mus.functions import to_schema, parse_tools
+from mus.functions import to_schema
 from mus import LLM
 from dataclasses import dataclass
 import base64
