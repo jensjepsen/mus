@@ -232,7 +232,13 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                                 toolUseId=delta.content["data"].id,
                                 content=tool_result_to_content(delta.content["data"]),
                             )
-                        )
+                        ),
+                        # example of how to add a cache point, if needed
+                        #bt.ContentBlockTypeDef(
+                        #    cachePoint= bt.CachePointBlockTypeDef(
+                        #        type="default"
+                        #    )
+                        #)
                     ]
                 ))
             else:
@@ -373,7 +379,7 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                         "input_tokens": metadata["usage"]["inputTokens"], 
                         "output_tokens": metadata["usage"]["outputTokens"],
                         "cache_read_input_tokens": metadata["usage"].get("cacheReadInputTokens", 0),
-                        "cache_written_input_tokens": metadata["usage"].get("cacheWrittenInputTokens", 0)
+                        "cache_written_input_tokens": metadata["usage"].get("cacheWriteInputTokens", 0)
                     }
                     yield Delta(content={
                             "type": "text",
