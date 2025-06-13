@@ -6,7 +6,7 @@ import sys
 
 from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
-from ..types import DataClass
+from ..types import FillableType
 
 logger = logging.getLogger(__name__)
 
@@ -204,9 +204,9 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     async def fill(
             self,
             query: QueryType,
-            structure: t.Type[DataClass],
+            structure: t.Type[FillableType],
             strategy: t.Literal["tool_use", "prefill"] = "tool_use",
-        ) -> DataClass:
+        ) -> FillableType:
         if strategy == "tool_use":
             async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True): # type: ignore
                 if msg.content["type"] == "tool_use":

@@ -83,7 +83,7 @@ def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     if not typed_dict.__doc__:
         raise ValueError(f"TypedDict {typed_dict.__name__} is missing a docstring")
     if not hasattr(typed_dict, '__annotations__'):
-        raise ValueError(f"TypedDict {typed_dict.__name__} is missing annotations - did you forget to use TypedDict?")
+        raise ValueError(f"TypedDict {typed_dict.__name__} is missing annotations - did you use a dict instead of a TypedDict?")
     
     p = FunctionSchema(
         name=typed_dict.__name__,

@@ -1,11 +1,9 @@
 import typing as t
 
-class DataClass(t.Protocol):
-    def __init__(self, *args, **kwargs):
-        ...
-    
+class FillableType(t.Protocol):
+    __annotations__: t.Dict[str, t.Any]
+    __doc__: str
+    __name__: str
+
     def __call__(self, *args: t.Any, **kwds: t.Any) -> t.Any:
-        ...
-    
-    def __dataclass_fields__(self) -> t.Dict[str, t.Any]:
         ...
