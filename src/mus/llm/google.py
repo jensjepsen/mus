@@ -146,11 +146,11 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     return contents
 
 class StreamArgs(t.TypedDict, total=False):
-    extra_headers: t.Dict[str, str]
+    pass
 
 STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
-ALL_STREAM_ARGS = t.Union[StreamArgs]
+ALL_STREAM_ARGS = StreamArgs
 
 class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[genai.Client] = None):
@@ -188,6 +188,43 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
         
         config = genai_types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
         
+        def handle_response(resp: genai_types.GenerateContentResponse):
+            if chunk.text:
+                    return [Delta(content={
+                        "type": "text",
+                        "data": chunk.text
+                    })]
+                
+            # Handle function calls in streaming
+            if chunk.function_calls:
+                deltas = []
+                for func_call in chunk.function_calls:
+                    tool_use = ToolUse(
+                        id=func_call.id or func_call.name,
+                        name=func_call.name,
+                        input=func_call.args
+                    )
+                    deltas.append(Delta(content={
+                        "data": tool_use,
+                        "type": "tool_use"
+                    }))
+                return deltas
+            
+            # Handle usage information
+            if chunk.usage_metadata:
+                usage: Usage = {
+                    "input_tokens": chunk.usage_metadata.prompt_token_count or 0,
+                    "output_tokens": chunk.usage_metadata.candidates_token_count or 0,
+                    "cache_read_input_tokens": getattr(chunk.usage_metadata, 'cache_read_input_tokens', 0),
+                    "cache_written_input_tokens": getattr(chunk.usage_metadata, 'cache_written_input_tokens', 0)
+                }
+                return [Delta(
+                    content={"type": "text", "data": ""},
+                    usage=usage
+                )]
+            
+            return []
+
         if not kwargs.get("no_stream", False):
             # Streaming response using native async API
             async for chunk in await self.client.aio.models.generate_content_stream(
@@ -195,70 +232,14 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
                 contents=contents,
                 config=config
             ):
-                if hasattr(chunk, 'text') and chunk.text:
-                    yield Delta(content={
-                        "type": "text",
-                        "data": chunk.text
-                    })
-                
-                # Handle function calls in streaming
-                if hasattr(chunk, 'function_calls') and chunk.function_calls:
-                    for func_call in chunk.function_calls:
-                        tool_use = ToolUse(
-                            id=getattr(func_call, 'id', func_call.name),
-                            name=func_call.name,
-                            input=func_call.args
-                        )
-                        yield Delta(content={
-                            "data": tool_use,
-                            "type": "tool_use"
-                        })
-                
-                # Handle usage information
-                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
-                    usage: Usage = {
-                        "input_tokens": getattr(chunk.usage_metadata, 'prompt_token_count', 0),
-                        "output_tokens": getattr(chunk.usage_metadata, 'candidates_token_count', 0)
-                    }
-                    yield Delta(
-                        content={"type": "text", "data": ""},
-                        usage=usage
-                    )
+                for delta in handle_response(chunk):
+                    yield delta
         else:
-            # Non-streaming response using native async API
+            # Non-streaming response using blocking API
             response = await self.client.aio.models.generate_content(
                 model=str(self.model),
                 contents=contents,
                 config=config
             )
-            
-            # Handle text response
-            if hasattr(response, 'text') and response.text:
-                yield Delta(content={
-                    "type": "text",
-                    "data": response.text
-                })
-            
-            # Handle function calls
-            if hasattr(response, 'function_calls') and response.function_calls:
-                for func_call in response.function_calls:
-                    tool_use = ToolUse(
-                        id=getattr(func_call, 'id', func_call.name),
-                        name=func_call.name,
-                        input=func_call.args
-                    )
-                    yield Delta(content={
-                        "data": tool_use,
-                        "type": "tool_use"
-                    })
-            
-            # Handle usage information
-            if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                usage: Usage = {
-                    "input_tokens": getattr(response.usage_metadata, 'prompt_token_count', 0),
-                    "output_tokens": getattr(response.usage_metadata, 'candidates_token_count', 0)
-                }
-                yield Delta(
-                    content={"type": "text", "data": ""},
-                    usage=usage
-                )
+            for delta in handle_response(response):
+                yield delta
