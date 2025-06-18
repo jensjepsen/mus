@@ -189,16 +189,16 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
         config = genai_types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
         
         def handle_response(resp: genai_types.GenerateContentResponse):
-            if chunk.text:
+            if resp.text:
                     return [Delta(content={
                         "type": "text",
-                        "data": chunk.text
+                        "data": resp.text
                     })]
                 
             # Handle function calls in streaming
-            if chunk.function_calls:
+            if resp.function_calls:
                 deltas = []
-                for func_call in chunk.function_calls:
+                for func_call in resp.function_calls:
                     tool_use = ToolUse(
                         id=func_call.id or func_call.name,
                         name=func_call.name,
@@ -211,12 +211,12 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
                 return deltas
             
             # Handle usage information
-            if chunk.usage_metadata:
+            if resp.usage_metadata:
                 usage: Usage = {
-                    "input_tokens": chunk.usage_metadata.prompt_token_count or 0,
-                    "output_tokens": chunk.usage_metadata.candidates_token_count or 0,
-                    "cache_read_input_tokens": getattr(chunk.usage_metadata, 'cache_read_input_tokens', 0),
-                    "cache_written_input_tokens": getattr(chunk.usage_metadata, 'cache_written_input_tokens', 0)
+                    "input_tokens": resp.usage_metadata.prompt_token_count or 0,
+                    "output_tokens": resp.usage_metadata.candidates_token_count or 0,
+                    "cache_read_input_tokens": getattr(resp.usage_metadata, 'cache_read_input_tokens', 0),
+                    "cache_written_input_tokens": getattr(resp.usage_metadata, 'cache_written_input_tokens', 0)
                 }
                 return [Delta(
                     content={"type": "text", "data": ""},
