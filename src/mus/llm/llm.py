@@ -122,7 +122,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         tools = parse_tools(functions)
-        
+            
         function_schemas = [tool["schema"] for tool in tools]
 
         func_map = {
@@ -200,6 +200,8 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             previous = kwargs.pop("previous", None)
             _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
             return IterableResult(_q)
+        
+        
     
     async def fill(
             self,
@@ -208,7 +210,11 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             strategy: t.Literal["tool_use", "prefill"] = "tool_use",
         ) -> FillableType:
         if strategy == "tool_use":
-            async for msg in self.query(query, functions=[structure], function_choice="any", no_stream=True): # type: ignore
+            as_tool = ToolCallable(
+                function=structure,  # type: ignore
+                schema=to_schema(structure)
+            )
+            async for msg in self.query(query, functions=[as_tool], function_choice="any", no_stream=True):
                 if msg.content["type"] == "tool_use":
                     return structure(**(msg.content["data"].input))
             else:

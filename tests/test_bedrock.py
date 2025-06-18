@@ -236,7 +236,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
             {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param": "value"}'}}}},
             {'contentBlockStop': {}},
             {'messageStop': {'stopReason': 'tool_use'}},
-            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWrittenInputTokens': 7}}},
+            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWriteInputTokens': 7}}},
         ]
     }
     bedrock_llm.client.converse_stream.return_value = mock_response
