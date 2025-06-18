@@ -63,9 +63,13 @@ You will be provided with a question and you should respond with the answer.
         "cache_tools": True
     })
 
+    
     class ToFill(t.TypedDict):
+        """ Fill this with a string and an integer. """
         a: str
         b: int
+
+    print("FILLED", await bot.fill("Fill this", ToFill))
 
     response = None
     h = states("history", [])
