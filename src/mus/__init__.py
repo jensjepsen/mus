@@ -34,3 +34,10 @@ except ImportError:
     pass
 else:
     from .llm.openai import OpenAILLM
+
+try:
+    from google import genai
+except ImportError:
+    pass
+else:
+    from .llm.google import GoogleGenAILLM

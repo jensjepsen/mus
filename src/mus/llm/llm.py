@@ -169,6 +169,7 @@ class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             cache=kwargs.get("cache", None),
         ):
             yield msg
+            
             history = history + [msg]
             if msg.content["type"] == "tool_use":
                 func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input, func_map)
