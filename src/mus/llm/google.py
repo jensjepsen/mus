@@ -3,52 +3,16 @@ from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, As
 from ..functions import FunctionSchema
 import base64
 import json
-import functools
-import anyio.to_thread
 
 from google import genai
 from google.genai import types as genai_types
-
-P = t.ParamSpec("P")
-T = t.TypeVar("T")
-
-async def run_in_threadpool(func: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
-    if kwargs:  # pragma: no cover
-        # run_sync doesn't accept 'kwargs', so bind them in here
-        func = functools.partial(func, **kwargs)
-    return await anyio.to_thread.run_sync(func, *args) # type: ignore
-
-
-class _StopIteration(Exception):
-    pass
-
-
-def _next(iterator: t.Iterator[T]) -> T:
-    # We can't raise `StopIteration` from within the threadpool iterator
-    # and catch it outside that context, so we coerce them into a different
-    # exception type.
-    try:
-        return next(iterator)
-    except StopIteration:
-        raise _StopIteration
-
-
-async def iterate_in_threadpool(
-    iterator: t.Iterable[T],
-) -> t.AsyncIterator[T]:
-    as_iterator = iter(iterator)
-    while True:
-        try:
-            yield await anyio.to_thread.run_sync(_next, as_iterator)
-        except _StopIteration:
-            break
 
 def func_schema_to_tool(func_schema: FunctionSchema):
     return genai_types.FunctionDeclaration(
         name=func_schema["name"],
         description=func_schema["description"],
         parameters=genai_types.Schema(
-            type=func_schema["schema"].get("type", "object"),
+            type='OBJECT',
             properties={
                 k: genai_types.Schema(**v) if isinstance(v, dict) else v
                 for k, v in func_schema["schema"].get("properties", {}).items()
@@ -146,7 +110,7 @@ def tool_result_to_parts(tool_result: ToolResult):
 
 def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     contents = []
-    toolid_to_name = {}
+    tool_id_to_name = {}
     for delta in deltas:
         if isinstance(delta, Delta):
             if delta.content["type"] == "text":
@@ -157,7 +121,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                     ))
             elif delta.content["type"] == "tool_use":
                 tool_use = delta.content["data"]
-                toolid_to_name[tool_use.id] = tool_use.name
+                tool_id_to_name[tool_use.id] = tool_use.name
                 contents.append(genai_types.Content(
                     role="model",
                     parts=[genai_types.Part.from_function_call(
@@ -167,8 +131,9 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 ))
             elif delta.content["type"] == "tool_result":
                 tool_result = delta.content["data"]
+                tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
                 function_response_part = genai_types.Part.from_function_response(
-                    name=toolid_to_name.get(tool_result.id, tool_result.id),
+                    name=tool_name,  # Using id as name for now
                     response={"result": tool_result.content}
                 )
                 contents.append(genai_types.Content(
@@ -224,28 +189,23 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
         config = genai_types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
         
         if not kwargs.get("no_stream", False):
-            # Streaming response
-            stream_func = functools.partial(
-                self.client.models.generate_content_stream,
+            # Streaming response using native async API
+            async for chunk in await self.client.aio.models.generate_content_stream(
                 model=str(self.model),
                 contents=contents,
                 config=config
-            )
-            
-            response_stream = await run_in_threadpool(stream_func)
-            
-            async for chunk in iterate_in_threadpool(response_stream):
-                if chunk.text:
+            ):
+                if hasattr(chunk, 'text') and chunk.text:
                     yield Delta(content={
                         "type": "text",
                         "data": chunk.text
                     })
                 
                 # Handle function calls in streaming
-                if chunk.function_calls:
+                if hasattr(chunk, 'function_calls') and chunk.function_calls:
                     for func_call in chunk.function_calls:
                         tool_use = ToolUse(
-                            id=func_call.id,
+                            id=getattr(func_call, 'id', func_call.name),
                             name=func_call.name,
                             input=func_call.args
                         )
@@ -258,24 +218,19 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
                 if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
                     usage: Usage = {
                         "input_tokens": getattr(chunk.usage_metadata, 'prompt_token_count', 0),
-                        "output_tokens": getattr(chunk.usage_metadata, 'candidates_token_count', 0),
-                        "cache_read_input_tokens": getattr(chunk.usage_metadata, 'cache_read_input_tokens', 0),
-                        "cache_written_input_tokens": getattr(chunk.usage_metadata, 'cache_written_input_tokens', 0)
+                        "output_tokens": getattr(chunk.usage_metadata, 'candidates_token_count', 0)
                     }
                     yield Delta(
                         content={"type": "text", "data": ""},
                         usage=usage
                     )
         else:
-            # Non-streaming response
-            generate_func = functools.partial(
-                self.client.models.generate_content,
+            # Non-streaming response using native async API
+            response = await self.client.aio.models.generate_content(
                 model=str(self.model),
                 contents=contents,
                 config=config
             )
-            
-            response = await run_in_threadpool(generate_func)
             
             # Handle text response
             if hasattr(response, 'text') and response.text:
