@@ -12,7 +12,7 @@ def func_schema_to_tool(func_schema: FunctionSchema):
         name=func_schema["name"],
         description=func_schema["description"],
         parameters=genai_types.Schema(
-            type='OBJECT',
+            type=genai_types.Type.OBJECT,
             properties={
                 k: genai_types.Schema(**v) if isinstance(v, dict) else v
                 for k, v in func_schema["schema"].get("properties", {}).items()
@@ -133,7 +133,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 tool_result = delta.content["data"]
                 tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
                 function_response_part = genai_types.Part.from_function_response(
-                    name=tool_name,  # Using id as name for now
+                    name=tool_name,
                     response={"result": tool_result.content}
                 )
                 contents.append(genai_types.Content(
@@ -160,10 +160,6 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
         self.model = model
 
     async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
-        extra_kwargs: dict[str, t.Any] = {
-            **(kwargs.get("kwargs", None) or {})
-        }
-        
         config_kwargs = {}
         
         if functions := kwargs.get("functions", None):
@@ -189,41 +185,41 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
         config = genai_types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
         
         def handle_response(resp: genai_types.GenerateContentResponse):
+            deltas = []
             if resp.text:
-                    return [Delta(content={
-                        "type": "text",
-                        "data": resp.text
-                    })]
+                deltas.append(Delta(content={
+                    "type": "text",
+                    "data": resp.text
+                }))
                 
             # Handle function calls in streaming
             if resp.function_calls:
                 deltas = []
                 for func_call in resp.function_calls:
                     tool_use = ToolUse(
-                        id=func_call.id or func_call.name,
-                        name=func_call.name,
-                        input=func_call.args
+                        id=func_call.id or func_call.name, # type: ignore
+                        name=func_call.name, # type: ignore
+                        input=func_call.args # type: ignore
                     )
                     deltas.append(Delta(content={
                         "data": tool_use,
                         "type": "tool_use"
                     }))
-                return deltas
             
             # Handle usage information
             if resp.usage_metadata:
                 usage: Usage = {
                     "input_tokens": resp.usage_metadata.prompt_token_count or 0,
                     "output_tokens": resp.usage_metadata.candidates_token_count or 0,
-                    "cache_read_input_tokens": getattr(resp.usage_metadata, 'cache_read_input_tokens', 0),
-                    "cache_written_input_tokens": getattr(resp.usage_metadata, 'cache_written_input_tokens', 0)
+                    "cache_read_input_tokens": 0, # TODO
+                    "cache_written_input_tokens": 0 # TODO
                 }
-                return [Delta(
+                deltas.append(Delta(
                     content={"type": "text", "data": ""},
                     usage=usage
-                )]
+                ))
             
-            return []
+            return deltas
 
         if not kwargs.get("no_stream", False):
             # Streaming response using native async API
