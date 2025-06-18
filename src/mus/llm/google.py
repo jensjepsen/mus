@@ -48,6 +48,7 @@ def func_schema_to_tool(func_schema: FunctionSchema):
         name=func_schema["name"],
         description=func_schema["description"],
         parameters=genai_types.Schema(
+            type=func_schema["schema"].get("type", "object"),
             properties={
                 k: genai_types.Schema(**v) if isinstance(v, dict) else v
                 for k, v in func_schema["schema"].get("properties", {}).items()
@@ -145,7 +146,7 @@ def tool_result_to_parts(tool_result: ToolResult):
 
 def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     contents = []
-    
+    toolid_to_name = {}
     for delta in deltas:
         if isinstance(delta, Delta):
             if delta.content["type"] == "text":
@@ -156,6 +157,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                     ))
             elif delta.content["type"] == "tool_use":
                 tool_use = delta.content["data"]
+                toolid_to_name[tool_use.id] = tool_use.name
                 contents.append(genai_types.Content(
                     role="model",
                     parts=[genai_types.Part.from_function_call(
@@ -166,7 +168,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
             elif delta.content["type"] == "tool_result":
                 tool_result = delta.content["data"]
                 function_response_part = genai_types.Part.from_function_response(
-                    name=tool_result.id,  # Using id as name for now
+                    name=toolid_to_name.get(tool_result.id, tool_result.id),
                     response={"result": tool_result.content}
                 )
                 contents.append(genai_types.Content(
@@ -233,14 +235,14 @@ class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
             response_stream = await run_in_threadpool(stream_func)
             
             async for chunk in iterate_in_threadpool(response_stream):
-                if hasattr(chunk, 'text') and chunk.text:
+                if chunk.text:
                     yield Delta(content={
                         "type": "text",
                         "data": chunk.text
                     })
                 
                 # Handle function calls in streaming
-                if hasattr(chunk, 'function_calls') and chunk.function_calls:
+                if chunk.function_calls:
                     for func_call in chunk.function_calls:
                         tool_use = ToolUse(
                             id=func_call.id,

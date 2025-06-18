@@ -13,11 +13,7 @@ from mus import State, LLM
 import os
 async def run_bot(state: t.Optional[pathlib.Path]=None):
     nova = BedrockLLM("us.anthropic.claude-3-7-sonnet-20250219-v1:0", boto3.client("bedrock-runtime", region_name="us-east-1", ))
-    gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17", genai.Client(
-            vertexai=True,
-            api_key=os.environ.get("GOOGLE_API_KEY", None),
-        )
-    )
+    gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17")
     states = State()
 
     if state:
