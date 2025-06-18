@@ -149,6 +149,7 @@ uv build
 ```
 
 ## TODO
+- [ ] Prefill examples should fail when encountering unknown type
 - [ ] Replace with msgspec
     - [ ] Pydantic
     - [ ] jsonpickle
