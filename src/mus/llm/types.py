@@ -20,6 +20,10 @@ CLIENT_TYPE = t.TypeVar("CLIENT_TYPE")
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
 
+class CacheOptions(t.TypedDict):
+    cache_system_prompt: t.Optional[bool]
+    cache_tools: t.Optional[bool]
+
 class QueryStreamArgs(t.TypedDict, total=False):
     max_tokens: t.Optional[int]
     temperature: t.Optional[float]
@@ -30,10 +34,11 @@ class QueryStreamArgs(t.TypedDict, total=False):
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     prompt: t.Optional[str]
     history: "History"
-    functions: t.Optional[t.List["FunctionSchema"]]
+    functions: t.Optional[t.Sequence["FunctionSchema"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
+    cache: t.Optional[CacheOptions]
 
 class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     @abstractmethod 
@@ -80,6 +85,8 @@ DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult | DeltaHistory
 class Usage(t.TypedDict):
     input_tokens: int
     output_tokens: int
+    cache_read_input_tokens: int
+    cache_written_input_tokens: int
 
 @dataclass
 class Delta:

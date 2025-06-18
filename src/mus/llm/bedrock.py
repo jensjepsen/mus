@@ -56,7 +56,7 @@ def func_schema_to_tool(func_schema: FunctionSchema):
         )
     )
 
-def functions_for_llm(functions: t.List[FunctionSchema]):
+def functions_for_llm(functions: t.Sequence[FunctionSchema]):
     return [
         func_schema_to_tool(func)
         for func
@@ -232,7 +232,13 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                                 toolUseId=delta.content["data"].id,
                                 content=tool_result_to_content(delta.content["data"]),
                             )
-                        )
+                        ),
+                        # example of how to add a cache point, if needed
+                        #bt.ContentBlockTypeDef(
+                        #    cachePoint= bt.CachePointBlockTypeDef(
+                        #        type="default"
+                        #    )
+                        #)
                     ]
                 ))
             else:
@@ -268,24 +274,40 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
         extra_kwargs: dict[str, t.Any] = {
             **(kwargs.get("kwargs", None) or {})
         }
+        cache_config = kwargs.get("cache", None)
         if functions := kwargs.get("functions", None):
-            extra_kwargs["toolConfig"] = {
-                "tools": functions_for_llm(functions),
+            toolConfig: bt.ToolConfigurationTypeDef = {
+                "tools": functions_for_llm(functions)
                 #**({"toolChoice": {function_choice: {}}} if function_choice else {})
             }
+            if cache_config and cache_config.get("cache_tools", True):
+                toolConfig["tools"] = [
+                    *toolConfig["tools"],
+                    {
+                        "cachePoint": {
+                            "type": "default"
+                        }
+                    }
+                ]
+            extra_kwargs["toolConfig"] = toolConfig
             
         if prompt := kwargs.get("prompt", None):
-            extra_kwargs["system"] = [{
-                "text": prompt
-            }]
+            system: list[bt.SystemContentBlockTypeDef] = [
+                {
+                    "text": prompt,
+                }
+            ]
+            if cache_config and cache_config.get("cache_system_prompt", True):
+                system.append({
+                    "cachePoint": {
+                        "type": "default"
+                    }
+                })
+            extra_kwargs["system"] = system
 
         
         messages = deltas_to_messages(kwargs.get("history"))
-        """
-        top_k=top_k or NotGiven(),
-            top_p=top_p or NotGiven(),
-            temperature=temperature or NotGiven(),
-        """
+        
         args = bt.ConverseStreamRequestTypeDef(
             modelId=str(self.model),
             messages=messages,
@@ -355,7 +377,9 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     metadata = event["metadata"]
                     usage: Usage = {
                         "input_tokens": metadata["usage"]["inputTokens"], 
-                        "output_tokens": metadata["usage"]["outputTokens"]
+                        "output_tokens": metadata["usage"]["outputTokens"],
+                        "cache_read_input_tokens": metadata["usage"].get("cacheReadInputTokens", 0),
+                        "cache_written_input_tokens": metadata["usage"].get("cacheWriteInputTokens", 0)
                     }
                     yield Delta(content={
                             "type": "text",
@@ -386,10 +410,12 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             if response["stopReason"] == "tool_use":
                 for tool in tools:
                     yield tool
-            
+
             usage: Usage = {
                 "input_tokens": response["usage"]["inputTokens"], 
-                "output_tokens": response["usage"]["outputTokens"]
+                "output_tokens": response["usage"]["outputTokens"],
+                "cache_read_input_tokens": response["usage"].get("cacheReadInputTokens", 0),
+                "cache_written_input_tokens": response["usage"].get("cacheWrittenInputTokens", 0)
             }
             yield Delta(content={
                     "type": "text",
@@ -397,4 +423,3 @@ class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 },
                 usage=usage
             )
-            

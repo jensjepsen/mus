@@ -11,7 +11,7 @@ requires-python = "==3.12.*"
 
 dependencies  = [
     "jsonpickle(>=3.4.2,<5.0.0)",
-    "requests(>=2.32.3,<3.0.0)"
+    "requests(>=2.32.3,<3.0.0)",
 ]
 
 [build-system]
@@ -22,13 +22,14 @@ build-backend = "hatchling.build"
 path = "scripts/build_guest.py"
 
 [project.optional-dependencies]
-bedrock = ["boto3(>=1.35.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anyio>=4.9.0"]
+bedrock = ["boto3(>=1.38.19.95,<2.0.0)",  "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)", "anyio>=4.9.0"]
 anthropic  = ["anthropic[bedrock](>=0.42.0,<1.0.0)"]
 openai  = ["openai(>=1.61.1,<2.0.0)"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.16.0)"]
 pyodide = ["partial_json_parser>=0.2.1.1.post5"]
 sandbox = ["wasmtime==33.0.0"]
+mcp-client = ["mcp>=1.9.1"]
 dev = [
     "pytest(>=8.3.3,<9.0.0)",
     "bump2version(>=1.0.1,<2.0.0)",
@@ -42,13 +43,14 @@ dev = [
     "mcp>=1.9.1"
 ]
 all = [
-    "boto3(>=1.35.95,<2.0.0)", 
+    "boto3(>=1.38.19,<2.0.0)", 
     "boto3-stubs[bedrock-runtime](>=1.35.95,<2.0.0)",
     "anthropic[bedrock](>=0.42.0,<1.0.0)",
     "openai(>=1.61.1,<2.0.0)",
     "pillow(>=11.0.0,<12.0.0)",
     "typer(>=0.13.0,<0.16.0)",
-    "wasmtime>=32.0.0"
+    "wasmtime>=32.0.0",
+    "mcp>=1.9.1"
 ]
 
 [tool.uv]

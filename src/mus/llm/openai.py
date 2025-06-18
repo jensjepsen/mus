@@ -17,7 +17,7 @@ def func_to_tool(func: FunctionSchema) -> ChatCompletionToolParam:
             "parameters": func["schema"]
         }
     }
-def functions_for_llm(functions: t.List[FunctionSchema]) -> t.List[ChatCompletionToolParam]:
+def functions_for_llm(functions: t.Sequence[FunctionSchema]) -> t.List[ChatCompletionToolParam]:
     return [
         func_to_tool(func)
         for func in (functions or [])
@@ -159,7 +159,9 @@ class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                 if chunk.usage:
                     yield Delta(content={"type": "text", "data": ""}, usage={
                         "input_tokens": chunk.usage.prompt_tokens,
-                        "output_tokens": chunk.usage.completion_tokens
+                        "output_tokens": chunk.usage.completion_tokens,
+                        "cache_read_input_tokens": 0,
+                        "cache_written_input_tokens": 0
                     })
                 if chunk.choices[0].finish_reason == "tool_calls":
                     break
@@ -182,5 +184,7 @@ class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             if response.usage:
                 yield Delta(content={"type": "text", "data": ""}, usage={
                     "input_tokens": response.usage.prompt_tokens,
-                    "output_tokens": response.usage.completion_tokens
+                    "output_tokens": response.usage.completion_tokens,
+                    "cache_read_input_tokens": 0,
+                    "cache_written_input_tokens": 0
                 })

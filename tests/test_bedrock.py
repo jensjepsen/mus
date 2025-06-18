@@ -14,6 +14,7 @@ from mus.llm.bedrock import (
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
 from mus.functions import to_schema
+from mus import LLM
 from dataclasses import dataclass
 import base64
 
@@ -235,7 +236,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
             {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param": "value"}'}}}},
             {'contentBlockStop': {}},
             {'messageStop': {'stopReason': 'tool_use'}},
-            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20}}},
+            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWriteInputTokens': 7}}},
         ]
     }
     bedrock_llm.client.converse_stream.return_value = mock_response
@@ -250,7 +251,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
     assert len(results) == 3
     assert results[0].content['type'] == 'text'
     assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20}
+    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 3, 'cache_written_input_tokens': 7}
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):
@@ -264,7 +265,7 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
             }
         },
         'stopReason': 'tool_use',
-        'usage': {'inputTokens': 10, 'outputTokens': 20},
+        'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 7, 'cacheWrittenInputTokens': 3},
     }
     bedrock_llm.client.converse.return_value = mock_response
 
@@ -279,4 +280,57 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
     assert len(results) == 3
     assert results[0].content['type'] == 'text'
     assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20}
+    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 7, 'cache_written_input_tokens': 3}
+
+@pytest.mark.asyncio
+async def test_bedrock_llm_cache_options(bedrock_llm):
+    mock_response = {
+        'stream': [
+            {'contentBlockDelta': {'delta': {'text': 'Response text'}}},
+            {'contentBlockStop': {}},
+            {'messageStop': {'stopReason': 'end_turn'}},
+            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20}}},
+        ]
+    }
+
+
+    bedrock_llm.client.converse_stream.return_value = mock_response
+
+    async def dummy_tool(hello: int) -> str:
+        """Dummy tool for testing"""
+        return "dummy response"
+
+    results = [delta async for delta in bedrock_llm.stream(
+        prompt="Test prompt",
+        model="test-model",
+        history=[],
+        functions=[to_schema(dummy_tool)],
+        cache={
+            "cache_system_prompt": True,
+            "cache_tools": True,
+        },
+    )]
+    assert bedrock_llm.client.converse_stream.call_count == 1
+    call_args = bedrock_llm.client.converse_stream.call_args[1]
+    assert call_args["system"][0]["text"] == "Test prompt"
+    assert call_args["system"][1] == {'cachePoint': {'type': 'default'}}
+
+    assert call_args["toolConfig"]["tools"][0]["toolSpec"]["name"] == "dummy_tool"
+    assert call_args["toolConfig"]["tools"][1] == {'cachePoint': {'type': 'default'}}
+
+    # no cache
+
+    results_no_cache = [delta async for delta in bedrock_llm.stream(
+        prompt="Test prompt",
+        model="test-model",
+        history=[],
+        functions=[to_schema(dummy_tool)],
+        cache=None,
+    )]
+    assert bedrock_llm.client.converse_stream.call_count == 2
+    call_args_no_cache = bedrock_llm.client.converse_stream.call_args[1]
+    assert len(call_args_no_cache["system"]) == 1, "System messages should not include cache info when cache is None"
+    assert call_args_no_cache["system"][0]["text"] == "Test prompt"
+    
+    assert len(call_args_no_cache["toolConfig"]["tools"]) == 1, "Tool config should not include cache info when cache is None"
+    assert call_args_no_cache["toolConfig"]["tools"][0]["toolSpec"]["name"] == "dummy_tool"
