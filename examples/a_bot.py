@@ -8,7 +8,7 @@ import boto3
 import pydantic
 from openai import AsyncOpenAI
 from google import genai
-from mus import State, LLM
+from mus import State, Bot
 
 import os
 async def run_bot(state: t.Optional[pathlib.Path]=None):
@@ -58,7 +58,7 @@ You can also return the secret number when asked.
 You will be provided with a question and you should respond with the answer.
 """
         
-    bot = LLM(prompt, functions=[math, num, poem], model=gem, cache={
+    bot = Bot(prompt, functions=[math, num, poem], model=gem, cache={
         "cache_system_prompt": True,
         "cache_tools": True
     })
@@ -66,6 +66,8 @@ You will be provided with a question and you should respond with the answer.
     class ToFill(t.TypedDict):
         a: str
         b: int
+
+    bot.fill(ToFill)
 
     response = None
     h = states("history", [])
