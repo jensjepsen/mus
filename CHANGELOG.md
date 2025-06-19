@@ -1,3 +1,9 @@
+## v0.16.6 (2025-06-19)
+
+### Fix
+
+- re-export llm from main module
+
 ## v0.16.5 (2025-06-19)
 
 ### Refactor
