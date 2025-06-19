@@ -27,6 +27,7 @@ class MockLLM(LLM[StreamArgs, str, None]):
         if isinstance(query, Query):
             responses = self.responses[str(query.val[0])]
         else:
+            breakpoint()
             responses = [Delta(content={"type": "text", "data": "Hello"})]
         for response in responses:
             yield response

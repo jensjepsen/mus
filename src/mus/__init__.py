@@ -1,5 +1,6 @@
 from .llm.types import File, Query, ToolUse, ToolResult, Assistant, System
 from .llm.llm import IterableResult, Bot
+from .llm.mock_client import MockLLM
 from .state import State, StateReference
 import sys
 
