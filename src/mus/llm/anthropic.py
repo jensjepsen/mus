@@ -1,7 +1,7 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs
 from ..functions import FunctionSchema
 
 def func_to_tool(func: FunctionSchema) -> at.ToolParam:
@@ -147,7 +147,7 @@ STREAM_ARGS = StreamArgs
 MODEL_TYPE = at.ModelParam
 
 
-class AnthropicLLM(LLMClient[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]):
+class AnthropicLLM(LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]=None):
         if not client:
             client = AsyncAnthropic()

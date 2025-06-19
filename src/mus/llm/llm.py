@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLMClient, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions
+from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
 from ..types import FillableType
 
@@ -108,7 +108,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
         *,
-        model: LLMClient[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
+        model: LLM[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
         client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
         **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]
     ) -> None:

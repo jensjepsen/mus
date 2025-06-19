@@ -119,7 +119,7 @@ def run_coro(coro):
 class ExtraArgs(t.TypedDict):
   pass
 
-class ProxyClient(mus.llm.types.LLMClient[ExtraArgs, str, None]):
+class ProxyClient(mus.llm.types.LLM[ExtraArgs, str, None]):
   def __init__(self):
     pass
   async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[ExtraArgs, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:

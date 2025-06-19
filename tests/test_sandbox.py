@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 from dataclasses import dataclass
 from mus import sandbox
-from mus.llm.types import LLMClient
+from mus.llm.types import LLM
 from wasmtime import Trap
 import io
 
@@ -54,7 +54,7 @@ async def test_sandbox_no_model(capsys):
 @pytest.mark.asyncio
 async def test_sandbox_as_decorator(mock_client):
     @sandbox
-    async def decorated_func(model: LLMClient):
+    async def decorated_func(model: LLM):
         """A simple bot that uses the LLMClient."""
 
         import mus
@@ -72,7 +72,7 @@ async def test_sandbox_as_decorator(mock_client):
     assert mock_client.stream.called
 
     @sandbox()
-    async def decorated_func_with_wrapper(model: LLMClient):
+    async def decorated_func_with_wrapper(model: LLM):
         """A simple bot that uses the LLMClient with a wrapper."""
 
         import mus
@@ -104,7 +104,7 @@ async def test_sandbox_with_fuel(mock_client):
     assert mock_client.stream.called
 
     @sandbox(fuel=10)
-    async def decorated_func_with_fuel(model: LLMClient):
+    async def decorated_func_with_fuel(model: LLM):
         import mus
         bot = mus.Bot(model=model)
         await (bot("Test query").string())
@@ -115,7 +115,7 @@ async def test_sandbox_with_fuel(mock_client):
         await decorated_func_with_fuel(mock_client)
     
     @sandbox(fuel=100_000_000)
-    async def decorated_func_with_sufficient_fuel(model: LLMClient):
+    async def decorated_func_with_sufficient_fuel(model: LLM):
         import mus
         bot = mus.Bot(model=model)
         await (bot("Test query").string())

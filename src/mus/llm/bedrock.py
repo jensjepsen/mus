@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
 from ..functions import FunctionSchema
 import base64
 
@@ -263,7 +263,7 @@ STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
-class BedrockLLM(LLMClient[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
+class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[BedrockRuntimeClient]=None):
         if not client:
             client = boto3.client("bedrock-runtime")

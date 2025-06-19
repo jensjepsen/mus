@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
 from ..functions import FunctionSchema
 import base64
 import json
@@ -152,7 +152,7 @@ STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
 ALL_STREAM_ARGS = StreamArgs
 
-class GoogleGenAILLM(LLMClient[StreamArgs, MODEL_TYPE, genai.Client]):
+class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[genai.Client] = None):
         if not client:
             client = genai.Client()

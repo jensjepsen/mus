@@ -7,7 +7,7 @@ import typing as t
 import asyncio
 import os
 import inspect
-from .llm.llm import LLMClient
+from .llm.llm import LLM
 from .llm.types import LLMClientStreamArgs
 import textwrap
 from .guest.bindings import imports as guest_imports
@@ -43,7 +43,7 @@ class SandboxSharedKwargs(t.TypedDict, total=False):
     stdin: t.Optional[bool]
 
 class SandboxableCallableWithModel(t.Protocol):
-    async def __call__(self, model: LLMClient) -> None:
+    async def __call__(self, model: LLM) -> None:
         ...
     
 class SandboxableCallableWithoutModel(t.Protocol):
@@ -53,7 +53,7 @@ class SandboxableCallableWithoutModel(t.Protocol):
 SandboxableCallable = t.Union[SandboxableCallableWithModel, SandboxableCallableWithoutModel]
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, model: t.Optional[LLMClient]=None) -> str:
+    async def __call__(self, model: t.Optional[LLM]=None) -> str:
         ...
 
 class SandboxDecorator(t.Protocol):
@@ -69,7 +69,7 @@ def sandbox(**kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxDecorator:
     ...
 
 @t.overload
-def sandbox(*, model: t.Optional[LLMClient], code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Awaitable[str]:
+def sandbox(*, model: t.Optional[LLM], code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Awaitable[str]:
     ...
 
 @t.overload
@@ -80,7 +80,7 @@ def callable_to_code(callable: SandboxableCallable) -> str:
     """Convert a callable to its source code."""
     return "\n".join(inspect.getsource(callable).split("\n")[2:])
 
-def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLMClient]=None, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
+def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLM]=None, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
     if code and callable:
         raise ValueError("Cannot provide both code and callable")
     
@@ -98,7 +98,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
                 raise ValueError("Must provide either code or a callable")
         code = textwrap.dedent(code)
 
-        async def inner(model: t.Optional[LLMClient]=None):
+        async def inner(model: t.Optional[LLM]=None):
             nonlocal code
             kwargs = outer_kwargs
 

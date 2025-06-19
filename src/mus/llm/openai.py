@@ -1,6 +1,6 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLMClient, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value
 from ..functions import FunctionSchema
 
 import openai
@@ -104,7 +104,7 @@ class StreamArgs(t.TypedDict, total=False):
 STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
 
-class OpenAILLM(LLMClient[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
+class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient]=None):
         if not client:
             client = openai.AsyncClient()

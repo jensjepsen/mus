@@ -40,7 +40,7 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
 
-class LLMClient(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
+class LLM(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     @abstractmethod 
     def __init__(self, model: MODEL_TYPE, client: t.Optional[CLIENT_TYPE]=None) -> None:
         ...

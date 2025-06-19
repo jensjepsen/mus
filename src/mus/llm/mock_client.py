@@ -1,12 +1,12 @@
 import typing as t
-from .llm import LLMClient
+from .llm import LLM
 from .types import Delta, ToolUse, ToolResult, Query
 from collections import defaultdict
 
 class StreamArgs(t.TypedDict, total=False):
     pass
 
-class MockLLM(LLMClient[StreamArgs, str, None]):
+class MockLLM(LLM[StreamArgs, str, None]):
     def __init__(self, *args, **kwargs):
         self.responses: t.Dict[str, t.List[Delta]] = defaultdict(list)
 
