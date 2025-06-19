@@ -24,7 +24,6 @@ from mus import ToolUse, ToolResult
 import datetime
 model.put_text("hello", "Hello")
 model.put_tool_use("What is seven times three?", ToolUse(id="calc", name="calculate", input={"expression": "7 * 3"}) )
-model.put_tool_result("What is seven times three?", ToolResult(id="calc", content="21"))
 -->
 
 ```python
