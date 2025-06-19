@@ -1,3 +1,14 @@
+## v0.16.1 (2025-06-19)
+
+### Fix
+
+- llm -> bot
+
+### Refactor
+
+- llm to bot
+- llm to bot
+
 ## v0.16.0 (2025-06-18)
 
 ### Feat
