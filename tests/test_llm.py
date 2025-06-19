@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from dataclasses import dataclass
 import json
 
-from mus.llm import LLM
+from mus import Bot
 from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
 from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File
@@ -28,7 +28,7 @@ async def test_llm_query(mock_model):
         Delta(content={"type": "text", "data": ""}, usage={"input_tokens": 50, "output_tokens": 30, "cache_read_input_tokens": 11, "cache_written_input_tokens": 3}),
     ])
 
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     
     result = [msg async for msg in llm("Test query")]
     assert len(result) == 2
@@ -48,7 +48,7 @@ async def test_llm_with_tool_use(mock_model):
         Delta(content={"type": "text", "data": "Tool used"}),
     ])
 
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
 
     called = False
 
@@ -78,7 +78,7 @@ async def test_llm_with_tool_use(mock_model):
 @pytest.mark.asyncio
 async def test_llm_call(mock_model):
     mock_model.set_response([Delta(content={"data": "Test response", "type": "text"})])
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
 
     result = llm("Test query")
 
@@ -91,7 +91,7 @@ async def test_llm_fill(mock_model):
         Delta(content={"data": "Processing", "type": "text"}),
         Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test", "field2": 123}, id="abc")})
     ])
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     result = await llm.fill("Test query", TestStructure)
     assert isinstance(result, TestStructure), f"Expected TestStructure, got {type(result)}"
     assert result.field1 == "test", f"Expected 'test', got {result.field1}"
@@ -120,7 +120,7 @@ async def test_llm_fill_strategy_prefill(mock_model):
         )
     ]
     mock_model.set_response(responses)
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     result = await llm.fill("Test query", TestStructure, strategy="prefill")
     assert isinstance(result, TestStructure)
     assert result.field1 == "test"
@@ -131,7 +131,7 @@ async def test_llm_bot_decorator(mock_model):
     mock_model.set_response([
         Delta(content={"data": "Test response", "type": "text"})
     ])
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     @llm.bot
     def bot(query: str):
         return query
@@ -159,7 +159,7 @@ async def test_dynamic_system_prompt(mock_model):
         Delta(content={"type": "text", "data": "Hello"}),
     ])
     
-    llm = LLM("A system prompt", model=mock_model)
+    llm = Bot("A system prompt", model=mock_model)
     
     await llm(System("Can be overwritten") + "Test query").string()
 
@@ -176,7 +176,7 @@ async def test_assistant_prefill_echo(mock_model):
     mock_model.set_response([
         Delta(content={"type": "text", "data": "Hello"}),
     ])
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     result = [msg async for msg in llm.query("Hello" + Assistant("Test prefill", echo=True))]
     
 
@@ -191,7 +191,7 @@ async def test_assistant_prefill_no_echo(mock_model):
     mock_model.set_response([
         Delta(content={"type": "text", "data": "Hello"}),
     ])
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     result = [msg async for msg in llm.query("Hello" + Assistant("Test prefill", echo=False))]
 
     assert len(result) == 2
@@ -503,7 +503,7 @@ async def test_pass_cache_options():
     mock_client.stream.return_value.__aenter__.return_value = iter([
         Delta(content={"type": "text", "data": "Hello"}),
     ])
-    llm = LLM(prompt="Test prompt", model=mock_client, cache={
+    llm = Bot(prompt="Test prompt", model=mock_client, cache={
         "cache_system_prompt": True,
         "cache_tools": True
     })
@@ -518,7 +518,7 @@ async def test_pass_cache_options():
 
     # no cache
 
-    llm_no_cache = LLM(prompt="Test prompt", model=mock_client, cache=None)
+    llm_no_cache = Bot(prompt="Test prompt", model=mock_client, cache=None)
     await llm_no_cache(System("Can be overwritten") + "Test query").string()
     assert mock_client.stream.call_args[1]['cache'] is None
 
@@ -534,7 +534,7 @@ async def test_cumulative_usage(mock_model):
         Delta(content={"type": "text", "data": ""}, usage={"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 2, "cache_written_input_tokens": 1}),
     ])
 
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     response = llm("Test query")
     result = [msg async for msg in response]
     
@@ -553,7 +553,7 @@ async def test_usage_with_history(mock_model):
         Delta(content={"type": "text", "data": ""}, usage={"input_tokens": 20, "output_tokens": 10, "cache_read_input_tokens": 5, "cache_written_input_tokens": 2}),
     ])
 
-    llm = LLM(prompt="Test prompt", model=mock_model)
+    llm = Bot(prompt="Test prompt", model=mock_model)
     response = llm("Test query")
     result = [msg async for msg in response]
     
@@ -587,7 +587,7 @@ async def test_usage_with_tool_calls(mock_model):
         Delta(content={"type": "text", "data": ""}, usage={"input_tokens": 20, "output_tokens": 10, "cache_read_input_tokens": 5, "cache_written_input_tokens": 2}),
     ])
     
-    llm = LLM(prompt="Test prompt", model=mock_model, functions=tools)
+    llm = Bot(prompt="Test prompt", model=mock_model, functions=tools)
     response = llm("Test query")
     result = [msg async for msg in response]
 

@@ -104,7 +104,7 @@ async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map
     return result
 
 
-class LLM(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
+class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
         *,

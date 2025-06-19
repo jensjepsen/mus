@@ -1,5 +1,5 @@
 from .llm.types import File, Query, ToolUse, ToolResult, Assistant, System
-from .llm.llm import IterableResult, LLM
+from .llm.llm import IterableResult, Bot
 from .state import State, StateReference
 import sys
 
