@@ -13,7 +13,7 @@ python -m pip install "mus[all] @ https://github.com/jensjepsen/mus/releases/dow
 ```python
 # import stuff and make a model
 import asyncio
-from mus import AnthropicLLM, File, System, LLM
+from mus import AnthropicLLM, File, System, Bot
 
 model = AnthropicLLM(model="claude-3.5-sonnet")
 ```
@@ -30,7 +30,7 @@ model.put_tool_result("What is seven times three?", ToolResult(id="calc", conten
 ```python
 async def main():
     # Configuring a bot
-    bot = LLM("You are a nice bot", model=model)
+    bot = Bot("You are a nice bot", model=model)
 
     # The response from the bot is a generator of deltas from the bot, so we can stream them as they come in
     async for msg in bot("hello"):
@@ -62,14 +62,14 @@ async def main():
         """
         return str(a + b)
 
-    math_bot = LLM(functions=[sum], model=model)
+    math_bot = Bot(functions=[sum], model=model)
 
     async for msg in math_bot("What is 10 + 7?"):
         print(msg, end="")
 
 
     # Making a bot using a decorator
-    @LLM(model=model)
+    @Bot(model=model)
     def haiku_bot(topic: str):
         # The return value of the function will be the query for the bot
         # we can use the System class to add a system prompt to the bot, to make it dynamic
@@ -83,7 +83,7 @@ async def main():
 
 
     # Making a natural language function
-    @LLM(model=model).fun
+    @Bot(model=model).fun
     async def calculate(expression: str):
         """
         Calculate a mathematical expression
@@ -115,7 +115,7 @@ async def main():
             return exec(code)
 
 
-        @mus.LLM(model=model, functions=[run_some_code])
+        @mus.Bot(model=model, functions=[run_some_code])
         def danger_bot(task: str):
             return "Generate python code to solve this task: " + task
 

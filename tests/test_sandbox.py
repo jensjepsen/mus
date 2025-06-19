@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock
 from dataclasses import dataclass
 from mus import sandbox
 from mus.llm.types import LLMClient
@@ -23,7 +23,7 @@ def mock_client():
 @pytest.mark.asyncio
 async def test_sandbox(mock_client):
     code = """\
-            bot = mus.LLM(model=model)
+            bot = mus.Bot(model=model)
             async for delta in bot("Test query"):
                 print(str(delta))
             """
@@ -58,7 +58,7 @@ async def test_sandbox_as_decorator(mock_client):
         """A simple bot that uses the LLMClient."""
 
         import mus
-        bot = mus.LLM(model=model)
+        bot = mus.Bot(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
@@ -76,7 +76,7 @@ async def test_sandbox_as_decorator(mock_client):
         """A simple bot that uses the LLMClient with a wrapper."""
 
         import mus
-        bot = mus.LLM(model=model)
+        bot = mus.Bot(model=model)
         await (bot(f"Test query").string())
         async for delta in bot(f"Test query with"):
             print(str(delta))
@@ -91,7 +91,7 @@ async def test_sandbox_as_decorator(mock_client):
 @pytest.mark.asyncio
 async def test_sandbox_with_fuel(mock_client):
     code = """\
-            bot = mus.LLM(model=model)
+            bot = mus.Bot(model=model)
             async for delta in bot("Test query"):
                 print(str(delta))
             """
@@ -106,7 +106,7 @@ async def test_sandbox_with_fuel(mock_client):
     @sandbox(fuel=10)
     async def decorated_func_with_fuel(model: LLMClient):
         import mus
-        bot = mus.LLM(model=model)
+        bot = mus.Bot(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
@@ -117,7 +117,7 @@ async def test_sandbox_with_fuel(mock_client):
     @sandbox(fuel=100_000_000)
     async def decorated_func_with_sufficient_fuel(model: LLMClient):
         import mus
-        bot = mus.LLM(model=model)
+        bot = mus.Bot(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
