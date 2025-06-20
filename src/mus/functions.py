@@ -230,7 +230,7 @@ def schema_to_attrs(schema: FunctionSchema) -> t.Type:
 
 def type_to_attr(value: t.Type) -> attrs.Attribute:
     """Convert a key-value pair to an attrs attribute."""
-    if t.is_typeddict(value):
+    if t.is_typeddict(value) or is_dataclass(value):
         return attrs.field(
             type=schema_to_attrs(to_schema(value))
         )
@@ -256,18 +256,37 @@ def verify_schema_inputs(
 
 if __name__ == "__main__":
     # Example usage
+    import dataclasses
 
     class ExampleNested(t.TypedDict):
         """An example nested TypedDict."""
         nested_field: str
         another_field: int
     
-    async def example_tool(a: int, b: str, nest: ExampleNested) -> str:
+    @dataclasses.dataclass
+    class ExampleDataclass:
+        """An example dataclass."""
+        x: int
+        y: str
+        nest: ExampleNested
+    
+    async def example_tool(a: int, b: str, double_nest: ExampleDataclass) -> str:
         """An example tool that takes an integer and a string."""
         return f"Received {a} and {b}"
     
     schema = func_to_schema(example_tool)
     
-    example_inputs = {"a": "10", "b": 10, "nest": {"nested_field": "test", "another_field": 42}}
+    example_inputs = {
+        "a": 42,
+        "b": "Hello",
+        "double_nest": {
+            "x": 1,
+            "y": "Nested",
+            "nest": {
+                "nested_field": "Inner",
+                "another_field": 100
+            }
+        }
+    }
     verified_inputs = verify_schema_inputs(schema, example_inputs)
     print(verified_inputs)
