@@ -148,13 +148,14 @@ uv build
 ```
 
 ## TODO
+- [ ] Investigate cattrs for validation
+- [X] Remove deps
+    - [ ] Pydantic
+    - [ ] jsonpickle
 - [ ] BUG: tools are intercepted before usage is yielded, which means that usage is yielded in wrong order
 - [ ] Return usage for fill operations
 - [ ] Prefill examples should fail when encountering unknown type
     - [ ] Example generation should be optional and be simpler (i.e. no special chars etc)
-- [ ] Replace with msgspec
-    - [ ] Pydantic
-    - [ ] jsonpickle
 - [X] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
     - [X] Max tokens
     - [X] Model
