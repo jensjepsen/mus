@@ -4,7 +4,6 @@ from dataclasses import is_dataclass
 import json
 import cattrs, attrs
 
-
 class FunctionSchema(t.TypedDict):
     name: str
     description: str
@@ -216,23 +215,38 @@ def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, o
         
     return schema
 
+def schema_to_attrs(schema: FunctionSchema) -> t.Type:
+    """Convert a FunctionSchema to an attrs class."""
+    attrs_fields = {
+        key: type_to_attr(value)
+        for key, value in schema["annotations"]
+    }
+    
+    return attrs.make_class(
+        schema["name"],
+        attrs_fields,
+        auto_attribs=True,
+    )
+
+def type_to_attr(value: t.Type) -> attrs.Attribute:
+    """Convert a key-value pair to an attrs attribute."""
+    if t.is_typeddict(value):
+        return attrs.field(
+            type=schema_to_attrs(to_schema(value))
+        )
+    else:
+        print(f"Converting {value} to attrs field")
+        return attrs.field(
+            type=value,
+            validator=attrs.validators.instance_of(value),
+        )
+
 def verify_schema_inputs(
     schema: FunctionSchema,
     inputs: t.Dict[str, t.Any],
 ) -> t.Dict[str, t.Any]:
     """Verify that the inputs match the function's schema."""
-    t.reveal_type(schema["annotations"])
-    cls = attrs.make_class(
-        schema["name"],
-        {
-            key: attrs.field(
-                validator=attrs.validators.instance_of(value),
-                type=value,
-            )
-            for key, value in schema["annotations"]
-        },
-        auto_attribs=True,
-    )
+    cls = schema_to_attrs(schema)
     try:
         # Use cattrs to convert inputs to the typed dict
         parsed = cattrs.structure(inputs, cls)
@@ -242,12 +256,18 @@ def verify_schema_inputs(
 
 if __name__ == "__main__":
     # Example usage
-    async def example_tool(a: int, b: str) -> str:
+
+    class ExampleNested(t.TypedDict):
+        """An example nested TypedDict."""
+        nested_field: str
+        another_field: int
+    
+    async def example_tool(a: int, b: str, nest: ExampleNested) -> str:
         """An example tool that takes an integer and a string."""
         return f"Received {a} and {b}"
     
     schema = func_to_schema(example_tool)
     
-    example_inputs = {"a": "horse", "b": 10}
+    example_inputs = {"a": "10", "b": 10, "nest": {"nested_field": "test", "another_field": 42}}
     verified_inputs = verify_schema_inputs(schema, example_inputs)
     print(verified_inputs)
