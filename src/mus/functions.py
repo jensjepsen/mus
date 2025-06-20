@@ -2,13 +2,15 @@ import typing as t
 from .llm.types import ToolCallableType
 from dataclasses import is_dataclass
 import json
+import cattrs, attrs
 
 
 class FunctionSchema(t.TypedDict):
     name: str
     description: str
     schema: t.Dict[str, t.Any]
-
+    annotations: t.Sequence[t.Tuple[str, t.Type]]
+ 
 class ToolCallable(t.TypedDict):
     function: ToolCallableType
     schema: FunctionSchema
@@ -48,7 +50,8 @@ def func_to_schema(func: ToolCallableType) -> FunctionSchema:
     p = FunctionSchema(
         name=func.__name__,
         description=func.__doc__,
-        schema=get_schema(func.__name__, annotations)
+        schema=get_schema(func.__name__, annotations),
+        annotations=annotations
     )
     return p
 
@@ -75,7 +78,8 @@ def dataclass_to_schema(dataclass) -> FunctionSchema:
     p = FunctionSchema(
         name=dataclass.__name__,
         description=dataclass.__doc__,
-        schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items()))
+        schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())),
+        annotations=list(dataclass.__annotations__.items())
     )
     return p    
 
@@ -88,7 +92,8 @@ def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     p = FunctionSchema(
         name=typed_dict.__name__,
         description=typed_dict.__doc__,
-        schema=get_schema(typed_dict.__name__, list(typed_dict.__annotations__.items()))
+        schema=get_schema(typed_dict.__name__, list(typed_dict.__annotations__.items())),
+        annotations=list(typed_dict.__annotations__.items())
     )
     return p
 
@@ -210,3 +215,39 @@ def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, o
     }
         
     return schema
+
+def verify_schema_inputs(
+    schema: FunctionSchema,
+    inputs: t.Dict[str, t.Any],
+) -> t.Dict[str, t.Any]:
+    """Verify that the inputs match the function's schema."""
+    t.reveal_type(schema["annotations"])
+    cls = attrs.make_class(
+        schema["name"],
+        {
+            key: attrs.field(
+                validator=attrs.validators.instance_of(value),
+                type=value,
+            )
+            for key, value in schema["annotations"]
+        },
+        auto_attribs=True,
+    )
+    try:
+        # Use cattrs to convert inputs to the typed dict
+        parsed = cattrs.structure(inputs, cls)
+    except Exception as e:
+        raise ValueError(f"Invalid inputs for {schema['name']}: {cattrs.transform_error(e)}") from e
+    return cattrs.unstructure(parsed)
+
+if __name__ == "__main__":
+    # Example usage
+    async def example_tool(a: int, b: str) -> str:
+        """An example tool that takes an integer and a string."""
+        return f"Received {a} and {b}"
+    
+    schema = func_to_schema(example_tool)
+    
+    example_inputs = {"a": "horse", "b": 10}
+    verified_inputs = verify_schema_inputs(schema, example_inputs)
+    print(verified_inputs)
