@@ -85,74 +85,76 @@ async def test_llm_call(mock_model):
     assert isinstance(result, IterableResult)
     assert (await result.string()) == "Test response"
 
+@pytest.mark.parametrize("strategy", ["tool_use", "prefill"])
 @pytest.mark.asyncio
-async def test_llm_fill(mock_model):
-    mock_model.set_response([
-        Delta(content={"data": "Processing", "type": "text"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test", "field2": 123}, id="abc")})
-    ])
+async def test_llm_fill(strategy, mock_model):
+    if strategy == "tool_use":
+        mock_model.set_response([
+            Delta(content={"data": "Processing", "type": "text"}),
+            Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test", "field2": 123}, id="abc")})
+        ])
+    elif strategy == "prefill":
+        mock_model.set_response([
+            Delta(content={"type": "text", "data": """
+"test",
+"field2": 123
+}
+"""}),
+        ])
     llm = Bot(prompt="Test prompt", model=mock_model)
-    result = await llm.fill("Test query", TestStructure)
+    result = await llm.fill("Test query", TestStructure, strategy=strategy)
     assert isinstance(result, TestStructure), f"Expected TestStructure, got {type(result)}"
     assert result.field1 == "test", f"Expected 'test', got {result.field1}"
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
+@pytest.mark.parametrize("strategy", ["tool_use", "prefill"])
 @pytest.mark.asyncio
-async def test_llm_fill_missing_arguments(mock_model):
-    mock_model.set_response([
-        Delta(content={"type": "text", "data": "Processing"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test"}, id="abc")}),
-    ])
+async def test_llm_fill_missing_arguments(strategy, mock_model):
+    if strategy == "tool_use":
+        mock_model.set_response([
+            Delta(content={"type": "text", "data": "Processing"}),
+            Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test"}, id="abc")}),
+        ])
+    elif strategy == "prefill":
+        mock_model.set_response([
+            Delta(content={"type": "text", "data": """
+"test"
+}
+```
+"""
+                           }),
+        ])
     
     llm = Bot(prompt="Test prompt", model=mock_model)
     
     with pytest.raises(ValueError) as exc_info:
-        await llm.fill("Test query", TestStructure)
+        await llm.fill("Test query", TestStructure, strategy=strategy)
     
-    assert str(exc_info.value) == "Missing required fields: field2"
+    assert "missing @ $.field2" in str(exc_info.value)
 
+@pytest.mark.parametrize("strategy", ["tool_use", "prefill"])
 @pytest.mark.asyncio
-async def test_llm_fill_wrong_argument_type(mock_model):
-    mock_model.set_response([
-        Delta(content={"type": "text", "data": "Processing"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": 123, "field2": "not_an_int"}, id="abc")}),
-    ])
-    
+async def test_llm_fill_wrong_argument_type(strategy, mock_model):
+    if strategy == "tool_use":
+        mock_model.set_response([
+            Delta(content={"type": "text", "data": "Processing"}),
+            Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": 123, "field2": "not_an_int"}, id="abc")}),
+        ])
+    elif strategy == "prefill":
+        mock_model.set_response([
+            Delta(content={"type": "text", "data": """
+"test",
+"field2": "not_an_int"
+}
+"""}),
+        ])
+        
     llm = Bot(prompt="Test prompt", model=mock_model)
     
     with pytest.raises(ValueError) as exc_info:
-        await llm.fill("Test query", TestStructure)
+        await llm.fill("Test query", TestStructure, strategy=strategy)
     
     assert "expected int @ $.field2" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_llm_fill_strategy_prefill(mock_model):
-    # below looks a little weird because the answer is prefilled, so it's missing the initial json
-    responses = [
-        Delta(
-            content={
-                "type": "text",
-                "data": """
-                    "test",
-                """
-            }
-        ),
-        Delta(
-            content={
-                "type": "text",
-                "data": """
-                    "field2": 1234
-                    }
-                """
-            }
-        )
-    ]
-    mock_model.set_response(responses)
-    llm = Bot(prompt="Test prompt", model=mock_model)
-    result = await llm.fill("Test query", TestStructure, strategy="prefill")
-    assert isinstance(result, TestStructure)
-    assert result.field1 == "test"
-    assert result.field2 == 1234
 
 @pytest.mark.asyncio
 async def test_llm_bot_decorator(mock_model):
@@ -502,7 +504,23 @@ async def test_invoke_function_wrong_args():
     assert type(return_val) == str, f"Expected str, got {type(return_val)}"
     result = json.loads(return_val)
     assert "error" in result, f"Expected error, got {result}"
-    assert f"Tool sample_function was called with incorrect arguments" in result["error"], f"Expected error message not found, got {result['error']}"
+    assert "field missing @ $.b" in result["error"], f"Expected error message not found, got {result['error']}"
+
+@pytest.mark.asyncio
+async def test_invoke_function_coerce_args():
+    async def sample_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return str(a + b)
+
+    tools = parse_tools([sample_function])
+    func_map = {
+        tool["schema"]["name"]: tool
+        for tool in tools
+    }
+
+    input_data = {"a": "3", "b": "5"}
+    result = await invoke_function("sample_function", input_data, func_map)
+    assert result == "8", f"Expected '8', got {result}"
 
 @pytest.mark.asyncio
 async def test_invoke_function_internal_scope_wrong_args():

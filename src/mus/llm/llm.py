@@ -87,8 +87,16 @@ def get_exception_depth():
 
 
 async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
+    tool_callable = func_map[func_name]
     try:
-        result = await func_map[func_name]["function"](**input)
+        input = verify_schema_inputs(tool_callable["schema"], input)
+    except ValueError as e:
+        return json.dumps({
+            "error": f"{str(e)}",
+        })
+    
+    try:
+        result = await tool_callable["function"](**input)
     except TypeError as e:
         depth = get_exception_depth()
         if depth == 1 and type(e).__name__ == "TypeError":
@@ -246,7 +254,9 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             if result.endswith("```"):
                 result = result[:-3]
             try:
-                return structure(**json.loads(result))
+                input = json.loads(result)
+                input = verify_schema_inputs(schema, input)
+                return structure(**input)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Failed to decode JSON: {result}") from e
 
