@@ -235,7 +235,6 @@ def type_to_attr(value: t.Type) -> attrs.Attribute:
             type=schema_to_attrs(to_schema(value))
         )
     else:
-        print(f"Converting {value} to attrs field")
         return attrs.field(
             type=value,
             validator=attrs.validators.instance_of(value),
