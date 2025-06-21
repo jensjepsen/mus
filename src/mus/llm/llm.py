@@ -5,7 +5,7 @@ from textwrap import dedent
 import sys
 
 from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions
-from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable
+from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
 logger = logging.getLogger(__name__)
@@ -217,7 +217,9 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             )
             async for msg in self.query(query, functions=[as_tool], function_choice="any", no_stream=True):
                 if msg.content["type"] == "tool_use":
-                    return structure(**(msg.content["data"].input))
+                    input = msg.content["data"].input
+                    input = verify_schema_inputs(as_tool["schema"], input)
+                    return structure(**input)
             else:
                 raise ValueError("No structured response found")
         elif strategy == "prefill":

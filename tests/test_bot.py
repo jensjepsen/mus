@@ -98,6 +98,34 @@ async def test_llm_fill(mock_model):
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
 
 @pytest.mark.asyncio
+async def test_llm_fill_missing_arguments(mock_model):
+    mock_model.set_response([
+        Delta(content={"type": "text", "data": "Processing"}),
+        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "test"}, id="abc")}),
+    ])
+    
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    
+    with pytest.raises(ValueError) as exc_info:
+        await llm.fill("Test query", TestStructure)
+    
+    assert str(exc_info.value) == "Missing required fields: field2"
+
+@pytest.mark.asyncio
+async def test_llm_fill_wrong_argument_type(mock_model):
+    mock_model.set_response([
+        Delta(content={"type": "text", "data": "Processing"}),
+        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": 123, "field2": "not_an_int"}, id="abc")}),
+    ])
+    
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    
+    with pytest.raises(ValueError) as exc_info:
+        await llm.fill("Test query", TestStructure)
+    
+    assert "expected int @ $.field2" in str(exc_info.value)
+
+@pytest.mark.asyncio
 async def test_llm_fill_strategy_prefill(mock_model):
     # below looks a little weird because the answer is prefilled, so it's missing the initial json
     responses = [

@@ -242,7 +242,7 @@ def type_to_attr(value: t.Type) -> attrs.Attribute:
 
 def verify_schema_inputs(
     schema: FunctionSchema,
-    inputs: t.Dict[str, t.Any],
+    inputs: t.Mapping[str, t.Any],
 ) -> t.Dict[str, t.Any]:
     """Verify that the inputs match the function's schema."""
     cls = schema_to_attrs(schema)
