@@ -1,3 +1,17 @@
+## v0.17.0 (2025-06-24)
+
+### Feat
+
+- fill and function validation
+- verify function args
+- verify function args
+- verify function args
+- verify fill
+
+### Refactor
+
+- serialize using cattrs in state
+
 ## v0.16.7 (2025-06-19)
 
 ### Fix
