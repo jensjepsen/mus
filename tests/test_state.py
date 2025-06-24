@@ -1,6 +1,6 @@
 import pytest
-from mus.state import StateReference, State, Empty, encode_obj
-import jsonpickle
+import json
+from mus.state import StateReference, State, Empty
 
 @pytest.fixture
 def state_manager():
@@ -40,14 +40,6 @@ def test_state_with_different_types(value):
     assert state() == value
     assert state.to_dict() == {"val": value}
 
-def test_encode_obj():
-    class DummyObj:
-        def to_dict(self):
-            return {"dummy": "value"}
-
-    assert encode_obj(DummyObj()) == {"dummy": "value"}
-    assert encode_obj(42) == 42
-
 def test_state_manager_init(state_manager):
     state = state_manager.init("test", 42)
     assert state() == 42
@@ -64,14 +56,14 @@ def test_state_manager_dumps(state_manager):
     state_manager.init("int_state", 42)
     state_manager.init("str_state", "hello")
     dumped = state_manager.dumps()
-    decoded = jsonpickle.decode(dumped)
+    decoded = json.loads(dumped)
     assert decoded == {
         "int_state": {"val": 42},
         "str_state": {"val": "hello"}
     }
 
 def test_state_manager_loads(state_manager):
-    data = jsonpickle.encode({
+    data = json.dumps({
         "int_state": {"val": 42},
         "str_state": {"val": "hello"}
     })

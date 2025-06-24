@@ -148,10 +148,13 @@ uv build
 ```
 
 ## TODO
-- [ ] Investigate cattrs for validation
+- [ ] Fill retry on bad LLM output
+- [X] Cattrs for validation of func args and fill
 - [X] Remove deps
-    - [ ] Pydantic
+    - [X] Pydantic
     - [ ] jsonpickle
+        - [ ] State
+        - [ ] Sandbox
 - [ ] BUG: tools are intercepted before usage is yielded, which means that usage is yielded in wrong order
 - [ ] Return usage for fill operations
 - [ ] Prefill examples should fail when encountering unknown type
@@ -191,5 +194,4 @@ uv build
 - [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
 - [X] Remove all interpreter code
 - [X] Extism first class support w. tests
-- [ ] Add retries to fill 
 

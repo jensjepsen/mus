@@ -1,15 +1,19 @@
 import typing as t
-import jsonpickle
 import pathlib
+import attrs
+import cattrs
+import json
 
 class Empty:
     ...
 
-StateType = t.TypeVar("StateType")
-class StateReference(t.Generic[StateType]):
-    def __init__(self, val: StateType) -> None:
-        self.val = val
+converter = cattrs.Converter()
 
+StateType = t.TypeVar("StateType")
+@attrs.define
+class StateReference(t.Generic[StateType]):
+    val: StateType
+    
     def __call__(self, new_val: t.Union[StateType, Empty]=Empty()) -> StateType:
         if not isinstance(new_val, Empty):
             self.val = new_val
@@ -23,15 +27,22 @@ class StateReference(t.Generic[StateType]):
     def from_dict(data: t.Dict[str, t.Any]) -> "StateReference":
         return StateReference(data["val"])
 
-def encode_obj(obj: t.Any) -> t.Any:
-    try:
-        return obj.to_dict()
-    except AttributeError:
-        return obj
+def structure_state_reference(
+    state_ref: StateReference[StateType], 
+    typ: t.Type[StateReference[StateType]]
+) -> t.Dict[str, StateType]:
+    return state_ref.to_dict()
+
+converter.register_unstructure_hook(StateReference, lambda sf: sf.to_dict())
+converter.register_structure_hook(StateReference, structure_state_reference)
+
+
+StatesType = dict[str, StateReference]
+StatesTypeAny = dict[str, StateReference[t.Any]]
 
 class State:
     def __init__(self) -> None:
-        self.states = {}
+        self.states: StatesType  = {}
         self.is_set = set()
     
     def init(self, name: str, default_val: StateType=None) -> StateReference[StateType]:
@@ -53,18 +64,16 @@ class State:
         return self.init(name, default_val)
     
     def dumps(self, **dumps_kwargs: t.Any) -> str:
-        result = jsonpickle.encode({name: state.to_dict() for name, state in self.states.items()}, **dumps_kwargs)
-        if not result:
-            raise ValueError("jsonpickle produced an empty result!")
-        return t.cast(str, result)
+        result = json.dumps(cattrs.unstructure(self.states), **dumps_kwargs)
+        return result
     
     def dump(self, file: t.Union[pathlib.Path, str], **dumps_kwargs: t.Any) -> None:
         with open(file, "w") as f:
             f.write(self.dumps(**dumps_kwargs))
     
     def loads(self, data: str, **loads_kwargs) -> None:
-        decoded: t.Dict[str, t.Any] = t.cast(t.Dict[str, t.Any], jsonpickle.decode(data, **loads_kwargs))
-        self.states = {name: StateReference.from_dict(val) for name, val in decoded.items()}
+        unstructured = json.loads(data, **loads_kwargs)
+        self.states = cattrs.structure(unstructured, StatesTypeAny)
     
     def load(self, file: t.Union[pathlib.Path, str]) -> None:
         with open(file, "r") as f:
