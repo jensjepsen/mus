@@ -1,14 +1,13 @@
 import typing as t
 from dataclasses import is_dataclass
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value
-from ..functions import FunctionSchema
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
 from openai._types import NotGiven
 import json
 
-def func_to_tool(func: FunctionSchema) -> ChatCompletionToolParam:
+def func_to_tool(func: FunctionSchemaNoAnnotations) -> ChatCompletionToolParam:
     return {
         "type": "function",
         "function": {
@@ -17,7 +16,7 @@ def func_to_tool(func: FunctionSchema) -> ChatCompletionToolParam:
             "parameters": func["schema"]
         }
     }
-def functions_for_llm(functions: t.Sequence[FunctionSchema]) -> t.List[ChatCompletionToolParam]:
+def functions_for_llm(functions: t.Sequence[FunctionSchemaNoAnnotations]) -> t.List[ChatCompletionToolParam]:
     return [
         func_to_tool(func)
         for func in (functions or [])

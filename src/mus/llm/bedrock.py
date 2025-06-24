@@ -1,6 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
-from ..functions import FunctionSchema
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations
 import base64
 
 from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
@@ -45,7 +44,7 @@ async def iterate_in_threadpool(
         except _StopIteration:
             break
 
-def func_schema_to_tool(func_schema: FunctionSchema):
+def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations):
     return bt.ToolTypeDef(
         toolSpec=bt.ToolSpecificationTypeDef(
             name=func_schema["name"],
@@ -56,7 +55,7 @@ def func_schema_to_tool(func_schema: FunctionSchema):
         )
     )
 
-def functions_for_llm(functions: t.Sequence[FunctionSchema]):
+def functions_for_llm(functions: t.Sequence[FunctionSchemaNoAnnotations]):
     return [
         func_schema_to_tool(func)
         for func
