@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import MagicMock
-from dataclasses import dataclass
 from mus import sandbox
 from mus.llm.types import LLM
 from wasmtime import Trap
@@ -77,8 +76,8 @@ async def test_sandbox_as_decorator(mock_client):
 
         import mus
         bot = mus.Bot(model=model)
-        await (bot(f"Test query").string())
-        async for delta in bot(f"Test query with"):
+        await (bot("Test query").string())
+        async for delta in bot("Test query with"):
             print(str(delta))
     
     await decorated_func_with_wrapper(mock_client)
@@ -182,7 +181,6 @@ async def test_sandbox_stdin(capsys, mock_stdin):
 
     @sandbox(stdin=True, stdout=True)
     async def decorated_func_with_stdin():
-        import sys
         input_value = input()
         print(f"Input was: {input_value}")
     

@@ -1,10 +1,9 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock
 
 import urllib3
 import requests
-import sys
-from httpx import Headers, Response, Request, URL
+from httpx import Headers, URL
 import urllib3.contrib
 
 

@@ -1,5 +1,4 @@
 import pytest
-import typing as t
 
 from mus.mcp.client import make_client, tool_to_function, get_tools
 from mus.mcp.server import MCPServer

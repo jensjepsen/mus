@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 import json
 import sys
-import base64
 import inspect
-from typing import Dict, Any, Optional, Union, TypedDict, Callable, Literal, Coroutine, Protocol, Union, ParamSpec, Generic
+from typing import Dict, Any, Optional, TypedDict, Literal, Protocol, Union, ParamSpec, Generic
 from ..functions import func_to_schema
 from .uri_matcher import URIMatcher
 from ..llm.types import ToolReturnValue, File

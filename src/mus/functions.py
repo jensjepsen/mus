@@ -2,7 +2,8 @@ import typing as t
 from .llm.types import ToolCallableType, FunctionSchema
 from dataclasses import is_dataclass
 import json
-import cattrs, attrs
+import cattrs
+import attrs
 
  
 class ToolCallable(t.TypedDict):
@@ -109,7 +110,7 @@ def remove_keys(obj: t.Union[t.Dict[str, t.Any], t.Any], keys: set):
             key: remove_keys(val, keys)
             for key, val
             in obj.items()
-            if not key in keys
+            if key not in keys
         }
     else:
         return obj
@@ -118,15 +119,15 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     """Convert Python type annotations to JSON Schema format."""
     
     # Handle basic types
-    if py_type == str:
+    if py_type is str:
         return {"type": "string"}
-    elif py_type == int:
+    elif py_type is int:
         return {"type": "integer"}
-    elif py_type == float:
+    elif py_type is float:
         return {"type": "number"}
-    elif py_type == bool:
+    elif py_type is bool:
         return {"type": "boolean"}
-    elif py_type == type(None):
+    elif py_type is type(None):
         return {"type": "null"}
     elif is_dataclass(py_type):
         # Handle dataclasses
@@ -166,7 +167,7 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
         return schema
     elif origin is t.Union:
         # Handle Optional types (Union[T, None])
-        non_none_types = [arg for arg in args if arg != type(None)]
+        non_none_types = [arg for arg in args if arg is not type(None)]
         if len(non_none_types) == 1 and type(None) in args:
             # This is Optional[T]
             base_schema = python_type_to_json_schema(non_none_types[0])
