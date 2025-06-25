@@ -2,13 +2,14 @@ import typing as t
 from .llm.types import ToolCallableType
 from dataclasses import is_dataclass
 import json
-
+import cattrs, attrs
 
 class FunctionSchema(t.TypedDict):
     name: str
     description: str
     schema: t.Dict[str, t.Any]
-
+    annotations: t.Sequence[t.Tuple[str, t.Type]]
+ 
 class ToolCallable(t.TypedDict):
     function: ToolCallableType
     schema: FunctionSchema
@@ -48,7 +49,8 @@ def func_to_schema(func: ToolCallableType) -> FunctionSchema:
     p = FunctionSchema(
         name=func.__name__,
         description=func.__doc__,
-        schema=get_schema(func.__name__, annotations)
+        schema=get_schema(func.__name__, annotations),
+        annotations=annotations
     )
     return p
 
@@ -75,7 +77,8 @@ def dataclass_to_schema(dataclass) -> FunctionSchema:
     p = FunctionSchema(
         name=dataclass.__name__,
         description=dataclass.__doc__,
-        schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items()))
+        schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())),
+        annotations=list(dataclass.__annotations__.items())
     )
     return p    
 
@@ -88,7 +91,8 @@ def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     p = FunctionSchema(
         name=typed_dict.__name__,
         description=typed_dict.__doc__,
-        schema=get_schema(typed_dict.__name__, list(typed_dict.__annotations__.items()))
+        schema=get_schema(typed_dict.__name__, list(typed_dict.__annotations__.items())),
+        annotations=list(typed_dict.__annotations__.items())
     )
     return p
 
@@ -210,3 +214,78 @@ def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, o
     }
         
     return schema
+
+def schema_to_attrs(schema: FunctionSchema) -> t.Type:
+    """Convert a FunctionSchema to an attrs class."""
+    attrs_fields = {
+        key: type_to_attr(value)
+        for key, value in schema["annotations"]
+    }
+    
+    return attrs.make_class(
+        schema["name"],
+        attrs_fields,
+        auto_attribs=True,
+    )
+
+def type_to_attr(value: t.Type) -> attrs.Attribute:
+    """Convert a key-value pair to an attrs attribute."""
+    if t.is_typeddict(value) or is_dataclass(value):
+        return attrs.field(
+            type=schema_to_attrs(to_schema(value))
+        )
+    else:
+        return attrs.field(
+            type=value,
+            validator=attrs.validators.instance_of(value),
+        )
+
+def verify_schema_inputs(
+    schema: FunctionSchema,
+    inputs: t.Mapping[str, t.Any],
+) -> t.Dict[str, t.Any]:
+    """Verify that the inputs match the function's schema."""
+    cls = schema_to_attrs(schema)
+    try:
+        # Use cattrs to convert inputs to the typed dict
+        parsed = cattrs.structure(inputs, cls)
+    except Exception as e:
+        raise ValueError(f"Invalid inputs for {schema['name']}: {cattrs.transform_error(e)}") from e
+    return cattrs.unstructure(parsed)
+
+if __name__ == "__main__":
+    # Example usage
+    import dataclasses
+
+    class ExampleNested(t.TypedDict):
+        """An example nested TypedDict."""
+        nested_field: str
+        another_field: int
+    
+    @dataclasses.dataclass
+    class ExampleDataclass:
+        """An example dataclass."""
+        x: int
+        y: str
+        nest: ExampleNested
+    
+    async def example_tool(a: int, b: str, double_nest: ExampleDataclass) -> str:
+        """An example tool that takes an integer and a string."""
+        return f"Received {a} and {b}"
+    
+    schema = func_to_schema(example_tool)
+    
+    example_inputs = {
+        "a": 42,
+        "b": "Hello",
+        "double_nest": {
+            "x": 1,
+            "y": "Nested",
+            "nest": {
+                "nested_field": "Inner",
+                "another_field": 100
+            }
+        }
+    }
+    verified_inputs = verify_schema_inputs(schema, example_inputs)
+    print(verified_inputs)

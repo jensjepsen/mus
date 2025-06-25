@@ -105,6 +105,7 @@ async def tool_to_function(tool: Tool, session: ClientSession):
             name=tool.name,
             description=tool.description or "",
             schema=tool.inputSchema,
+            annotations=[(k, v) for k, v in call_tool.__annotations__.items() if not k =="return"]
         )
     )    
 
