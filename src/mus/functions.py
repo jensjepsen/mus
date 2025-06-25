@@ -1,15 +1,10 @@
 import typing as t
-from .llm.types import ToolCallableType
+from .llm.types import ToolCallableType, FunctionSchema
 from dataclasses import is_dataclass
 import json
 import cattrs
 import attrs
 
-class FunctionSchema(t.TypedDict):
-    name: str
-    description: str
-    schema: t.Dict[str, t.Any]
-    annotations: t.Sequence[t.Tuple[str, t.Type]]
  
 class ToolCallable(t.TypedDict):
     function: ToolCallableType
@@ -25,6 +20,7 @@ def tool(**metadata: t.Dict[str, t.Any]):
         func.__metadata__ = metadata # type: ignore
         return func
     return decorator
+
 
 def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.Sequence[ToolCallable]:
     """Parse a list of tool callables into a list of ToolCallable."""

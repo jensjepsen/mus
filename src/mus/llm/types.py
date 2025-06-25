@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from pathlib import Path
 from textwrap import dedent
-
-if t.TYPE_CHECKING:
-    from ..functions import FunctionSchema
+import attrs
 
 import io
 import base64
@@ -19,6 +17,18 @@ class TypedDictLike(t.Protocol):
 CLIENT_TYPE = t.TypeVar("CLIENT_TYPE")
 STREAM_EXTRA_ARGS = t.TypeVar("STREAM_EXTRA_ARGS", bound=TypedDictLike)
 MODEL_TYPE = t.TypeVar("MODEL_TYPE", bound=str)
+
+class FunctionSchema(t.TypedDict):
+    name: str
+    description: str
+    schema: t.Dict[str, t.Any]
+    annotations: t.Sequence[t.Tuple[str, t.Type]]
+
+class FunctionSchemaNoAnnotations(t.TypedDict):
+    name: str
+    description: str
+    schema: t.Dict[str, t.Any]
+
 
 class CacheOptions(t.TypedDict):
     cache_system_prompt: t.Optional[bool]
@@ -34,7 +44,7 @@ class QueryStreamArgs(t.TypedDict, total=False):
 class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamArgs):
     prompt: t.Optional[str]
     history: "History"
-    functions: t.Optional[t.Sequence["FunctionSchema"]]
+    functions: t.Optional[t.Sequence["FunctionSchemaNoAnnotations"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
@@ -49,7 +59,6 @@ class LLM(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.AsyncGenerator["Delta", None]:
         ...
 
-History = t.List[t.Union["Delta", "Query"]]
 
 @dataclass
 class ToolUse:
@@ -78,15 +87,16 @@ class DeltaToolResult(t.TypedDict):
 
 class DeltaHistory(t.TypedDict):
     type: t.Literal["history"]
-    data: History
+    data: "History"
 
-DeltaContent = DeltaText | DeltaToolUse | DeltaToolResult | DeltaHistory
+DeltaContent = t.Union[DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory]
 
 class Usage(t.TypedDict):
     input_tokens: int
     output_tokens: int
     cache_read_input_tokens: int
     cache_written_input_tokens: int
+
 
 @dataclass
 class Delta:
@@ -112,11 +122,13 @@ class Delta:
         else:
     """
 
+
 @dataclass
 class File:
     b64type: str
     content: str
-
+    _type: t.Literal["file"] = "file"
+    
     def to_b64(self):
         return f"data:{self.b64type};base64,{self.content}"
 
@@ -160,28 +172,28 @@ class ToolCallableType(t.Protocol):
     #__metadata__: t.Optional[t.Dict[str, t.Any]]
     async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
         ...
-QuerySimpleType = t.Union[str, File, "Assistant"]
-QueryIterableType = t.List[QuerySimpleType]
-QueryType = t.Union[QuerySimpleType, QueryIterableType, "Query"]
+
+QueryType = t.Union["QuerySimpleType", "QueryIterableType", "Query"]
 
 
 def is_query_type(val: t.Any) -> t.TypeGuard[QueryType]:
     return isinstance(val, str) or isinstance(val, File) or isinstance(val, Query) or (isinstance(val, list) and all(is_query_type(v) for v in val))
 
+@attrs.define
 class System:
-    def __init__(self, text: str, query: t.Optional[QueryType]=None):
-        self.val = text
-        self.query: t.Optional[QueryType] = query
+    val: str
+    query: t.Optional[QueryType] = None
     
     def __add__(self, other: t.Union[QueryType, "System"]):
         if isinstance(other, System):
             return System(self.val + other.val)
         return System(self.val, other)
-    
+
+@attrs.define
 class Assistant:
-    def __init__(self, text: str, echo: bool=False):
-        self.val = text
-        self.echo = echo
+    val: str
+    echo: bool = False  # Whether to echo the assistant's response in the query
+    _type: t.Literal["assistant"] = "assistant"
     
     def __add__(self, other: QueryType):
         if isinstance(other, Assistant):
@@ -195,7 +207,12 @@ class Assistant:
         
         return other + Query(self)
 
+QuerySimpleType = t.Union[str, File, Assistant]
+QueryIterableType = t.List[QuerySimpleType]
+
+@attrs.define
 class Query:
+    val: QueryIterableType
     @classmethod
     def parse(cls, query: QueryType) -> "Query":
         if isinstance(query, str) or isinstance(query, File) or isinstance(query, Assistant):
@@ -240,6 +257,9 @@ class Query:
             return Query(other.val + self.val)
         else:
             return Query(other + self.val)
+
+HistoryItem = t.Union[Delta, Query]
+History = t.List[HistoryItem]
 
 LLMDecoratedFunctionReturnType = t.TypeVar("LLMDecoratedFunctionReturnType", covariant=True)
 

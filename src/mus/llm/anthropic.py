@@ -1,15 +1,14 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs
-from ..functions import FunctionSchema
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations
 
-def func_to_tool(func: FunctionSchema) -> at.ToolParam:
+def func_to_tool(func: FunctionSchemaNoAnnotations) -> at.ToolParam:
     p = at.ToolParam(name=func["name"], description=func["description"], input_schema=func["schema"])
     return p
 
 
-def functions_for_llm(functions: t.Sequence[FunctionSchema]) -> t.List[at.ToolParam]:
+def functions_for_llm(functions: t.Sequence[FunctionSchemaNoAnnotations]) -> t.List[at.ToolParam]:
     return [
         func_to_tool(func)
         for func
