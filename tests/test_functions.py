@@ -3,7 +3,7 @@ from typing import List, Optional, Annotated, TypedDict
 import pytest
 
 # Import the functions to be tested
-from mus.functions import get_schema, to_schema, FunctionSchema, schema_to_example, parse_tools, ToolCallable
+from mus.functions import get_schema, to_schema, schema_to_example, parse_tools, ToolCallable
 
 # Test data
 def sample_function(param1: str, param2: int) -> str:

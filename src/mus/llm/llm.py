@@ -42,7 +42,7 @@ class IterableResult:
             elif msg.content["type"] == "tool_use":
                 self.total += f"Running tool: {msg.content['data'].name}"
             elif msg.content["type"] == "tool_result":
-                self.total += f"Tool applied"
+                self.total += "Tool applied"
             if msg.usage:
                 self.usage["input_tokens"] += msg.usage["input_tokens"]
                 self.usage["output_tokens"] += msg.usage["output_tokens"]

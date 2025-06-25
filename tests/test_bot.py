@@ -474,7 +474,7 @@ async def test_invoke_function_wrong_args():
     assert type(return_val) == str, f"Expected str, got {type(return_val)}"
     result = json.loads(return_val)
     assert "error" in result, f"Expected error, got {result}"
-    assert f"Tool sample_function was called with incorrect arguments" in result["error"], f"Expected error message not found, got {result['error']}"
+    assert "Tool sample_function was called with incorrect arguments" in result["error"], f"Expected error message not found, got {result['error']}"
 
 @pytest.mark.asyncio
 async def test_invoke_function_internal_scope_wrong_args():

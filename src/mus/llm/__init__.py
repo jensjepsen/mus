@@ -1,1 +1,1 @@
-from .llm import Bot
+from .llm import Bot as Bot

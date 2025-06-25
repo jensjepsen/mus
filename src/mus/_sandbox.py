@@ -4,8 +4,6 @@ import threading
 import queue
 import uuid
 import typing as t
-import asyncio
-import os
 import inspect
 from .llm.llm import LLM
 from .llm.types import LLMClientStreamArgs

@@ -1,44 +1,25 @@
-from .llm.types import File, Query, ToolUse, ToolResult, Assistant, System
-from .llm.llm import IterableResult, Bot, LLM
-from .llm.mock_client import StubLLM
-from .state import State, StateReference
+from .llm.types import File as File, Query as Query, ToolUse as ToolUse, ToolResult as ToolResult, Assistant as Assistant, System as System
+from .llm.llm import IterableResult as IterableResult, Bot as Bot, LLM as LLM
+from .llm.mock_client import StubLLM as StubLLM
+from .state import State as State, StateReference as StateReference
 import sys
+import importlib.util
 
 # Try to import wasmtime, if it fails, we are probably in a sandbox
 # so we can't import it again
 # and we can't nest sandboxes
-if not "wasmtime" in sys.modules:
-    try:
-        import wasmtime
-    except ImportError:
-        pass
-    else:
-        from ._sandbox import sandbox
+if "wasmtime" not in sys.modules:
+    if importlib.util.find_spec("wasmtime"):
+        from ._sandbox import sandbox as sandbox
 
-try:
-    import anthropic
-except ImportError:
-    pass
-else:
-    from .llm.anthropic import AnthropicLLM
+if importlib.util.find_spec("anthropic"):
+    from .llm.anthropic import AnthropicLLM as AnthropicLLM
 
-try:
-    import boto3
-except ImportError:
-    pass
-else:
-    from .llm.bedrock import BedrockLLM
+if importlib.util.find_spec("boto3"):
+    from .llm.bedrock import BedrockLLM as BedrockLLM
 
-try:
-    import openai
-except ImportError:
-    pass
-else:
-    from .llm.openai import OpenAILLM
+if importlib.util.find_spec("openai"):
+    from .llm.openai import OpenAILLM as OpenAILLM
 
-try:
-    from google import genai
-except ImportError:
-    pass
-else:
-    from .llm.google import GoogleGenAILLM
+if importlib.util.find_spec("google.genai"):
+    from .llm.google import GoogleGenAILLM as GoogleGenAILLM

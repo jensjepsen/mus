@@ -38,7 +38,7 @@ class State:
         """
         We check if a name is in states but not set by init, because it must then come from load, and should not be overwritten
         """
-        if name in self.states and not name in self.is_set:
+        if name in self.states and name not in self.is_set:
             
             state = self.states[name]
         else:

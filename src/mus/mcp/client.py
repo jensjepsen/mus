@@ -1,4 +1,3 @@
-import typing as t
 import anyio
 from contextlib import asynccontextmanager
 import datetime
@@ -7,7 +6,7 @@ from mcp import ClientSession
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage
 
-from mcp import ClientSession, Tool
+from mcp import Tool
 from mcp.types import BlobResourceContents, TextResourceContents
 
 from ..functions import ToolCallable, FunctionSchema

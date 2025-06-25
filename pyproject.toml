@@ -41,7 +41,8 @@ dev = [
     "sybil[pytest](>=9.0.0,<10.0.0)",
     "pyright(>=1.1.398,<2.0.0)",
     "componentize-py(>=0.17.0,<0.18.0)",
-    "mcp>=1.9.1"
+    "mcp>=1.9.1", 
+    "ruff>=0.12.0",
 ]
 all = [
     "boto3(>=1.38.19,<2.0.0)", 
@@ -58,6 +59,9 @@ all = [
 [tool.uv]
 native-tls = true
 package = true
+
+[tool.ruff]
+include = ["pyproject.toml", "src/**/*.py"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

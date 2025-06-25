@@ -2,7 +2,6 @@ import typing as t
 from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value
 from ..functions import FunctionSchema
 import base64
-import json
 
 from google import genai
 from google.genai import types as genai_types

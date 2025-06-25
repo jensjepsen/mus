@@ -14,7 +14,6 @@ from mus.llm.bedrock import (
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
 from mus.functions import to_schema
-from mus import Bot
 from dataclasses import dataclass
 import base64
 

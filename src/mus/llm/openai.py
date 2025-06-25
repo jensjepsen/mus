@@ -1,5 +1,4 @@
 import typing as t
-from dataclasses import is_dataclass
 from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value
 from ..functions import FunctionSchema
 

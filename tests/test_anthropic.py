@@ -1,14 +1,13 @@
 from dataclasses import dataclass
 from typing import Annotated, List, Optional
 import pytest
-from unittest.mock import Mock, ANY
+from unittest.mock import Mock
 from contextlib import asynccontextmanager
 
 from mus.llm.anthropic import func_to_tool, functions_for_llm
-from mus.llm.types import Delta, DeltaText
 from mus import AnthropicLLM
 from mus.functions import to_schema
-from anthropic import types as at, NOT_GIVEN
+from anthropic import types as at
 
 def sample_function(param1: str, param2: int) -> str:
     """This is a sample function."""
