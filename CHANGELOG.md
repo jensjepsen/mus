@@ -1,3 +1,9 @@
+## v0.18.1 (2025-06-25)
+
+### Fix
+
+- Merge pull request #24 from jensjepsen/dependabot/pip/wasmtime-34.0.0
+
 ## v0.18.0 (2025-06-25)
 
 ### Feat
