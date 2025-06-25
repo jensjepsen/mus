@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from pathlib import Path
 from textwrap import dedent
-import cattrs, attrs
+import attrs
 
 import io
 import base64
