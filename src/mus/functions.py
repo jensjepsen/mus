@@ -2,7 +2,8 @@ import typing as t
 from .llm.types import ToolCallableType
 from dataclasses import is_dataclass
 import json
-import cattrs, attrs
+import cattrs
+import attrs
 
 class FunctionSchema(t.TypedDict):
     name: str
