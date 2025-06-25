@@ -21,5 +21,5 @@ if importlib.util.find_spec("boto3"):
 if importlib.util.find_spec("openai"):
     from .llm.openai import OpenAILLM as OpenAILLM
 
-if importlib.util.find_spec("google.genai"):
+if importlib.util.find_spec("google") and importlib.util.find_spec("google.genai"):
     from .llm.google import GoogleGenAILLM as GoogleGenAILLM
