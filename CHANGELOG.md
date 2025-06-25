@@ -1,3 +1,17 @@
+## v0.18.0 (2025-06-25)
+
+### Feat
+
+- function and fill input validation
+
+### Fix
+
+- lint
+
+### Refactor
+
+- minor cleanup
+
 ## v0.17.0 (2025-06-24)
 
 ### Feat
