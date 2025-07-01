@@ -35,7 +35,7 @@ mcp-client = ["mcp>=1.9.1"]
 dev = [
     "pytest(>=8.3.3,<9.0.0)",
     "bump2version(>=1.0.1,<2.0.0)",
-    "pytest-asyncio(>=0.25.3,<1.0.0)",
+    "pytest-asyncio(>=0.25.3,<2.0.0)",
     "pytest-cov(>=6.0.0,<7.0.0)",
     "coverage[toml](>=7.6.10,<8.0.0)",
     "pytest-md-report(>=0.6.3,<1.0.0)",
