@@ -17,8 +17,7 @@ from mistralai.models import (
     ImageURL,
     Messages,
     Arguments,
-    Function,
-    ToolChoice
+    Function
 )
 import mistralai.models as mt
 
