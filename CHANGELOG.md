@@ -1,3 +1,13 @@
+## v0.19.0 (2025-07-01)
+
+### Feat
+
+- mistral
+- mistral
+- mistral
+- mistral
+- mistral
+
 ## v0.18.1 (2025-06-25)
 
 ### Fix
