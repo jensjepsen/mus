@@ -23,3 +23,6 @@ if importlib.util.find_spec("openai"):
 
 if importlib.util.find_spec("google") and importlib.util.find_spec("google.genai"):
     from .llm.google import GoogleGenAILLM as GoogleGenAILLM
+
+if importlib.util.find_spec("mistralai"):
+    from .llm.mistral import MistralLLM as MistralLLM
