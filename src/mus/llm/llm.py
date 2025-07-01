@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 def merge_history(history: History) -> History:
     merged = []
     for msg in history:
-        if merged and isinstance(msg, Delta) and msg.content["type"] == "text" and msg.content.get("subtype", None) == "text":
-            if isinstance(merged[-1], Delta) and merged[-1].content["type"] == "text" and merged[-1].content.get("subtype", None) == "text":
+        if merged and isinstance(msg, Delta) and msg.content["type"] == "text" and msg.content.get("subtype", "text") == "text":
+            if isinstance(merged[-1], Delta) and merged[-1].content["type"] == "text" and merged[-1].content.get("subtype", "text") == "text":
                 merged[-1].content["data"] += msg.content["data"]
             else:
                 merged.append(msg)
