@@ -148,7 +148,7 @@ uv build
 ```
 
 ## TODO
-- [ ] Figure out mistral prefilling
+- [ ] Figure out mistral prefilling (w. prefix=True)
 - [ ] Test merging and pruning deltas 
 - [ ] Fill retry on bad LLM output
 - [X] Cattrs for validation of func args and fill
