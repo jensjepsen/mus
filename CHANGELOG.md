@@ -1,3 +1,11 @@
+## v0.19.2 (2025-07-08)
+
+### Fix
+
+- verify annotated types
+- annotated types in verification
+- annotated types in verification
+
 ## v0.19.1 (2025-07-02)
 
 ### Fix
