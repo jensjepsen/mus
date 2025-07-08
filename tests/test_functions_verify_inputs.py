@@ -14,6 +14,11 @@ class SimpleTypedDict(t.TypedDict):
     name: str
     age: int
 
+class AnnotatedTypedDict(t.TypedDict):
+    """A TypedDict with annotations for testing."""
+    name: t.Annotated[str, "The name of the person"]
+    age: t.Annotated[int, "The age of the person"]
+
 @dataclass
 class SimpleDataClass:
     """A simple dataclass for testing."""
@@ -108,6 +113,26 @@ def test_verify_schema_inputs_valid_simple():
     result = verify_schema_inputs(schema, inputs)
     assert result == inputs
 
+def test_verify_schema_inputs_annotated():
+    """Test verify_schema_inputs with annotated types."""
+    schema = FunctionSchema(
+        name="AnnotatedFunction",
+        description="Function with annotated parameters",
+        schema={},
+        annotations=[
+            ("name", t.Annotated[str, "The name of the person"]),
+            ("age", t.Annotated[int, "The age of the person"])
+        ]
+    )
+    
+    inputs = {
+        "name": "Bob",
+        "age": 30
+    }
+    
+    result = verify_schema_inputs(schema, inputs)
+    assert result["name"] == "Bob"
+    assert result["age"] == 30
 
 def test_verify_schema_inputs_type_coercion():
     """Test verify_schema_inputs with type coercion."""
@@ -272,6 +297,31 @@ def test_integration_nested_structures():
     assert result["user_data"]["name"] == "Bob"
     assert result["user_data"]["age"] == 35
     assert result["is_admin"] is False
+
+def test_integration_annotated_typed_dict():
+    """Test integration with annotated TypedDict."""
+    schema = FunctionSchema(
+        name="AnnotatedFunction",
+        description="Function with annotated TypedDict",
+        schema={},
+        annotations=[
+            ("data", AnnotatedTypedDict),
+            ("active", bool)
+        ]
+    )
+    
+    inputs = {
+        "data": {
+            "name": "Alice",
+            "age": 30
+        },
+        "active": True
+    }
+    
+    result = verify_schema_inputs(schema, inputs)
+    assert result["data"]["name"] == "Alice"
+    assert result["data"]["age"] == 30
+    assert result["active"] is True
 
 def test_integration_nested_dataclass():
     """Test integration with nested dataclass structures."""
