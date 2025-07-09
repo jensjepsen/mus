@@ -231,18 +231,9 @@ def type_to_attr(value: t.Type) -> attrs.Attribute:
         return attrs.field(
             type=schema_to_attrs(to_schema(value))
         )
-    # check if this is an annotated type
-    elif t.get_origin(value) is t.Annotated:
-        # Extract the base type and any metadata
-        base_type, *metadata = t.get_args(value)
-        return attrs.field(
-            type=base_type,
-            validator=attrs.validators.instance_of(base_type),
-        )
     else:
         return attrs.field(
             type=value,
-            validator=attrs.validators.instance_of(value),
         )
 
 def verify_schema_inputs(

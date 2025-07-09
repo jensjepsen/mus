@@ -121,18 +121,44 @@ def test_verify_schema_inputs_annotated():
         schema={},
         annotations=[
             ("name", t.Annotated[str, "The name of the person"]),
-            ("age", t.Annotated[int, "The age of the person"])
+            ("age", t.Annotated[int, "The age of the person"]),
+            ("hobbies", t.Annotated[list[str], "List of hobbies"])
         ]
     )
     
     inputs = {
         "name": "Bob",
-        "age": 30
+        "age": 30,
+        "hobbies": ["reading", "hiking"]
     }
     
     result = verify_schema_inputs(schema, inputs)
     assert result["name"] == "Bob"
     assert result["age"] == 30
+
+def test_verify_schema_inputs_annotated_invalid():
+    """Test verify_schema_inputs with invalid annotated types."""
+    schema = FunctionSchema(
+        name="AnnotatedFunction",
+        description="Function with annotated parameters",
+        schema={},
+        annotations=[
+            ("name", t.Annotated[str, "The name of the person"]),
+            ("age", t.Annotated[int, "The age of the person"]),
+            ("hobbies", t.Annotated[list[str], "List of hobbies"])
+        ]
+    )
+    
+    inputs = {
+        "name": "Bob",
+        "age": "thirty",  # Invalid type for age
+        "hobbies": ["reading", "hiking"]
+    }
+    
+    with pytest.raises(ValueError) as exc_info:
+        verify_schema_inputs(schema, inputs)
+    
+    assert "Invalid inputs for AnnotatedFunction" in str(exc_info.value)
 
 def test_verify_schema_inputs_type_coercion():
     """Test verify_schema_inputs with type coercion."""
