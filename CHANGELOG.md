@@ -1,3 +1,9 @@
+## v0.19.3 (2025-07-09)
+
+### Fix
+
+- verifying subscripted generics
+
 ## v0.19.2 (2025-07-08)
 
 ### Fix
