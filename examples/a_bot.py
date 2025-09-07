@@ -1,32 +1,23 @@
 
 import contextlib
 import httpx
-import mistralai
 import os
 
 import typing as t
-import mistralai
 import typer
 import pathlib
 import asyncio
-
+import openai
+from mus import BedrockLLM, GoogleGenAILLM, OpenAILLM
 async def run_bot(state: t.Optional[pathlib.Path]=None):
-        from mus import BedrockLLM, GoogleGenAILLM, MistralLLM
+        
         import boto3
         from mus import State, Bot
 
         nova = BedrockLLM("us.anthropic.claude-3-7-sonnet-20250219-v1:0", boto3.client("bedrock-runtime", region_name="us-east-1", ))
         #gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17")
-        mistral = MistralLLM(
-            model="mistral-medium-2505",
-            client=mistralai.Mistral(
-                api_key=os.environ.get("MISTRAL_API_KEY", None),
-                async_client= httpx.AsyncClient(
-                    verify=False
-                ),
 
-            )
-        )
+        openai_llm = OpenAILLM("gpt-5-mini")
         
         states = State()
 
@@ -71,8 +62,8 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
     You can also return the secret number when asked.
     You will be provided with a question and you should respond with the answer.
     """
-            
-        bot = Bot(prompt, functions=[math, num, poem], model=mistral, cache={
+
+        bot = Bot(prompt, functions=[math, num, poem], model=openai_llm, cache={
             "cache_system_prompt": True,
             "cache_tools": True
         })
@@ -82,7 +73,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
             a: str
             b: int
 
-        print(await bot.fill("Fill this with something random", ToFill))
+        #print(await bot.fill("Fill this with something random", ToFill))
 
         response = None
         h = states("history", [])
