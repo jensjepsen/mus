@@ -293,8 +293,8 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                         # Handle usage information if available
                         if chunk.data and chunk.data.usage:
                             usage: Usage = {
-                                "input_tokens": chunk.data.usage.prompt_tokens,
-                                "output_tokens": chunk.data.usage.completion_tokens,
+                                "input_tokens": chunk.data.usage.prompt_tokens or 0,
+                                "output_tokens": chunk.data.usage.completion_tokens or 0,
                                 "cache_read_input_tokens": 0,  # Mistral doesn't provide cache info
                                 "cache_written_input_tokens": 0
                             }
@@ -331,8 +331,8 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                 # Handle usage information
                 if response.usage:
                     usage: Usage = {
-                        "input_tokens": response.usage.prompt_tokens,
-                        "output_tokens": response.usage.completion_tokens,
+                        "input_tokens": response.usage.prompt_tokens or 0,
+                        "output_tokens": response.usage.completion_tokens or 0,
                         "cache_read_input_tokens": 0,  # Mistral doesn't provide cache info
                         "cache_written_input_tokens": 0
                     }
