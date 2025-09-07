@@ -26,7 +26,7 @@ jobs:
       run: uv run ruff check
     
     - name: Run pyright
-      run: uv run pyright
+      run: PYRIGHT_PYTHON_FORCE_VERSION="latest" uv run pyright
 
     - name: Run tests
       run: uv run pytest --md-report --md-report-verbose 1 --md-report-output md-report.md --cov-report xml
