@@ -1,3 +1,14 @@
+## v0.19.4 (2025-09-07)
+
+### Fix
+
+- openai
+- openai
+- mistral
+- mistral
+- openai
+- openai client
+
 ## v0.19.3 (2025-07-09)
 
 ### Fix
