@@ -158,7 +158,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         if not tool_call.type == "function":
                             raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
                         
-                        if tool_call.function: # type: ignore # older versions of pyright get confused here..
+                        if tool_call.function:
                             if not partial_calls or (tool_call.id and partial_calls[-1].id and tool_call.id != partial_calls[-1].id):
                                 partial_calls.append(PartialToolCall(
                                     id=tool_call.id if tool_call.id else "",
@@ -202,6 +202,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             
             if response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
+                    if not tool_call.type == "function":
+                        raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
                     tool_use = ToolUse(
                         id=tool_call.id,
                         name=tool_call.function.name,
