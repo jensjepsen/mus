@@ -202,7 +202,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             
             if response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
-                    if not tool_call.function:
+                    if tool_call.type != "function":
                             raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
                         
                     tool_use = ToolUse(
