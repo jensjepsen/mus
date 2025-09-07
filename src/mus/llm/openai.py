@@ -5,6 +5,7 @@ import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
 from openai._types import NotGiven
 import json
+import dataclasses
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> ChatCompletionToolParam:
     return {
@@ -102,6 +103,12 @@ class StreamArgs(t.TypedDict, total=False):
 STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
 
+@dataclasses.dataclass
+class PartialToolCall:
+    id: str
+    name: str
+    arguments: str
+
 class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
     def __init__(self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient]=None):
         if not client:
@@ -126,10 +133,10 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             messages=messages,
             tools=tools,
             tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else NotGiven(),
-            max_tokens=kwargs.get("max_tokens"),
-            temperature=kwargs.get("temperature"),
-            top_p=kwargs.get("top_p"),
-            stop=kwargs.get("stop_sequences"),
+            max_tokens=kwargs.get("max_tokens", None) or NotGiven(),
+            temperature=kwargs.get("temperature", None) or NotGiven(),
+            top_p=kwargs.get("top_p", None) or NotGiven(),
+            stop=kwargs.get("stop_sequences", None) or NotGiven(),
             stream=stream,
             **extra_kwargs,
         )
@@ -141,25 +148,35 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             return not stream
         
         if is_stream(response):
+            partial_calls: list[PartialToolCall] = []
             async for chunk in response:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     yield Delta(content={"type": "text", "data": delta.content})
                 elif delta.tool_calls:
                     for tool_call in delta.tool_calls:
-<<<<<<< Updated upstream
-=======
                         if tool_call.type and not tool_call.type == "function":
                             raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
                         
->>>>>>> Stashed changes
                         if tool_call.function:
-                            tool_use = ToolUse(
-                                id=str(tool_call.id),
-                                name=str(tool_call.function.name),
-                                input=json.loads(str(tool_call.function.arguments))
-                            )
-                            yield Delta(content={"type": "tool_use", "data": tool_use})
+                            if not partial_calls or (tool_call.id and partial_calls[-1].id and tool_call.id != partial_calls[-1].id):
+                                partial_calls.append(PartialToolCall(
+                                    id=tool_call.id if tool_call.id else "",
+                                    name="",
+                                    arguments=""
+                                ))
+                            last_call = partial_calls.pop()
+                            
+                            if not last_call:
+                                raise ValueError("Received tool call chunk without a starting id")
+                            
+                            if tool_call.function.arguments:
+                                last_call.arguments += tool_call.function.arguments
+                            
+                            if tool_call.function.name:
+                                last_call.name += tool_call.function.name
+                            partial_calls.append(last_call)
+                            
                 if chunk.usage:
                     yield Delta(content={"type": "text", "data": ""}, usage={
                         "input_tokens": chunk.usage.prompt_tokens,
@@ -168,7 +185,14 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         "cache_written_input_tokens": 0
                     })
                 if chunk.choices[0].finish_reason == "tool_calls":
-                    break
+                    for call in partial_calls:
+                        tool_use = ToolUse(
+                            id=call.id,
+                            name=call.name,
+                            input=json.loads(call.arguments)
+                        )
+                        yield Delta(content={"type": "tool_use", "data": tool_use})
+                    partial_calls = []
 
                 
         elif is_not_stream(response):
@@ -178,11 +202,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             
             if response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
-<<<<<<< Updated upstream
-=======
                     if tool_call.type and not tool_call.type == "function":
                         raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
->>>>>>> Stashed changes
                     tool_use = ToolUse(
                         id=tool_call.id,
                         name=tool_call.function.name,
