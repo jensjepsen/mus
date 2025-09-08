@@ -1,3 +1,9 @@
+## v0.19.8 (2025-09-08)
+
+### Fix
+
+- check if choices exist on openai responses
+
 ## v0.19.7 (2025-09-08)
 
 ### Fix
