@@ -1,3 +1,9 @@
+## v0.19.7 (2025-09-08)
+
+### Fix
+
+- include usage in openai responses
+
 ## v0.19.6 (2025-09-08)
 
 ### Fix
