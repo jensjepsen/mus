@@ -1,3 +1,12 @@
+## v0.19.5 (2025-09-07)
+
+### Fix
+
+- openai tools
+- openai tools
+- openai tools
+- openai tools
+
 ## v0.19.4 (2025-09-07)
 
 ### Fix
