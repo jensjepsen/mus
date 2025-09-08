@@ -138,6 +138,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             top_p=kwargs.get("top_p", None) or NotGiven(),
             stop=kwargs.get("stop_sequences", None) or NotGiven(),
             stream=stream,
+            stream_options={"include_usage": True},
             **extra_kwargs,
         )
 
@@ -153,7 +154,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                 delta = chunk.choices[0].delta
                 if delta.content:
                     yield Delta(content={"type": "text", "data": delta.content})
-                elif delta.tool_calls:
+                if delta.tool_calls:
                     for tool_call in delta.tool_calls:
                         if not tool_call.function:
                             raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
