@@ -1,3 +1,9 @@
+## v0.19.6 (2025-09-08)
+
+### Fix
+
+- update to use max_completion_tokens for openai
+
 ## v0.19.5 (2025-09-07)
 
 ### Fix
