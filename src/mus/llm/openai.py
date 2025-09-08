@@ -151,33 +151,45 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
         if is_stream(response):
             partial_calls: list[PartialToolCall] = []
             async for chunk in response:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    yield Delta(content={"type": "text", "data": delta.content})
-                if delta.tool_calls:
-                    for tool_call in delta.tool_calls:
-                        if not tool_call.function:
-                            raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
-                        
-                        if tool_call.function:
-                            if not partial_calls or (tool_call.id and partial_calls[-1].id and tool_call.id != partial_calls[-1].id):
-                                partial_calls.append(PartialToolCall(
-                                    id=tool_call.id if tool_call.id else "",
-                                    name="",
-                                    arguments=""
-                                ))
-                            last_call = partial_calls.pop()
+                if chunk.choices:
+                    first_choice = chunk.choices[0]
+                    delta = first_choice.delta
+                    if delta.content:
+                        yield Delta(content={"type": "text", "data": delta.content})
+                    if delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            if not tool_call.function:
+                                raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
                             
-                            if not last_call:
-                                raise ValueError("Received tool call chunk without a starting id")
-                            
-                            if tool_call.function.arguments:
-                                last_call.arguments += tool_call.function.arguments
-                            
-                            if tool_call.function.name:
-                                last_call.name += tool_call.function.name
-                            partial_calls.append(last_call)
-                            
+                            if tool_call.function:
+                                if not partial_calls or (tool_call.id and partial_calls[-1].id and tool_call.id != partial_calls[-1].id):
+                                    partial_calls.append(PartialToolCall(
+                                        id=tool_call.id if tool_call.id else "",
+                                        name="",
+                                        arguments=""
+                                    ))
+                                last_call = partial_calls.pop()
+                                
+                                if not last_call:
+                                    raise ValueError("Received tool call chunk without a starting id")
+                                
+                                if tool_call.function.arguments:
+                                    last_call.arguments += tool_call.function.arguments
+                                
+                                if tool_call.function.name:
+                                    last_call.name += tool_call.function.name
+                                partial_calls.append(last_call)
+
+                    if first_choice.finish_reason == "tool_calls":
+                        for call in partial_calls:
+                            tool_use = ToolUse(
+                                id=call.id,
+                                name=call.name,
+                                input=json.loads(call.arguments)
+                            )
+                            yield Delta(content={"type": "tool_use", "data": tool_use})
+                        partial_calls = []
+                
                 if chunk.usage:
                     yield Delta(content={"type": "text", "data": ""}, usage={
                         "input_tokens": chunk.usage.prompt_tokens,
@@ -185,15 +197,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         "cache_read_input_tokens": 0,
                         "cache_written_input_tokens": 0
                     })
-                if chunk.choices[0].finish_reason == "tool_calls":
-                    for call in partial_calls:
-                        tool_use = ToolUse(
-                            id=call.id,
-                            name=call.name,
-                            input=json.loads(call.arguments)
-                        )
-                        yield Delta(content={"type": "tool_use", "data": tool_use})
-                    partial_calls = []
+                
 
                 
         elif is_not_stream(response):
