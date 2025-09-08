@@ -133,7 +133,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             messages=messages,
             tools=tools,
             tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else NotGiven(),
-            max_tokens=kwargs.get("max_tokens", None) or NotGiven(),
+            max_completion_tokens=kwargs.get("max_tokens", None) or NotGiven(),
             temperature=kwargs.get("temperature", None) or NotGiven(),
             top_p=kwargs.get("top_p", None) or NotGiven(),
             stop=kwargs.get("stop_sequences", None) or NotGiven(),
