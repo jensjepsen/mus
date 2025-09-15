@@ -9,7 +9,6 @@ import io
 import contextlib
 import time
 import json
-import traceback
 
 class StdOut(io.StringIO):
     def __init__(self, callback: t.Callable[[str], None]):

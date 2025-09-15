@@ -108,12 +108,12 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                 if hasattr(llm, "stream")
             }
 
-            functions = {
-                name: func
-                for name, func
-                in context.items()
-                if not hasattr(func, "stream") and iscallable(func)
-            }
+            #functions = {
+            #    name: func
+            #    for name, func
+            #    in context.items()
+            #    if not hasattr(func, "stream") and iscallable(func)
+            #}
 
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
