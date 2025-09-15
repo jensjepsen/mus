@@ -77,7 +77,9 @@ def callable_to_code(callable: SandboxableCallable) -> str:
 # Ideally the below would be able to take a list of models and functions,
 # that are then available in the sandboxed code
 
-SandboxContext = dict[str, t.Union[LLM, t.Callable[..., t.Any]]]
+SandboxContext = t.Union[LLM, t.Callable[..., t.Any]]
+
+iscallable = callable
 
 def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
     if code and callable:
@@ -107,10 +109,10 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
             }
 
             functions = {
-                name: llm
-                for name, llm
+                name: func
+                for name, func
                 in context.items()
-                if not hasattr(llm, "stream")
+                if not hasattr(func, "stream") and iscallable(func)
             }
 
             if not code:
