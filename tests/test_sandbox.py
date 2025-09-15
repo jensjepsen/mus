@@ -1,7 +1,6 @@
 import pytest
-from unittest.mock import MagicMock
-from mus import sandbox
-from mus.llm.types import LLM
+from unittest.mock import MagicMock, patch
+from mus import sandbox, LLM
 from wasmtime import Trap
 import io
 
@@ -14,9 +13,11 @@ class MockClient():
         mock_response.__aiter__.return_value = iter(responses)
         self.stream.return_value.__aenter__.return_value = mock_response
 
+
 @pytest.fixture
 def mock_client():
-    return MockClient()
+    # mock out the LLM base class
+    yield MockClient()
 
 
 @pytest.mark.asyncio
@@ -27,8 +28,7 @@ async def test_sandbox(mock_client):
                 print(str(delta))
             """
 
-    await sandbox(model=mock_client, code=code)
-    
+    await sandbox(code=code)(model=mock_client)
     assert mock_client.stream.called
 
 @pytest.mark.asyncio
@@ -36,7 +36,7 @@ async def test_sandbox_no_model(capsys):
     code = """\
             print("This should not run without a model")
             """
-    await sandbox(code=code, stdout=True)
+    await sandbox(code=code, stdout=True)()
     captured = capsys.readouterr()
     assert captured.out == "This should not run without a model\n"
 
@@ -62,7 +62,7 @@ async def test_sandbox_as_decorator(mock_client):
         async for delta in bot("Test query"):
             print(str(delta))
     
-    await decorated_func(mock_client)
+    await decorated_func(model=mock_client)
 
     # Check that the function is decorated correctly
     assert decorated_func.__name__ == "decorated_func"
@@ -70,7 +70,7 @@ async def test_sandbox_as_decorator(mock_client):
     
     assert mock_client.stream.called
 
-    @sandbox()
+    @sandbox
     async def decorated_func_with_wrapper(model: LLM):
         """A simple bot that uses the LLMClient with a wrapper."""
 
@@ -79,8 +79,7 @@ async def test_sandbox_as_decorator(mock_client):
         await (bot("Test query").string())
         async for delta in bot("Test query with"):
             print(str(delta))
-    
-    await decorated_func_with_wrapper(mock_client)
+    await decorated_func_with_wrapper(model=mock_client)
 
     # Check that the function is decorated correctly
     assert decorated_func_with_wrapper.__name__ == "decorated_func_with_wrapper"
@@ -94,12 +93,13 @@ async def test_sandbox_with_fuel(mock_client):
             async for delta in bot("Test query"):
                 print(str(delta))
             """
+    
     # Test with insufficient fuel
     with pytest.raises(Trap):
-        await sandbox(model=mock_client, code=code, fuel=10)
+        await sandbox(code=code, fuel=10)(model=mock_client)
 
     # Test with sufficient fuel
-    await sandbox(model=mock_client, code=code, fuel=100_000_000)
+    await sandbox(code=code, fuel=100_000_000)(model=mock_client)
     assert mock_client.stream.called
 
     @sandbox(fuel=10)
@@ -111,7 +111,7 @@ async def test_sandbox_with_fuel(mock_client):
             print(str(delta))
     
     with pytest.raises(Trap):
-        await decorated_func_with_fuel(mock_client)
+        await decorated_func_with_fuel(model=mock_client)
     
     @sandbox(fuel=100_000_000)
     async def decorated_func_with_sufficient_fuel(model: LLM):
@@ -120,7 +120,7 @@ async def test_sandbox_with_fuel(mock_client):
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
-    await decorated_func_with_sufficient_fuel(mock_client)
+    await decorated_func_with_sufficient_fuel(model=mock_client)
 
 @pytest.mark.asyncio
 async def test_sandbox_stdout(capsys):
@@ -128,9 +128,9 @@ async def test_sandbox_stdout(capsys):
             print("Hello world!")
             """
     
-    await sandbox(code=code, stdout=True)
+    await sandbox(code=code, stdout=True)()
     captured = capsys.readouterr()
-    assert captured.out == "Hello world!\n"
+    assert captured.out == "Hello world!\n", "No output captured"
 
     @sandbox(stdout=True)
     async def decorated_func_with_stdout():
@@ -138,7 +138,7 @@ async def test_sandbox_stdout(capsys):
     
     await decorated_func_with_stdout()
     captured = capsys.readouterr()
-    assert captured.out == "Test query\n"
+    assert captured.out == "Test query\n", "No output captured"
 
 @pytest.mark.asyncio
 async def test_sandbox_no_stdout(capsys):
@@ -146,7 +146,7 @@ async def test_sandbox_no_stdout(capsys):
             print("This should not be printed")
             """
     
-    await sandbox(code=code)
+    await sandbox(code=code)()
 
     @sandbox
     async def decorated_func_without_stdout():
@@ -157,6 +157,21 @@ async def test_sandbox_no_stdout(capsys):
     # No output should be captured
     with pytest.raises(AssertionError):
         assert capsys.readouterr().out
+
+@pytest.mark.asyncio
+async def test_sandbox_multiple_models(mock_client):
+    another_mock_client = MockClient()
+    code = """\
+            bot1 = mus.Bot(model=model1)
+            async for delta in bot1("Test query 1"):
+                print(str(delta))
+            bot2 = mus.Bot(model=model2)
+            async for delta in bot2("Test query 2"):
+                print(str(delta))
+            """
+    await sandbox(code=code)(model1=mock_client, model2=another_mock_client)
+    assert mock_client.stream.called
+    assert another_mock_client.stream.called
 
 @pytest.fixture
 def mock_stdin(monkeypatch):
@@ -173,7 +188,7 @@ async def test_sandbox_stdin(capsys, mock_stdin):
             """
     mock_stdin("Test input")
 
-    await sandbox(code=code, stdin=True, stdout=True)
+    await sandbox(code=code, stdin=True, stdout=True)()
     
     
     captured = capsys.readouterr()

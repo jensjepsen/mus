@@ -8,6 +8,8 @@ import sys
 import io
 import contextlib
 import time
+import json
+import traceback
 
 class StdOut(io.StringIO):
     def __init__(self, callback: t.Callable[[str], None]):
@@ -120,18 +122,18 @@ class ExtraArgs(t.TypedDict):
   pass
 
 class ProxyClient(mus.llm.types.LLM[ExtraArgs, str, None]):
-  def __init__(self):
-    pass
+  def __init__(self, model_name: str):
+    self.model_name = model_name
+  
   async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[ExtraArgs, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:
-    result = wit_world.startstream(jsonpickle.dumps(kwargs)) # type: ignore # returns str
-    
+    result = wit_world.startstream(self.model_name, jsonpickle.dumps(kwargs)) # type: ignore # returns str
     while delta := wit_world.pollstream(result):
       if delta == "[[STOP]]":
         break
       yield jsonpickle.loads(delta) # type: ignore # returns Delta
 
 class WitWorld(wit_world.WitWorld):
-  def run(self, code: str):
+  def run(self, code: str, llms: str):
     try:
       indented = code.split("\n")
       code = "    " + "\n    ".join(indented)
@@ -141,15 +143,15 @@ async def main():
 {code}
 run_coro(main())
 """
-      model = ProxyClient()
+      llm_proxies = {name: ProxyClient(name) for name in llms}
       globals = {
-        "model": model,
         "run_coro": run_coro,
         "input": wit_world.input,
+        **llm_proxies
       }
+      
       with redirect_stdout(wit_world.print):
         exec(code_with_run, globals)
-      return str("Done")
+      return json.dumps({"status": "success", "message": "Done"})
     except Exception as e:
-      return str(e)
-  
+      return json.dumps({"status": "error", "message": str(e)})

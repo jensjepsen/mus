@@ -13,7 +13,7 @@ from .guest.bindings import types as guest_types
 from .guest.bindings import Root, RootImports
 from wasmtime import Store, Engine, Config
 import functools
-
+import json
 class Stop:
     pass
 
@@ -40,18 +40,16 @@ class SandboxSharedKwargs(t.TypedDict, total=False):
     stdout: t.Optional[bool]
     stdin: t.Optional[bool]
 
-class SandboxableCallableWithModel(t.Protocol):
-    async def __call__(self, model: LLM) -> None:
-        ...
-    
-class SandboxableCallableWithoutModel(t.Protocol):
-    async def __call__(self) -> None:
-        ...
+LLMs = dict[str, LLM]
 
-SandboxableCallable = t.Union[SandboxableCallableWithModel, SandboxableCallableWithoutModel]
+SandboxableParams = t.ParamSpec("SandboxableParams")
+
+class SandboxableCallable(t.Protocol[SandboxableParams]):
+    async def __call__(self, *args: SandboxableParams.args, **kwargs: SandboxableParams.kwargs) -> None:
+        ...
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, model: t.Optional[LLM]=None) -> str:
+    async def __call__(self, **kwargs: t.Any) -> str:
         ...
 
 class SandboxDecorator(t.Protocol):
@@ -63,72 +61,84 @@ def sandbox(callable: SandboxableCallable, /) -> SandboxReturnCallable:
     ...
 
 @t.overload
+def sandbox(*, code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxReturnCallable:
+    ...
+
+@t.overload
 def sandbox(**kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxDecorator:
     ...
 
-@t.overload
-def sandbox(*, model: t.Optional[LLM], code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Awaitable[str]:
-    ...
-
-@t.overload
-def sandbox(*, code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Awaitable[str]:
-    ...
 
 def callable_to_code(callable: SandboxableCallable) -> str:
     """Convert a callable to its source code."""
     return "\n".join(inspect.getsource(callable).split("\n")[2:])
 
-def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional[LLM]=None, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
+# TODO:
+# Ideally the below would be able to take a list of models and functions,
+# that are then available in the sandboxed code
+
+SandboxContext = dict[str, t.Union[LLM, t.Callable[..., t.Any]]]
+
+def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
     if code and callable:
         raise ValueError("Cannot provide both code and callable")
     
-    if callable:
-        if code:
-            raise ValueError("Cannot provide code when passing a callable")
-        code = callable_to_code(callable)
-
-    def wrapper(callable: t.Optional[SandboxableCallable]=None) -> SandboxReturnCallable:
-        nonlocal code
+    def wrapper(callable: t.Optional[SandboxableCallable]=None, code: t.Optional[str]=None) -> SandboxReturnCallable:
+        if code and callable:
+            raise ValueError("Cannot provide both code and callable")
+    
         if not code:
             if callable:
                 code = callable_to_code(callable)
             else:
                 raise ValueError("Must provide either code or a callable")
+        
         code = textwrap.dedent(code)
-
-        async def inner(model: t.Optional[LLM]=None):
+        async def inner(**context: SandboxContext):
             nonlocal code
             kwargs = outer_kwargs
-
             queues = {}
+
+            llms = {
+                name: llm
+                for name, llm
+                in context.items()
+                if hasattr(llm, "stream")
+            }
+
+            functions = {
+                name: llm
+                for name, llm
+                in context.items()
+                if not hasattr(llm, "stream")
+            }
 
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
             class Host(guest_imports.Host):
                 def print(self, s: str) -> guest_types.Result[None, str]:
                     if not kwargs.get("stdout", False):
-                        return guest_types.Err("stdout is disabled")
+                        return guest_types.Ok(None)
                     print(s, end="", flush=True)
                     return guest_types.Ok(None)
                 
                 def input(self) -> guest_types.Result[str, str]:
                     if not kwargs.get("stdin", False):
-                        return guest_types.Err("stdin is disabled")
+                        return guest_types.Ok("")
                     try:
                         return guest_types.Ok(input())
                     except EOFError:
                         print("EOFError: No input provided")
                         return guest_types.Err("EOFError: No input provided")
                 
-                def startstream(self, kwargs: str) -> guest_types.Result[str, str]:
-                    if not model:
-                        return guest_types.Err("No model provided")
-                    
-                    unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs))
+                def startstream(self, llm: str, kwargs: str) -> guest_types.Result[str, str]:
+                    if llm not in llms:
+                        raise RuntimeError(f"LLM '{llm}' not found in context")
 
+                    unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs))
                     async def main(q_id, queue):
                         try:
-                            async for delta in model.stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
+                            async for delta in llms[llm].stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
                                 queue.put(jsonpickle.dumps(delta))
                         except Exception as e:
                             queue.put(e)
@@ -161,7 +171,10 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
                 store.set_fuel(fuel)
             root = Root(store, RootImports(host=Host()))
             
-            return root.run(store, code)
+            result = json.loads(root.run(store, code, list(llms.keys())))
+            if result.get("status") == "error":
+                raise RuntimeError(result.get("message", "Unknown error in sandbox"))
+            return result.get("message", "No message returned from sandbox")
 
         if callable:
             return functools.wraps(callable)(inner) # type: ignore # we know callable is a SandboxableCallable
@@ -173,8 +186,8 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, model: t.Optional
         return wrapper
     elif callable:
         # If a callable is provided, return a callable that runs it
-        return wrapper(callable)
+        return wrapper(callable=callable)
     else: 
         # If code is provided, run it directly
-        return wrapper()(model=model)
+        return wrapper(code=code)
     
