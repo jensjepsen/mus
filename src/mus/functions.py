@@ -2,7 +2,6 @@ import typing as t
 from .llm.types import ToolCallableType, FunctionSchema, FunctionSchemaNoAnnotations
 from dataclasses import is_dataclass
 import json
-import cattrs
 import attrs
 import fastjsonschema
 @attrs.define
