@@ -93,10 +93,6 @@ def callable_to_code(callable: SandboxableCallable) -> str:
     """Convert a callable to its source code."""
     return "\n".join(inspect.getsource(callable).split("\n")[2:])
 
-# TODO:
-# Ideally the below would be able to take a list of models and functions,
-# that are then available in the sandboxed code
-
 SandboxContext = t.Union[LLM, t.Callable[..., t.Any]]
 
 iscallable = callable
