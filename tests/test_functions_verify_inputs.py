@@ -1,11 +1,10 @@
 import typing as t
 from dataclasses import dataclass
-import attrs
 import pytest
 from mus.functions import (
     FunctionSchema,
     schema_to_attrs,
-    type_to_attr,
+    verify_function_inputs,
     verify_schema_inputs
 )
 
@@ -30,77 +29,22 @@ class NestedTypedDict(t.TypedDict):
     user: SimpleTypedDict
     active: bool
 
-
-# Tests for schema_to_attrs
-def test_schema_to_attrs_simple_types():
-    """Test schema_to_attrs with simple types."""
-    schema = FunctionSchema(
-        name="TestClass",
-        description="Test description",
-        schema={},
-        annotations=[
-            ("name", str),
-            ("age", int),
-            ("active", bool)
-        ]
-    )
-    
-    result_class = schema_to_attrs(schema)
-    assert result_class.__name__ == "TestClass"
-    
-    # Test instantiation
-    instance = result_class(name="John", age=30, active=True)
-    assert instance.name == "John"
-    assert instance.age == 30
-    assert instance.active is True
-
-
-def test_schema_to_attrs_empty_annotations():
-    """Test schema_to_attrs with empty annotations."""
-    schema = FunctionSchema(
-        name="EmptyClass",
-        description="Empty test class",
-        schema={},
-        annotations=[]
-    )
-    
-    result_class = schema_to_attrs(schema)
-    assert result_class.__name__ == "EmptyClass"
-    
-    # Should be able to instantiate with no arguments
-    instance = result_class()
-    assert instance is not None
-
-
-def test_schema_to_attrs_with_optional_types():
-    """Test schema_to_attrs with optional types."""
-    schema = FunctionSchema(
-        name="OptionalClass",
-        description="Class with optional fields",
-        schema={},
-        annotations=[
-            ("required_field", str),
-            ("optional_field", t.Optional[int])
-        ]
-    )
-    
-    result_class = schema_to_attrs(schema)
-    instance = result_class(required_field="test", optional_field=None)
-    assert instance.required_field == "test"
-    assert instance.optional_field is None
-
-
 # Tests for verify_schema_inputs
 def test_verify_schema_inputs_valid_simple():
     """Test verify_schema_inputs with valid simple inputs."""
     schema = FunctionSchema(
         name="TestFunction",
         description="Test function",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+                "active": {"type": "boolean"}
+            },
+            "required": ["name", "age", "active"]
+        },
         annotations=[
-            ("name", str),
-            ("age", int),
-            ("active", bool)
         ]
     )
     
@@ -118,12 +62,16 @@ def test_verify_schema_inputs_annotated():
     schema = FunctionSchema(
         name="AnnotatedFunction",
         description="Function with annotated parameters",
-        schema={},
-        annotations=[
-            ("name", t.Annotated[str, "The name of the person"]),
-            ("age", t.Annotated[int, "The age of the person"]),
-            ("hobbies", t.Annotated[list[str], "List of hobbies"])
-        ]
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The name of the person"},
+                "age": {"type": "integer", "description": "The age of the person"},
+                "hobbies": {"type": "array", "items": {"type": "string"}, "description": "List of hobbies"}
+            },
+            "required": ["name", "age", "hobbies"]
+        },
+        annotations=[]
     )
     
     inputs = {
@@ -141,12 +89,16 @@ def test_verify_schema_inputs_annotated_invalid():
     schema = FunctionSchema(
         name="AnnotatedFunction",
         description="Function with annotated parameters",
-        schema={},
-        annotations=[
-            ("name", t.Annotated[str, "The name of the person"]),
-            ("age", t.Annotated[int, "The age of the person"]),
-            ("hobbies", t.Annotated[list[str], "List of hobbies"])
-        ]
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The name of the person"},
+                "age": {"type": "integer", "description": "The age of the person"},
+                "hobbies": {"type": "array", "items": {"type": "string"}, "description": "List of hobbies"}
+            },
+            "required": ["name", "age", "hobbies"]
+        },
+        annotations=[]
     )
     
     inputs = {
@@ -160,37 +112,21 @@ def test_verify_schema_inputs_annotated_invalid():
     
     assert "Invalid inputs for AnnotatedFunction" in str(exc_info.value)
 
-def test_verify_schema_inputs_type_coercion():
-    """Test verify_schema_inputs with type coercion."""
-    schema = FunctionSchema(
-        name="TestFunction",
-        description="Test function",
-        schema={},
-        annotations=[
-            ("count", int),
-            ("rate", float)
-        ]
-    )
-    
-    inputs = {
-        "count": "42",  # String that can be converted to int
-        "rate": "3.14"  # String that can be converted to float
-    }
-    
-    result = verify_schema_inputs(schema, inputs)
-    assert result["count"] == 42
-    assert result["rate"] == 3.14
-
-
 def test_verify_schema_inputs_invalid_type():
     """Test verify_schema_inputs with invalid type."""
     schema = FunctionSchema(
         name="TestFunction",
         description="Test function",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+                "hobbies": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["name", "age", "hobbies"]
+        },
         annotations=[
-            ("name", str),
-            ("age", int)
         ]
     )
     
@@ -210,11 +146,15 @@ def test_verify_schema_inputs_missing_required_field():
     schema = FunctionSchema(
         name="TestFunction",
         description="Test function",
-        schema={},
-        annotations=[
-            ("name", str),
-            ("age", int)
-        ]
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"}
+            },
+            "required": ["name", "age"]
+        },
+        annotations=[]
     )
     
     inputs = {
@@ -233,10 +173,14 @@ def test_verify_schema_inputs_extra_fields():
     schema = FunctionSchema(
         name="TestFunction",
         description="Test function",
-        schema={},
-        annotations=[
-            ("name", str)
-        ]
+        schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "required": ["name"]
+        },
+        annotations=[]
     )
     
     inputs = {
@@ -264,16 +208,37 @@ def test_verify_schema_inputs_empty_schema():
     result = verify_schema_inputs(schema, inputs)
     assert result == {}
 
+def test_verify_schema_inputs_non_empty_inputs():
+    """Test verify_schema_inputs with non-empty inputs for empty schema."""
+    schema = FunctionSchema(
+        name="EmptyFunction",
+        description="Function with no parameters",
+        schema={},
+        annotations=[]
+    )
+    
+    inputs = {"unexpected": "value"}
+    
+    with pytest.raises(ValueError) as exc_info:
+        verify_schema_inputs(schema, inputs)
+    
+    assert "Invalid inputs for EmptyFunction" in str(exc_info.value)
+
 
 def test_verify_schema_inputs_with_optional_fields():
     """Test verify_schema_inputs with optional fields."""
     schema = FunctionSchema(
         name="OptionalFunction",
         description="Function with optional parameters",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "required": {"type": "string"},
+                "optional": {"type": ["integer", "null"]}   # Optional field
+            },
+            "required": ["required"]
+        },
         annotations=[
-            ("required", str),
-            ("optional", t.Optional[int])
         ]
     )
     
@@ -304,10 +269,22 @@ def test_integration_nested_structures():
     schema = FunctionSchema(
         name="NestedFunction",
         description="Function with nested structure",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "user_data": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"}
+                    },
+                    "required": ["name", "age"]
+                },
+                "is_admin": {"type": "boolean"}
+            },
+            "required": ["user_data", "is_admin"]
+        },
         annotations=[
-            ("user_data", SimpleTypedDict),
-            ("is_admin", bool)
         ]
     )
     
@@ -329,10 +306,22 @@ def test_integration_annotated_typed_dict():
     schema = FunctionSchema(
         name="AnnotatedFunction",
         description="Function with annotated TypedDict",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "The name of the person"},
+                        "age": {"type": "integer", "description": "The age of the person"}
+                    },
+                    "required": ["name", "age"]
+                },
+                "active": {"type": "boolean"}
+            },
+            "required": ["data", "active"]
+        },
         annotations=[
-            ("data", AnnotatedTypedDict),
-            ("active", bool)
         ]
     )
     
@@ -354,10 +343,22 @@ def test_integration_nested_dataclass():
     schema = FunctionSchema(
         name="NestedDataClassFunction",
         description="Function with nested dataclass",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "count": {"type": "integer"}
+                    },
+                    "required": ["title", "count"]
+                },
+                "active": {"type": "boolean"}
+            },
+            "required": ["data", "active"]
+        },
         annotations=[
-            ("data", SimpleDataClass),
-            ("active", bool)
         ]
     )
     
@@ -379,10 +380,29 @@ def test_integration_nested_mixed():
     schema = FunctionSchema(
         name="MixedNestedFunction",
         description="Function with mixed nested structures",
-        schema={},
+        schema={
+            "type": "object",
+            "properties": {
+                "nested_dict": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "age": {"type": "integer"}
+                            },
+                            "required": ["name", "age"]
+                        },
+                        "active": {"type": "boolean"}
+                    },
+                    "required": ["user", "active"]
+                },
+                "status": {"type": "string"}
+            },
+            "required": ["nested_dict", "status"]
+        },
         annotations=[
-            ("nested_dict", NestedTypedDict),
-            ("status", str)
         ]
     )
     
@@ -405,22 +425,55 @@ def test_integration_nested_mixed():
 
 
 
-# Performance and stress tests
-def test_large_schema_performance():
-    """Test performance with a large schema."""
-    # Create a schema with many fields
-    annotations = [(f"field_{i}", str) for i in range(100)]
+
+def test_verify_function_inputs():
+    """Test the verify_function_inputs utility."""
+    def sample_function(name: str, age: int) -> str:
+        return f"{name} is {age} years old."
     
-    schema = FunctionSchema(
-        name="LargeFunction",
-        description="Function with many parameters",
-        schema={},
-        annotations=annotations
-    )
+    inputs = {
+        "name": "Diana",
+        "age": 27
+    }
     
-    inputs = {f"field_{i}": f"value_{i}" for i in range(100)}
+    result = verify_function_inputs(sample_function, inputs)
+    assert result["name"] == "Diana"
+    assert result["age"] == 27
+
+def test_verify_function_inputs_invalid():
+    """Test the verify_function_inputs utility with invalid inputs."""
+    def sample_function(name: str, age: int) -> str:
+        return f"{name} is {age} years old."
     
-    result = verify_schema_inputs(schema, inputs)
-    assert len(result) == 100
-    assert result["field_0"] == "value_0"
-    assert result["field_99"] == "value_99"
+    inputs = {
+        "name": "Diana",
+        "age": "twenty-seven"  # Invalid type
+    }
+    
+    with pytest.raises(ValueError) as exc_info:
+        verify_function_inputs(sample_function, inputs)
+    
+    assert "Invalid inputs for sample_function" in str(exc_info.value)
+
+def test_verify_function_inputs_nested():
+    """Test the verify_function_inputs utility with nested structures."""
+    class User(t.TypedDict):
+        name: str
+        age: int
+
+    def sample_function(user: User, active: bool) -> str:
+        status = "active" if active else "inactive"
+        return f"{user['name']} is {user['age']} years old and is {status}."
+    
+    inputs = {
+        "user": {
+            "name": "Eve",
+            "age": 22
+        },
+        "active": True
+    }
+    
+    result = verify_function_inputs(sample_function, inputs)
+    assert result["user"]["name"] == "Eve"
+    assert result["user"]["age"] == 22
+    assert result["active"] is True

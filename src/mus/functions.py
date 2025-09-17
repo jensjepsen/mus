@@ -1,19 +1,19 @@
 import typing as t
-from .llm.types import ToolCallableType, FunctionSchema
+from .llm.types import ToolCallableType, FunctionSchema, FunctionSchemaNoAnnotations
 from dataclasses import is_dataclass
 import json
 import cattrs
 import attrs
-
- 
-class ToolCallable(t.TypedDict):
+import fastjsonschema
+@attrs.define
+class ToolCallable():
     function: ToolCallableType
     schema: FunctionSchema
 
 
 def is_tool_callable(obj: t.Any) -> t.TypeGuard[ToolCallable]:
     """Check if an object is a ToolCallable."""
-    return isinstance(obj, dict) and "function" in obj and "schema" in obj
+    return isinstance(obj, ToolCallable)
 
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
@@ -24,7 +24,7 @@ def tool(**metadata: t.Dict[str, t.Any]):
 
 def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.Sequence[ToolCallable]:
     """Parse a list of tool callables into a list of ToolCallable."""
-    return [
+    result = [
         func
         if is_tool_callable(func)
         else ToolCallable(
@@ -33,19 +33,20 @@ def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.Sequenc
         )
         for func in (tools or [])
     ]
+    return result
 
-def func_to_schema(func: ToolCallableType) -> FunctionSchema:
+def func_to_schema(func: ToolCallableType, ensure_docstring: bool=True) -> FunctionSchema:
     if hasattr(func, '__metadata__'):
         if definition := func.__metadata__.get("definition"): # type: ignore
             return definition
-    if not func.__doc__:
+    if not func.__doc__ and ensure_docstring:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
     annotations = list(func.__annotations__.items())
     if annotations and annotations[-1][0] == "return":
         annotations = annotations[:-1]  # Remove the return annotation if present
     p = FunctionSchema(
         name=func.__name__,
-        description=func.__doc__,
+        description=func.__doc__ or "",
         schema=get_schema(func.__name__, annotations),
         annotations=annotations
     )
@@ -93,7 +94,7 @@ def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     )
     return p
 
-def to_schema(obj: t.Union[dict, object, ToolCallableType]) -> FunctionSchema:
+def to_schema(obj: t.Union[dict, object, ToolCallableType, t.Callable]) -> FunctionSchema:
     if is_dataclass(obj):
         return dataclass_to_schema(obj)
     elif isinstance(obj, type) and t.is_typeddict(obj):
@@ -241,13 +242,33 @@ def verify_schema_inputs(
     inputs: t.Mapping[str, t.Any],
 ) -> t.Dict[str, t.Any]:
     """Verify that the inputs match the function's schema."""
-    cls = schema_to_attrs(schema)
+    if not schema["schema"] and inputs:
+        raise ValueError(f"Invalid inputs for {schema['name']}: Schema is empty and inputs are non-empty")
     try:
-        # Use cattrs to convert inputs to the typed dict
-        parsed = cattrs.structure(inputs, cls)
-    except Exception as e:
-        raise ValueError(f"Invalid inputs for {schema['name']}: {cattrs.transform_error(e)}") from e
-    return cattrs.unstructure(parsed)
+        fastjsonschema.validate(schema["schema"], inputs)
+    except fastjsonschema.JsonSchemaException as e:
+        raise ValueError(f"Invalid inputs for {schema['name']}: {e}") from e
+    
+    
+    return dict(inputs)
+
+def verify_function_inputs(
+    func: t.Callable,
+    inputs: t.Mapping[str, t.Any],
+) -> t.Dict[str, t.Any]:
+    """Verify that the inputs match the function call signature."""
+    schema = func_to_schema(func, ensure_docstring=False)
+    return verify_schema_inputs(schema, inputs)
+
+
+def remove_annotations(schema: FunctionSchema) -> FunctionSchemaNoAnnotations:
+    """Remove the annotations from a FunctionSchema."""
+    
+    return FunctionSchemaNoAnnotations(
+        name=schema["name"],
+        description=schema["description"],
+        schema=schema["schema"],
+    )
 
 if __name__ == "__main__":
     # Example usage
@@ -284,4 +305,4 @@ if __name__ == "__main__":
         }
     }
     verified_inputs = verify_schema_inputs(schema, example_inputs)
-    print(verified_inputs)
+    print("Verified inputs:", verified_inputs)

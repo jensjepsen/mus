@@ -130,7 +130,7 @@ async def test_llm_fill_missing_arguments(strategy, mock_model):
     with pytest.raises(ValueError) as exc_info:
         await llm.fill("Test query", TestStructure, strategy=strategy)
     
-    assert "missing @ $.field2" in str(exc_info.value)
+    assert "data must contain ['field2']" in str(exc_info.value)
 
 @pytest.mark.parametrize("strategy", ["tool_use", "prefill"])
 @pytest.mark.asyncio
@@ -138,7 +138,7 @@ async def test_llm_fill_wrong_argument_type(strategy, mock_model):
     if strategy == "tool_use":
         mock_model.set_response([
             Delta(content={"type": "text", "data": "Processing"}),
-            Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": 123, "field2": "not_an_int"}, id="abc")}),
+            Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"field1": "hello", "field2": "not_an_int"}, id="abc")}),
         ])
     elif strategy == "prefill":
         mock_model.set_response([
@@ -153,8 +153,7 @@ async def test_llm_fill_wrong_argument_type(strategy, mock_model):
     
     with pytest.raises(ValueError) as exc_info:
         await llm.fill("Test query", TestStructure, strategy=strategy)
-    
-    assert "expected int @ $.field2" in str(exc_info.value)
+    assert "data.field2 must be int" in str(exc_info.value)
 
 @pytest.mark.asyncio
 async def test_llm_bot_decorator(mock_model):
@@ -478,7 +477,7 @@ async def test_invoke_function():
     
     tools = parse_tools([sample_function])
     func_map = {
-        tool["schema"]["name"]: tool
+        tool.schema["name"]: tool
         for tool in tools
     }
 
@@ -495,7 +494,7 @@ async def test_invoke_function_wrong_args():
     
     tools = parse_tools([sample_function])
     func_map = {
-        tool["schema"]["name"]: tool
+        tool.schema["name"]: tool
         for tool in tools
     }
 
@@ -504,23 +503,7 @@ async def test_invoke_function_wrong_args():
     assert type(return_val) == str, f"Expected str, got {type(return_val)}"
     result = json.loads(return_val)
     assert "error" in result, f"Expected error, got {result}"
-    assert "field missing @ $.b" in result["error"], f"Expected error message not found, got {result['error']}"
-
-@pytest.mark.asyncio
-async def test_invoke_function_coerce_args():
-    async def sample_function(a: int, b: int) -> str:
-        """Adds two numbers."""
-        return str(a + b)
-
-    tools = parse_tools([sample_function])
-    func_map = {
-        tool["schema"]["name"]: tool
-        for tool in tools
-    }
-
-    input_data = {"a": "3", "b": "5"}
-    result = await invoke_function("sample_function", input_data, func_map)
-    assert result == "8", f"Expected '8', got {result}"
+    assert "data must contain ['b']" in result["error"], f"Expected error message not found, got {result['error']}"
 
 @pytest.mark.asyncio
 async def test_invoke_function_internal_scope_wrong_args():
@@ -534,7 +517,7 @@ async def test_invoke_function_internal_scope_wrong_args():
     
     tools = parse_tools([sample_function])
     func_map = {
-        tool["schema"]["name"]: tool
+        tool.schema["name"]: tool
         for tool in tools
     }
 

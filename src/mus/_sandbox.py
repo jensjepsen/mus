@@ -7,6 +7,7 @@ import typing as t
 import inspect
 from .llm.llm import LLM
 from .llm.types import LLMClientStreamArgs
+import mus.functions
 import textwrap
 from .guest.bindings import imports as guest_imports
 from .guest.bindings import types as guest_types
@@ -14,6 +15,7 @@ from .guest.bindings import Root, RootImports
 from wasmtime import Store, Engine, Config
 import functools
 import json
+import anyio
 class Stop:
     pass
 
@@ -34,6 +36,24 @@ def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
     thread = threading.Thread(target=thread_target, daemon=True)
     thread.start()
     return q_id, q
+
+from concurrent.futures import ThreadPoolExecutor
+
+def run_in_new_loop(coro):
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(coro)
+            return result
+        finally:
+            loop.close()
+    
+    with ThreadPoolExecutor() as executor:
+        future = executor.submit(_run)
+        return future.result()
+
+    
 
 class SandboxSharedKwargs(t.TypedDict, total=False):
     fuel: t.Optional[int]
@@ -108,12 +128,24 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                 if hasattr(llm, "stream")
             }
 
-            #functions = {
-            #    name: func
-            #    for name, func
-            #    in context.items()
-            #    if not hasattr(func, "stream") and iscallable(func)
-            #}
+            functions = [
+                func
+                for name, func
+                in context.items()
+                if not hasattr(func, "stream") and iscallable(func)
+            ]
+
+            tools = mus.functions.parse_tools(functions)
+
+            tool_map = {
+                func.schema["name"]: func.function
+                for func in tools
+            }
+
+            function_schemas = {
+                func.schema["name"]: mus.functions.remove_annotations(func.schema)
+                for func in tools
+            }
 
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
@@ -135,7 +167,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                 
                 def startstream(self, llm: str, kwargs: str) -> guest_types.Result[str, str]:
                     if llm not in llms:
-                        raise RuntimeError(f"LLM '{llm}' not found in context")
+                        raise KeyError(f"LLM '{llm}' not found in context")
 
                     unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs))
                     async def main(q_id, queue):
@@ -159,9 +191,21 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                             del queues[qid]
                             return guest_types.Ok("[[STOP]]")
                         else:
-                            return guest_types.Ok(str(result))
+                            payload = str(result)
+                            print("Sending payload", payload)
+                            return guest_types.Ok(payload)
                     else:
                         return guest_types.Ok("[[STOP]]")
+                def runfunction(self, name: str, inputs: str) -> guest_types.Result[str, str]:
+                    if name not in function_schemas:
+                        raise KeyError(f"Function '{name}' not found in context")
+                    try:
+                        inputs_dict = json.loads(inputs)
+                        # TODO: Validate inputs against function schema
+                        result = run_in_new_loop(tool_map[name](**inputs_dict))
+                        return guest_types.Ok(json.dumps(result))
+                    except Exception as e:
+                        raise e 
             config = Config()
             
             fuel = kwargs.get("fuel")
@@ -173,7 +217,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                 store.set_fuel(fuel)
             root = Root(store, RootImports(host=Host()))
             
-            result = json.loads(root.run(store, code, list(llms.keys())))
+            result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas)))
             if result.get("status") == "error":
                 raise RuntimeError(result.get("message", "Unknown error in sandbox"))
             return result.get("message", "No message returned from sandbox")
