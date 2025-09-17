@@ -253,18 +253,18 @@ def test_parse_tools():
     tools = parse_tools([func1, prespecified_tool])
     assert len(tools) == 2
 
-    assert tools[0]["function"] == func1
-    assert tools[0]["schema"]["name"] == "func1"
-    assert tools[0]["schema"]["description"] == "This is func1."
-    assert tools[0]["schema"]["schema"]["title"] == "func1"
-    assert "param1" in tools[0]["schema"]["schema"]["properties"]
-    assert "param2" in tools[0]["schema"]["schema"]["properties"]
-    assert tools[0]["schema"]["schema"]["properties"]["param1"]["type"] == "string"
-    assert tools[0]["schema"]["schema"]["properties"]["param2"]["type"] == "integer"
+    assert tools[0].function == func1
+    assert tools[0].schema["name"] == "func1"
+    assert tools[0].schema["description"] == "This is func1."
+    assert tools[0].schema["schema"]["title"] == "func1"
+    assert "param1" in tools[0].schema["schema"]["properties"]
+    assert "param2" in tools[0].schema["schema"]["properties"]
+    assert tools[0].schema["schema"]["properties"]["param1"]["type"] == "string"
+    assert tools[0].schema["schema"]["properties"]["param2"]["type"] == "integer"
 
-    assert tools[1]["function"] == func2
-    assert tools[1]["schema"]["name"] == "func2"
-    assert tools[1]["schema"]["description"] == "This is func2."
-    assert tools[1]["schema"]["schema"]["title"] == "func2"
-    assert "param1" in tools[1]["schema"]["schema"]["properties"]
-    assert tools[1]["schema"]["schema"]["properties"]["param1"]["type"] == "string"
+    assert tools[1].function == func2
+    assert tools[1].schema["name"] == "func2"
+    assert tools[1].schema["description"] == "This is func2."
+    assert tools[1].schema["schema"]["title"] == "func2"
+    assert "param1" in tools[1].schema["schema"]["properties"]
+    assert tools[1].schema["schema"]["properties"]["param1"]["type"] == "string"

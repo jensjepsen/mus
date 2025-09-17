@@ -121,7 +121,7 @@ async def main():
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
             print(msg, end="")
         
-    await sandbot(model)
+    await sandbot(model=model)
 
 asyncio.run(main())
 ```
@@ -155,7 +155,7 @@ uv build
 - [X] Remove deps
     - [X] Pydantic
     - [ ] jsonpickle
-        - [ ] State
+        - [X] State
         - [ ] Sandbox
 - [ ] BUG: tools are intercepted before usage is yielded, which means that usage is yielded in wrong order
 - [ ] Return usage for fill operations

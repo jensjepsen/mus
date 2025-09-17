@@ -88,15 +88,18 @@ def get_exception_depth():
 
 async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
     tool_callable = func_map[func_name]
+    print("invoke_function raw input", input, tool_callable.schema)
+     # Validate input against schema
     try:
-        input = verify_schema_inputs(tool_callable["schema"], input)
+        input = verify_schema_inputs(tool_callable.schema, input)
     except ValueError as e:
         return json.dumps({
             "error": f"{str(e)}",
         })
     
     try:
-        result = await tool_callable["function"](**input)
+        print("invoke_function", input)
+        result = await tool_callable.function(**input)
     except TypeError as e:
         depth = get_exception_depth()
         if depth == 1 and type(e).__name__ == "TypeError":
@@ -133,13 +136,13 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             
         function_schemas = [
             FunctionSchemaNoAnnotations({
-                "description": tool["schema"]["description"],
-                "name": tool["schema"]["name"],
-                "schema": tool["schema"]["schema"],
+                "description": tool.schema["description"],
+                "name": tool.schema["name"],
+                "schema": tool.schema["schema"],
             }) for tool in tools]
 
         func_map = {
-            tool["schema"]["name"]: tool
+            tool.schema["name"]: tool
             for tool in tools
         }
 
@@ -185,6 +188,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             
             history = history + [msg]
             if msg.content["type"] == "tool_use":
+                print("Invoking tool:", msg.content["data"].name, "with input:", msg.content["data"].input)
                 func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input, func_map)
                 fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
                 yield fd
@@ -231,7 +235,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             async for msg in self.query(query, functions=[as_tool], function_choice="any", no_stream=True):
                 if msg.content["type"] == "tool_use":
                     input = msg.content["data"].input
-                    input = verify_schema_inputs(as_tool["schema"], input)
+                    input = verify_schema_inputs(as_tool.schema, input)
                     return structure(**input)
             else:
                 raise ValueError("No structured response found")

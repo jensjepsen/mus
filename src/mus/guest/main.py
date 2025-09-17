@@ -2,12 +2,20 @@ import wit_world # type: ignore
 import mus
 import mus.llm
 import mus.llm.types
+import mus.functions
 import typing as t
 import jsonpickle
 import sys
 import io
 import contextlib
 import time
+import json
+import cattrs
+
+
+class ToolCallableWithCall(mus.functions.ToolCallable):
+    async def __call__(self, *args: t.Any, **kwargs: t.Any):
+        return await self.function(*args, **kwargs)
 
 class StdOut(io.StringIO):
     def __init__(self, callback: t.Callable[[str], None]):
@@ -120,19 +128,49 @@ class ExtraArgs(t.TypedDict):
   pass
 
 class ProxyClient(mus.llm.types.LLM[ExtraArgs, str, None]):
-  def __init__(self):
-    pass
+  def __init__(self, model_name: str):
+    self.model_name = model_name
+
   async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[ExtraArgs, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:
-    result = wit_world.startstream(jsonpickle.dumps(kwargs)) # type: ignore # returns str
     
+    result = wit_world.startstream(self.model_name, jsonpickle.dumps(kwargs)) # type: ignore # returns str
     while delta := wit_world.pollstream(result):
       if delta == "[[STOP]]":
         break
-      yield jsonpickle.loads(delta) # type: ignore # returns Delta
+      yield jsonpickle.loads(delta) # type: ignore # returns Delta   
+
+def invoke_function(name: str, inputs: dict) -> t.Any:
+    # TODO: Future, we could add support for async functions here
+    #       and also support functions that return generators
+    #       by polling the generator and yielding results back to the caller
+    # Question: What happens if the function returns something that is not JSON serializable?
+    #           We should probably catch that in the host
+    result = wit_world.runfunction(name, json.dumps(inputs))
+    result_obj = json.loads(result)
+    return result_obj
+
+
+def make_function_proxies(functions: t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations]) -> dict[str, t.Callable[..., t.Any]]:
+  proxies = {}
+  for name, func in functions.items():
+    def make_proxy(f: mus.llm.types.FunctionSchemaNoAnnotations) -> ToolCallableWithCall:
+      async def proxy(*args, **inputs):
+        return invoke_function(f["name"], inputs)
+      return ToolCallableWithCall(
+        schema=mus.llm.types.FunctionSchema(
+            **f,
+            annotations=[]
+        ),
+        function=proxy
+      )
+    proxies[name] = make_proxy(func)
+  return proxies
 
 class WitWorld(wit_world.WitWorld):
-  def run(self, code: str):
+  def run(self, code: str, llms: str, functions: str) -> str:
     try:
+      function_list = cattrs.structure(json.loads(functions), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
+      function_proxies = make_function_proxies(function_list)
       indented = code.split("\n")
       code = "    " + "\n    ".join(indented)
       code_with_run = f"""\
@@ -141,15 +179,16 @@ async def main():
 {code}
 run_coro(main())
 """
-      model = ProxyClient()
+      llm_proxies = {name: ProxyClient(name) for name in llms}
       globals = {
-        "model": model,
         "run_coro": run_coro,
         "input": wit_world.input,
+        **llm_proxies,
+        **function_proxies,
       }
+      
       with redirect_stdout(wit_world.print):
         exec(code_with_run, globals)
-      return str("Done")
+      return json.dumps({"status": "success", "message": "Done"})
     except Exception as e:
-      return str(e)
-  
+      return json.dumps({"status": "error", "message": str(e)})
