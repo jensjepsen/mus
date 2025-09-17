@@ -1,3 +1,19 @@
+## v0.20.0 (2025-09-17)
+
+### Feat
+
+- multiple models and functions for sandbox
+- multiple models and functions for sandbox
+- external functions
+- external functions
+- multiple models in sandbox
+
+### Fix
+
+- ruff
+- sandbot in readme
+- sandbot in readme
+
 ## v0.19.8 (2025-09-08)
 
 ### Fix
