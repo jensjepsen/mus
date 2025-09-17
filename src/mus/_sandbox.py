@@ -7,6 +7,7 @@ import typing as t
 import inspect
 from .llm.llm import LLM
 from .llm.types import LLMClientStreamArgs
+from concurrent.futures import ThreadPoolExecutor
 import mus.functions
 import textwrap
 from .guest.bindings import imports as guest_imports
@@ -15,7 +16,7 @@ from .guest.bindings import Root, RootImports
 from wasmtime import Store, Engine, Config
 import functools
 import json
-import anyio
+
 class Stop:
     pass
 
@@ -37,7 +38,6 @@ def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
     thread.start()
     return q_id, q
 
-from concurrent.futures import ThreadPoolExecutor
 
 def run_in_new_loop(coro):
     def _run():
