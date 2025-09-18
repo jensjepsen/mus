@@ -1,3 +1,11 @@
+## v0.20.1 (2025-09-18)
+
+### Fix
+
+- support for literal in schema
+- support literal in schema
+- support literal in schema
+
 ## v0.20.0 (2025-09-17)
 
 ### Feat
