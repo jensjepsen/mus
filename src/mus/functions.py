@@ -175,13 +175,25 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
         else:
             # General Union
             return {"anyOf": [python_type_to_json_schema(arg) for arg in args]}
+    elif origin is t.Literal:
+        # Handle Literal types
+        if all(isinstance(arg, str) for arg in args):
+            _type = "string"
+        elif all(isinstance(arg, int) for arg in args):
+            _type = "integer"
+        elif all(isinstance(arg, (int, float)) for arg in args):
+            _type = "number"
+        elif all(isinstance(arg, bool) for arg in args):
+            _type = "boolean"
+        else:
+            raise ValueError(f"Unsupported Literal type with mixed or unsupported types: {args}")
+        return {
+            "type": _type,
+            "enum": list(args)
+        }
     
-    # Handle custom classes or unknown types
-    if hasattr(py_type, '__name__'):
-        return {"type": "object", "title": py_type.__name__}
-    
-    # Fallback
-    return {"type": "object"}
+    # raise error for unsupported types
+    raise ValueError(f"Unsupported type when converting to schema: {py_type}")
 
 def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, object]:
     """Generate a JSON schema from field definitions."""
