@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Annotated, TypedDict
+from typing import List, Optional, Annotated, TypedDict, Literal
 import pytest
 
 # Import the functions to be tested
@@ -17,9 +17,9 @@ class SampleTypedDict(TypedDict):
     field2: int
     field3: Annotated[Optional[List[str]], "An optional field"]
 
-def sample_function_advanced(param1: str, param2: SampleTypedDict, param3: Optional[List[str]] = None) -> str:
+def sample_function_advanced(param1: str, param2: SampleTypedDict, param3: Optional[List[str]] = None, param4: Optional[Literal["value1", "value2"]] = None) -> str:
     """This is a sample function with advanced parameters."""
-    return f"{param1}: {param2}, {param3}"
+    return f"{param1}: {param2}, {param3}, {param4}"
 
 @dataclass
 class SampleDataclass:
@@ -49,6 +49,27 @@ def test_get_schema_with_metadata():
     schema = get_schema("TestModel", [("param1", Annotated[str, "This is a string with metadata"]), ("param2", int)])
     assert schema["properties"]["param1"]["description"] == "This is a string with metadata"
     assert "description" not in schema["properties"]["param2"]
+
+def test_get_schema_with_optional():
+    schema = get_schema("TestModel", [("param1", Optional[str]), ("param2", int)])
+    assert "param1" not in schema.get("required", [])
+    assert "param2" in schema.get("required", [])
+
+def test_get_schema_with_literal():
+    schema = get_schema("TestModel", [("param1", Literal["value1", "value2"]), ("param2", Literal[1,2,3]), ("param3", Literal[1, 2.0])])
+    assert "param1" in schema["properties"]
+    assert "param2" in schema["properties"]
+    assert schema["properties"]["param1"]["type"] == "string"
+    assert schema["properties"]["param1"]["enum"] == ["value1", "value2"]
+
+    assert schema["properties"]["param2"]["type"] == "integer"
+    assert schema["properties"]["param2"]["enum"] == [1, 2, 3]
+    
+    assert schema["properties"]["param3"]["type"] == "number"
+    assert schema["properties"]["param3"]["enum"] == [1, 2.0]
+    
+
+
 
 def test_to_schema_function():
     schema = to_schema(sample_function)
@@ -86,6 +107,9 @@ def test_to_schema_function_advanced():
 
     assert json_schema["properties"]["param3"]["type"] == "array"
     assert json_schema["properties"]["param3"]["items"]["type"] == "string"
+
+    assert json_schema["properties"]["param4"]["type"] == "string"
+    assert json_schema["properties"]["param4"]["enum"] == ["value1", "value2"]
 
 
 def test_to_schema_typed_dict():
