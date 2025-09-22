@@ -1,3 +1,16 @@
+## v0.21.0 (2025-09-22)
+
+### Feat
+
+- string with metadata return type for tools
+- string with metadata
+- string with metadata
+- string with metadata
+
+### Fix
+
+- bump openai
+
 ## v0.20.1 (2025-09-18)
 
 ### Fix
