@@ -6,7 +6,7 @@ import json
 from mus import Bot
 from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
-from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File
+from mus.llm.types import Delta, StringWithMetadata, ToolUse, ToolResult, System, Query, Assistant, File
 
 @dataclass
 class TestStructure:
@@ -71,7 +71,42 @@ async def test_llm_with_tool_use(mock_model):
 
     assert result[3].content["type"] == "text"
     assert result[3].content["data"] == "Tool used"
+
+@pytest.mark.asyncio
+async def test_tool_use_that_returns_string_with_metadata():
+    mock_model = MagicMock()
+    mock_model.set_response = lambda responses: setattr(mock_model.stream.return_value.__aiter__, 'return_value', iter(responses))
+    mock_model.set_response([
+        Delta(content={"type": "text", "data": "Hello"}),
+        Delta(content={"type": "tool_use", "data": ToolUse(name="test_tool", input={"param1": "test", "param2": 123}, id="test_tool")}),
+        Delta(content={"type": "text", "data": "Tool used"}),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    called = False
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        nonlocal called
+        called = True
+        return StringWithMetadata("Tool result", metadata={"source": "unit_test"})
+
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+    assert called, "Tool function was not called"
+    assert len(result) == 4
+    assert result[0].content["type"] == "text"
+    assert result[1].content["type"] == "tool_use"
+    assert isinstance(result[1].content["data"], ToolUse)
     
+    assert result[2].content["type"] == "tool_result"
+    assert isinstance(result[2].content["data"], ToolResult)
+    assert isinstance(result[2].content["data"].content, StringWithMetadata)
+    assert result[2].content["data"].content == "Tool result"
+    assert result[2].content["data"].content.metadata["source"] == "unit_test"
+
+    assert result[3].content["type"] == "text"
+    assert result[3].content["data"] == "Tool used"
     
     
     
@@ -485,6 +520,25 @@ async def test_invoke_function():
     result = await invoke_function("sample_function", input_data, func_map)
 
     assert result == "8", f"Expected '8', got {result}"
+
+@pytest.mark.asyncio
+async def test_invoke_function_nonexistent():
+    async def sample_function(a: int, b: int) -> str:
+        """Adds two numbers."""
+        return str(a + b)
+    
+    tools = parse_tools([sample_function])
+    func_map = {
+        tool.schema["name"]: tool
+        for tool in tools
+    }
+
+    input_data = {"a": 3, "b": 5}
+    with pytest.raises(KeyError) as exc_info:
+        await invoke_function("nonexistent_function", input_data, func_map)
+    
+    assert "'nonexistent_function'" in str(exc_info.value)
+
 
 @pytest.mark.asyncio
 async def test_invoke_function_wrong_args():
