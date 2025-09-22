@@ -31,7 +31,7 @@ openai  = ["openai(>=1.61.1,<2.0.0)"]
 google = ["google-genai>=1.20.0"]
 mistral = ["mistralai>=1.9.1"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
-cli  = ["typer(>=0.13.0,<0.17.0)"]
+cli  = ["typer(>=0.13.0,<0.20.0)"]
 pyodide = ["partial_json_parser>=0.2.1.1.post5"]
 sandbox = ["wasmtime==34.0.0"]
 mcp-client = ["mcp>=1.9.1"]
@@ -54,7 +54,7 @@ all = [
     "anthropic[bedrock](>=0.42.0,<1.0.0)",
     "openai(>=1.61.1,<2.0.0)",
     "pillow(>=11.0.0,<12.0.0)",
-    "typer(>=0.13.0,<0.17.0)",
+    "typer(>=0.13.0,<0.20.0)",
     "wasmtime>=32.0.0",
     "mcp>=1.9.1",
     "google-genai>=1.20.0",
