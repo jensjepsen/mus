@@ -292,3 +292,21 @@ def test_parse_tools():
     assert tools[1].schema["schema"]["title"] == "func2"
     assert "param1" in tools[1].schema["schema"]["properties"]
     assert tools[1].schema["schema"]["properties"]["param1"]["type"] == "string"
+
+def test_parse_tools_with_string_with_metadata():
+    from mus import StringWithMetadata
+
+    async def func1(param1: str, param2: int) -> StringWithMetadata:
+        """This is func1."""
+        return StringWithMetadata(f"{param1}: {param2}")
+
+    tools = parse_tools([func1])
+    assert len(tools) == 1
+    assert tools[0].function == func1
+    assert tools[0].schema["name"] == "func1"
+    assert tools[0].schema["description"] == "This is func1."
+    assert tools[0].schema["schema"]["title"] == "func1"
+    assert "param1" in tools[0].schema["schema"]["properties"]
+    assert "param2" in tools[0].schema["schema"]["properties"]
+    assert tools[0].schema["schema"]["properties"]["param1"]["type"] == "string"
+    assert tools[0].schema["schema"]["properties"]["param2"]["type"] == "integer"

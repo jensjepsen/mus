@@ -3,9 +3,12 @@ from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMC
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
-from openai._types import NotGiven
+from openai._types import Omit
 import json
 import dataclasses
+
+
+OMIT = NOT_GIVEN = Omit()
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> ChatCompletionToolParam:
     return {
@@ -124,7 +127,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
         if functions := kwargs.get("functions", None):
             tools = functions_for_llm(functions)
         else:
-            tools = NotGiven()
+            tools = Omit()
         
         stream = not kwargs.get("no_stream", False)
         extra_kwargs = kwargs.get("kwargs", None) or {}
@@ -132,11 +135,11 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             model=self.model,
             messages=messages,
             tools=tools,
-            tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else NotGiven(),
-            max_completion_tokens=kwargs.get("max_tokens", None) or NotGiven(),
-            temperature=kwargs.get("temperature", None) or NotGiven(),
-            top_p=kwargs.get("top_p", None) or NotGiven(),
-            stop=kwargs.get("stop_sequences", None) or NotGiven(),
+            tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else OMIT,
+            max_completion_tokens=kwargs.get("max_tokens", None) or OMIT,
+            temperature=kwargs.get("temperature", None) or OMIT,
+            top_p=kwargs.get("top_p", None) or OMIT,
+            stop=kwargs.get("stop_sequences", None) or OMIT,
             stream=stream,
             stream_options={"include_usage": True},
             **extra_kwargs,

@@ -4,6 +4,7 @@ from dataclasses import is_dataclass
 import json
 import attrs
 import fastjsonschema
+
 @attrs.define
 class ToolCallable():
     function: ToolCallableType

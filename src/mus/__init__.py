@@ -1,4 +1,4 @@
-from .llm.types import File as File, Query as Query, ToolUse as ToolUse, ToolResult as ToolResult, Assistant as Assistant, System as System
+from .llm.types import File as File, Query as Query, ToolUse as ToolUse, ToolResult as ToolResult, Assistant as Assistant, System as System, StringWithMetadata as StringWithMetadata
 from .llm.llm import IterableResult as IterableResult, Bot as Bot, LLM as LLM
 from .llm.mock_client import StubLLM as StubLLM
 from .state import State as State, StateReference as StateReference
