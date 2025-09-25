@@ -1,7 +1,7 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
 from anthropic import types as at
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> at.ToolParam:
     p = at.ToolParam(name=func["name"], description=func["description"], input_schema=func["schema"])
@@ -107,33 +107,33 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text":
-                if delta.content["data"]:
+            if isinstance(delta.content, DeltaText):
+                if delta.content.data:
                     messages.append(at.MessageParam(
                         role="assistant",
-                        content=[str_to_text_block(delta.content["data"])]
+                        content=[str_to_text_block(delta.content.data)]
                     ))
-            elif delta.content["type"] == "tool_use":
+            elif isinstance(delta.content, DeltaToolUse):
                 messages.append(at.MessageParam(
                     role="assistant",
                     content=[at.ToolUseBlockParam(
                         type="tool_use",
-                        name=delta.content["data"].name,
-                        input=delta.content["data"].input,
-                        id=delta.content["data"].id
+                        name=delta.content.data.name,
+                        input=delta.content.data.input,
+                        id=delta.content.data.id
                     )]
                 ))
-            elif delta.content["type"] == "tool_result":
+            elif isinstance(delta.content, DeltaToolResult):
                 messages.append(at.MessageParam(
                     role="user",
                     content=[at.ToolResultBlockParam(
                         type="tool_result",
-                        tool_use_id=delta.content["data"].id,
-                        content=tool_result_to_content(delta.content["data"]),
+                        tool_use_id=delta.content.data.id,
+                        content=tool_result_to_content(delta.content.data),
                     )]
                 ))
             else:
-                raise ValueError(f"Invalid delta type: {delta.content['type']}")
+                raise ValueError(f"Invalid delta type: {type(delta.content)}")
         else:
             messages.extend(query_to_content(delta))
 
@@ -183,28 +183,22 @@ class AnthropicLLM(LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock
             function_blocks: t.List[at.ToolUseBlock] = []
             async for event in response:
                 if event.type == "text":
-                    yield Delta(content={"type": "text", "data": event.text})
+                    yield Delta(content=DeltaText(data=event.text))
                 elif event.type == "content_block_stop":
                     if event.content_block.type == "tool_use":
                         function_blocks.append(event.content_block)
                 
                 elif event.type == "message_stop":
-                    usage: Usage = {
-                        "input_tokens": event.message.usage.input_tokens, 
-                        "output_tokens": event.message.usage.output_tokens,
-                        "cache_read_input_tokens": event.message.usage.cache_read_input_tokens or 0,
-                        "cache_written_input_tokens": event.message.usage.cache_creation_input_tokens or 0,
-                    }
-                    yield Delta(content={
-                            "type": "text",
-                            "data": "",
-                        },
+                    usage= Usage(
+                        input_tokens=event.message.usage.input_tokens, 
+                        output_tokens=event.message.usage.output_tokens,
+                        cache_read_input_tokens=event.message.usage.cache_read_input_tokens or 0,
+                        cache_written_input_tokens=event.message.usage.cache_creation_input_tokens or 0,
+                    )
+                    yield Delta(content=DeltaText(data=""),
                         usage=usage
                     )
                     if event.message.stop_reason == "tool_use":
                         for block in function_blocks:
                             tool_use = ToolUse(id=block.id, name=block.name, input=block.input) # type: ignore
-                            yield Delta(content={
-                                "data": tool_use,
-                                "type": "tool_use"
-                            })
+                            yield Delta(content=DeltaToolUse(data=tool_use))

@@ -12,7 +12,7 @@ from mus.llm.bedrock import (
     merge_messages,
     deltas_to_messages,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage
 from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
@@ -135,9 +135,9 @@ def test_merge_messages():
 def test_deltas_to_messages():
     deltas = [
         Query(["User message"]),
-        Delta(content={"type": "text", "data": "Assistant response"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(id="1", name="tool1", input={"param": "value"})}),
-        Delta(content={"type": "tool_result", "data": ToolResult(id="1", content="Tool result")}),
+        Delta(content=DeltaText(data="Assistant response")),
+        Delta(content=DeltaToolUse(data=ToolUse(id="1", name="tool1", input={"param": "value"}))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="1", content="Tool result"))),
     ]
     messages = deltas_to_messages(deltas)
     assert len(messages) == 3
@@ -155,19 +155,19 @@ def test_deltas_to_messages_with_reasoning():
     deltas = [
         Query(["User question"]),
         # First delta with reasoning content
-        Delta(content={
-            "type": "text", 
-            "subtype": "reasoning",
-            "data": "Let me think about this problem step by step."
-        }),
+        Delta(content=DeltaText(
+            subtype="reasoning",
+            data="Let me think about this problem step by step."
+        )),
         # Second delta with more reasoning content
-        Delta(content={
-            "type": "text", 
-            "subtype": "reasoning",
-            "data": " First, I need to understand the context."
-        }),
+        Delta(content=DeltaText(
+            subtype="reasoning",
+            data=" First, I need to understand the context."
+        )),
         # Regular text response after reasoning
-        Delta(content={"type": "text", "data": "Based on my analysis, the answer is..."})
+        Delta(content=DeltaText(
+            data="Based on my analysis, the answer is..."
+        ))
     ]
     messages = deltas_to_messages(deltas)
     assert len(messages) == 2
@@ -248,9 +248,11 @@ async def test_bedrock_llm_stream(bedrock_llm):
     )]
     
     assert len(results) == 3
-    assert results[0].content['type'] == 'text'
-    assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 3, 'cache_written_input_tokens': 7}
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Response text"
+    assert isinstance(results[1].content, DeltaToolUse)
+    assert results[1].content.data == ToolUse(id="1", name="tool1", input={"param": "value"})
+    assert results[2].usage == Usage(input_tokens=10, output_tokens=20, cache_read_input_tokens=3, cache_written_input_tokens=7)
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):
@@ -277,9 +279,11 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
     )]
 
     assert len(results) == 3
-    assert results[0].content['type'] == 'text'
-    assert results[1].content['type'] == 'tool_use'
-    assert results[2].usage == {'input_tokens': 10, 'output_tokens': 20, 'cache_read_input_tokens': 7, 'cache_written_input_tokens': 3}
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Response text"
+    assert isinstance(results[1].content, DeltaToolUse)
+    assert results[1].content.data == ToolUse(id="1", name="tool1", input={"param": "value"})
+    assert results[2].usage == Usage(input_tokens=10, output_tokens=20, cache_read_input_tokens=7, cache_written_input_tokens=3)
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_cache_options(bedrock_llm):

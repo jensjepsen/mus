@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, Usage
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
@@ -75,27 +75,27 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Chat
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text":
-                if delta.content["data"]:
-                    messages.append({"role": "assistant", "content": delta.content["data"]})
-            elif delta.content["type"] == "tool_use":
+            if isinstance(delta.content, DeltaText):
+                if delta.content.data:
+                    messages.append({"role": "assistant", "content": delta.content.data})
+            elif isinstance(delta.content, DeltaToolUse):
                 tool_call: ChatCompletionMessageToolCallParam = {
-                    "id": delta.content["data"].id,
+                    "id": delta.content.data.id,
                     "type": "function",
                     "function": {
-                        "name": delta.content["data"].name,
-                        "arguments": json.dumps(delta.content["data"].input)
+                        "name": delta.content.data.name,
+                        "arguments": json.dumps(delta.content.data.input)
                     }
                 }
                 messages.append({"role": "assistant", "content": None, "tool_calls": [tool_call]})
-            elif delta.content["type"] == "tool_result":
+            elif isinstance(delta.content, DeltaToolResult):
                 messages.append({
                     "role": "tool",
-                    "content": json.dumps(tool_result_to_content(delta.content["data"])),
-                    "tool_call_id": delta.content["data"].id
+                    "content": json.dumps(tool_result_to_content(delta.content.data)),
+                    "tool_call_id": delta.content.data.id
                 })
             else:
-                raise ValueError(f"Invalid delta type: {delta.content['type']}")
+                raise ValueError(f"Invalid delta type: {type(delta.content)}")
         else:
             messages.extend(query_to_messages(delta))
     return messages
@@ -158,7 +158,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                     first_choice = chunk.choices[0]
                     delta = first_choice.delta
                     if delta.content:
-                        yield Delta(content={"type": "text", "data": delta.content})
+                        yield Delta(content=DeltaText(data=delta.content))
                     if delta.tool_calls:
                         for tool_call in delta.tool_calls:
                             if not tool_call.function:
@@ -190,23 +190,23 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                 name=call.name,
                                 input=json.loads(call.arguments)
                             )
-                            yield Delta(content={"type": "tool_use", "data": tool_use})
+                            yield Delta(content=DeltaToolUse(data=tool_use))
                         partial_calls = []
                 
                 if chunk.usage:
-                    yield Delta(content={"type": "text", "data": ""}, usage={
-                        "input_tokens": chunk.usage.prompt_tokens,
-                        "output_tokens": chunk.usage.completion_tokens,
-                        "cache_read_input_tokens": 0,
-                        "cache_written_input_tokens": 0
-                    })
+                    yield Delta(content=DeltaText(data=""), usage=Usage(
+                        input_tokens=chunk.usage.prompt_tokens,
+                        output_tokens=chunk.usage.completion_tokens,
+                        cache_read_input_tokens=0,
+                        cache_written_input_tokens=0
+                    ))
                 
 
                 
         elif is_not_stream(response):
             content = response.choices[0].message.content
             if content:
-                yield Delta(content={"type": "text", "data": content})
+                yield Delta(content=DeltaText(data=content))
             
             if response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
@@ -218,12 +218,12 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         name=tool_call.function.name,
                         input=json.loads(tool_call.function.arguments)
                     )
-                    yield Delta(content={"type": "tool_use", "data": tool_use})
+                    yield Delta(content=DeltaToolUse(data=tool_use))
             
             if response.usage:
-                yield Delta(content={"type": "text", "data": ""}, usage={
-                    "input_tokens": response.usage.prompt_tokens,
-                    "output_tokens": response.usage.completion_tokens,
-                    "cache_read_input_tokens": 0,
-                    "cache_written_input_tokens": 0
-                })
+                yield Delta(content=DeltaText(data=""), usage=Usage(
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    cache_read_input_tokens=0,
+                    cache_written_input_tokens=0
+                ))
