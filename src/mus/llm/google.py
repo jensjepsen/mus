@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
 import base64
 
 from google import genai
@@ -111,14 +111,14 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     tool_id_to_name = {}
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text":
-                if delta.content["data"]:
+            if isinstance(delta.content, DeltaText):
+                if delta.content.data:
                     contents.append(genai_types.Content(
                         role="model",
-                        parts=[genai_types.Part.from_text(text=delta.content["data"])]
+                        parts=[genai_types.Part.from_text(text=delta.content.data)]
                     ))
-            elif delta.content["type"] == "tool_use":
-                tool_use = delta.content["data"]
+            elif isinstance(delta.content, DeltaToolUse):
+                tool_use = delta.content.data
                 tool_id_to_name[tool_use.id] = tool_use.name
                 contents.append(genai_types.Content(
                     role="model",
@@ -127,8 +127,8 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                         args=dict(tool_use.input)
                     )]
                 ))
-            elif delta.content["type"] == "tool_result":
-                tool_result = delta.content["data"]
+            elif isinstance(delta.content, DeltaToolResult):
+                tool_result = delta.content.data
                 tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
                 function_response_part = genai_types.Part.from_function_response(
                     name=tool_name,
@@ -185,11 +185,8 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
         def handle_response(resp: genai_types.GenerateContentResponse):
             deltas = []
             if resp.text:
-                deltas.append(Delta(content={
-                    "type": "text",
-                    "data": resp.text
-                }))
-                
+                deltas.append(Delta(content=DeltaText(data=resp.text)))
+
             # Handle function calls in streaming
             if resp.function_calls:
                 deltas = []
@@ -199,21 +196,18 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                         name=func_call.name, # type: ignore
                         input=func_call.args # type: ignore
                     )
-                    deltas.append(Delta(content={
-                        "data": tool_use,
-                        "type": "tool_use"
-                    }))
+                    deltas.append(Delta(content=DeltaToolUse(data=tool_use)))
             
             # Handle usage information
             if resp.usage_metadata:
-                usage: Usage = {
-                    "input_tokens": resp.usage_metadata.prompt_token_count or 0,
-                    "output_tokens": resp.usage_metadata.candidates_token_count or 0,
-                    "cache_read_input_tokens": 0, # TODO
-                    "cache_written_input_tokens": 0 # TODO
-                }
+                usage = Usage(
+                    input_tokens=resp.usage_metadata.prompt_token_count or 0,
+                    output_tokens=resp.usage_metadata.candidates_token_count or 0,
+                    cache_read_input_tokens=0, # TODO
+                    cache_written_input_tokens=0 # TODO
+                )
                 deltas.append(Delta(
-                    content={"type": "text", "data": ""},
+                    content=DeltaText(data=""),
                     usage=usage
                 ))
             

@@ -4,14 +4,13 @@ import mus.llm
 import mus.llm.types
 import mus.functions
 import typing as t
-import jsonpickle
 import sys
 import io
 import contextlib
 import time
 import json
 import cattrs
-
+from mus.converters.delta import delta_converter
 
 class ToolCallableWithCall(mus.functions.ToolCallable):
     async def __call__(self, *args: t.Any, **kwargs: t.Any):
@@ -124,20 +123,19 @@ def run_coro(coro):
         # Handle any other exceptions
         raise e
 
-class ExtraArgs(t.TypedDict):
+class Empty(t.TypedDict):
   pass
 
-class ProxyClient(mus.llm.types.LLM[ExtraArgs, str, None]):
+class ProxyClient(mus.llm.types.LLM[Empty, str, None]):
   def __init__(self, model_name: str):
     self.model_name = model_name
 
-  async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[ExtraArgs, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:
-    
-    result = wit_world.startstream(self.model_name, jsonpickle.dumps(kwargs)) # type: ignore # returns str
+  async def stream(self, **kwargs: t.Unpack[mus.llm.types.LLMClientStreamArgs[Empty, str]]) -> t.AsyncGenerator[mus.llm.types.Delta, None]:
+    result = wit_world.startstream(self.model_name, json.dumps(cattrs.unstructure(kwargs)))
     while delta := wit_world.pollstream(result):
       if delta == "[[STOP]]":
         break
-      yield jsonpickle.loads(delta) # type: ignore # returns Delta   
+      yield delta_converter.structure(json.loads(delta), mus.llm.types.Delta)
 
 def invoke_function(name: str, inputs: dict) -> t.Any:
     # TODO: Future, we could add support for async functions here

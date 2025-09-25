@@ -1,5 +1,4 @@
 import asyncio
-import jsonpickle
 import threading
 import queue
 import uuid
@@ -16,6 +15,7 @@ from .guest.bindings import Root, RootImports
 from wasmtime import Store, Engine, Config
 import functools
 import json
+from .converters.delta import delta_converter
 
 class Stop:
     pass
@@ -97,6 +97,9 @@ SandboxContext = t.Union[LLM, t.Callable[..., t.Any]]
 
 iscallable = callable
 
+class Empty(t.TypedDict):
+    pass
+
 def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
     if code and callable:
         raise ValueError("Cannot provide both code and callable")
@@ -165,11 +168,11 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                     if llm not in llms:
                         raise KeyError(f"LLM '{llm}' not found in context")
 
-                    unpickled_kwargs = t.cast(LLMClientStreamArgs, jsonpickle.loads(kwargs))
+                    unpickled_kwargs = delta_converter.structure(json.loads(kwargs), LLMClientStreamArgs[Empty, str])
                     async def main(q_id, queue):
                         try:
                             async for delta in llms[llm].stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
-                                queue.put(jsonpickle.dumps(delta))
+                                queue.put(json.dumps(delta_converter.unstructure(delta)))
                         except Exception as e:
                             queue.put(e)
                         finally:

@@ -71,31 +71,36 @@ class ToolResult:
     id: str
     content: "ToolReturnValue"
 
-class DeltaText(t.TypedDict):
-    type: t.Literal["text"]
+@dataclass
+class DeltaText():
     data: str
-    subtype: t.NotRequired[t.Literal["text", "reasoning"]]
-    metadata: t.NotRequired[t.Dict[str, t.Any]]
+    subtype: t.Literal["text", "reasoning"] = "text"
+    metadata: t.Optional[t.Dict[str, t.Any]] = None
+    _type: t.Literal["text"] = "text"
 
-class DeltaToolUse(t.TypedDict):
-    type: t.Literal["tool_use"]
+@dataclass
+class DeltaToolUse():
     data: ToolUse
+    _type: t.Literal["tool-use"] = "tool-use"
 
-class DeltaToolResult(t.TypedDict):
-    type: t.Literal["tool_result"]
+@dataclass
+class DeltaToolResult():
     data: ToolResult
+    _type: t.Literal["tool-result"] = "tool-result"
 
-class DeltaHistory(t.TypedDict):
-    type: t.Literal["history"]
+@dataclass
+class DeltaHistory():
     data: "History"
+    _type: t.Literal["history"] = "history"
 
 DeltaContent = t.Union[DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory]
 
-class Usage(t.TypedDict):
-    input_tokens: int
-    output_tokens: int
-    cache_read_input_tokens: int
-    cache_written_input_tokens: int
+@dataclass
+class Usage():
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_written_input_tokens: int = 0
 
 
 @dataclass
@@ -104,22 +109,23 @@ class Delta:
     usage: t.Optional[Usage] = None
 
     def __str__(self) -> str:
-        if self.content["type"] == "text":
-            return self.content["data"]
-        elif self.content["type"] == "tool_use":
-            return f"\nRunning tool: {self.content['data'].name}\n"
-        elif self.content["type"] == "tool_result":
-            return f"\nTool result: {self.content['data']}\n"
+        if isinstance(self.content, DeltaText):
+            return self.content.data
+        elif isinstance(self.content, DeltaToolUse):
+            return f"\nRunning tool: {self.content.data.name}\n"
+        elif isinstance(self.content, DeltaToolResult):
+            return f"\nTool result: {self.content.data}\n"
         else:
-            raise ValueError(f"Invalid delta type: {self.content['type']}")
-    
+            raise ValueError(f"Invalid delta type: {type(self.content)}")
+
     """
     def __add__(self, other: "Delta") -> "Delta":
-        if self.content["type"] == "history" and other.content["type"] == "history":
-            return Delta(content={"type": "history", "data": self.content["data"] + other.content["data"]})
-        elif self.content["type"] == "text" and other.content["type"] == "text":
-            return Delta(content={"type": "text", "data": self.content["data"] + other.content["data"]})
+        if isinstance(self.content, DeltaHistory) and isinstance(other.content, DeltaHistory):
+            return Delta(content={"type": "history", "data": self.content.data + other.content.data})
+        elif isinstance(self.content, DeltaText) and isinstance(other.content, DeltaText):
+            return Delta(content={"type": "text", "data": self.content.data + other.content.data})
         else:
+            raise ValueError(f"Cannot add deltas of type {type(self.content)} and {type(other.content)}")
     """
 
 

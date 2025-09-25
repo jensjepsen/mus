@@ -1,4 +1,4 @@
-from mus.llm.types import Delta, ToolUse
+from mus.llm.types import Delta, DeltaText, ToolUse, DeltaToolUse
 import pytest
 from unittest.mock import MagicMock, patch
 from mus import sandbox, LLM
@@ -86,8 +86,8 @@ async def test_sandbox_with_tools(capsys, mock_client):
     # test tools defined in sandbox code
 
     mock_client.set_response([
-        Delta(content={"type": "text", "data": "Hello"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(name="test_function", input={"a": 2, "b": "world"}, id="tool1")}),
+        Delta(content=DeltaText(data="Hello")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="test_function", input={"a": 2, "b": "world"}, id="tool1"))),
     ])
     code = """\
             async def test_function(a: int, b: str) -> str:
@@ -282,8 +282,8 @@ async def test_sandbox_use_external_function_as_tool(capsys, mock_client):
         return f"Received a={a}, b={b}"
     
     mock_client.set_response([
-        Delta(content={"type": "text", "data": "Hello"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(name="tool", input={"a": 5, "b": "tool"}, id="tool1")}),
+        Delta(content=DeltaText(data="Hello")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="tool", input={"a": 5, "b": "tool"}, id="tool1"))),
     ])
 
     @sandbox(stdout=True)

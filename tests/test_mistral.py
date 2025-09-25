@@ -32,7 +32,7 @@ from mus.llm.mistral import (
     deltas_to_messages,
     convert_tool_arguments,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage
 from mus.functions import to_schema
 
 
@@ -275,9 +275,9 @@ def test_merge_messages_with_lists():
 def test_deltas_to_messages():
     deltas = [
         Query(["User message"]),
-        Delta(content={"type": "text", "data": "Assistant response"}),
-        Delta(content={"type": "tool_use", "data": ToolUse(id="1", name="tool1", input={"param": "value"})}),
-        Delta(content={"type": "tool_result", "data": ToolResult(id="1", content="Tool result")}),
+        Delta(content=DeltaText(data="Assistant response")),
+        Delta(content=DeltaToolUse(data=ToolUse(id="1", name="tool1", input={"param": "value"}))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="1", content="Tool result"))),
     ]
     messages = deltas_to_messages(deltas)
     assert len(messages) == 3
@@ -294,8 +294,10 @@ def test_deltas_to_messages():
 
 
 def test_deltas_to_messages_invalid_type():
+    class InvalidDelta():
+        pass
     deltas = [
-        Delta(content={"type": "invalid_type", "data": "test"}),
+        Delta(content=InvalidDelta()),
     ]
     
     with pytest.raises(ValueError, match="Invalid delta type"):
@@ -304,7 +306,7 @@ def test_deltas_to_messages_invalid_type():
 
 def test_deltas_to_messages_empty_text():
     deltas = [
-        Delta(content={"type": "text", "data": ""}),
+        Delta(content=DeltaText(data="")),
     ]
     messages = deltas_to_messages(deltas)
     assert len(messages) == 0  # Empty text deltas are not added
@@ -457,9 +459,9 @@ async def test_mistral_llm_stream_with_tool_calls(mistral_llm, mock_mistral_clie
         results.append(delta)
     
     assert len(results) == 1
-    assert results[0].content["type"] == "tool_use"
-    assert results[0].content["data"].name == "test_function"
-    assert results[0].content["data"].input == {"param": "value"}
+    assert isinstance(results[0].content, DeltaToolUse)
+    assert results[0].content.data.name == "test_function"
+    assert results[0].content.data.input == {"param": "value"}
 
 
 @pytest.mark.asyncio
@@ -496,17 +498,17 @@ async def test_mistral_llm_stream_with_content_and_usage(mistral_llm, mock_mistr
         results.append(delta)
     
     # Separate text and usage deltas
-    text_deltas = [r for r in results if r.content["type"] == "text" and r.content["data"]]
+    text_deltas = [r for r in results if isinstance(r.content, DeltaText) and r.content.data]
     usage_deltas = [r for r in results if r.usage is not None]
     
     # Verify content was streamed properly
     assert len(text_deltas) == 1
-    assert text_deltas[0].content["data"] == "Hello world"
-    
+    assert text_deltas[0].content.data == "Hello world"
+
     # Verify usage
     assert len(usage_deltas) == 1
-    assert usage_deltas[0].usage["input_tokens"] == 10
-    assert usage_deltas[0].usage["output_tokens"] == 5
+    assert usage_deltas[0].usage.input_tokens == 10
+    assert usage_deltas[0].usage.output_tokens == 5
 
 
 @pytest.mark.asyncio
@@ -546,22 +548,22 @@ async def test_mistral_llm_completion_with_tool_calls(mistral_llm, mock_mistral_
         results.append(delta)
     
     # Separate different types of deltas
-    text_deltas = [r for r in results if r.content["type"] == "text" and r.content["data"]]
-    tool_deltas = [r for r in results if r.content["type"] == "tool_use"]
+    text_deltas = [r for r in results if isinstance(r.content, DeltaText) and r.content.data]
+    tool_deltas = [r for r in results if isinstance(r.content, DeltaToolUse)]
     usage_deltas = [r for r in results if r.usage is not None]
     
     # Verify content was streamed properly
     assert len(text_deltas) == 1
-    assert text_deltas[0].content["data"] == "Response content"
+    assert text_deltas[0].content.data == "Response content"
     
     # Verify tool use
     assert len(tool_deltas) == 1
-    assert tool_deltas[0].content["data"].name == "test_function"
-    
+    assert tool_deltas[0].content.data.name == "test_function"
+    assert tool_deltas[0].content.data.input == {"param": "value"}
     # Verify usage
     assert len(usage_deltas) == 1
-    assert usage_deltas[0].usage["input_tokens"] == 15
-    assert usage_deltas[0].usage["output_tokens"] == 8
+    assert usage_deltas[0].usage.input_tokens == 15
+    assert usage_deltas[0].usage.output_tokens == 8
 
 
 @pytest.mark.asyncio
@@ -573,8 +575,8 @@ async def test_choice_content_to_chunks_string():
         results.append(chunk)
     
     assert len(results) == 1
-    assert results[0].content["type"] == "text"
-    assert results[0].content["data"] == "Hello world"
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Hello world"
 
 
 @pytest.mark.asyncio
@@ -589,8 +591,8 @@ async def test_choice_content_to_chunks_text_chunk():
         results.append(chunk)
     
     assert len(results) == 1
-    assert results[0].content["type"] == "text"
-    assert results[0].content["data"] == "Hello world"
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Hello world"
 
 
 @pytest.mark.asyncio

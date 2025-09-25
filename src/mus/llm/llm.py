@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations
+from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 def merge_history(history: History) -> History:
     merged = []
     for msg in history:
-        if merged and isinstance(msg, Delta) and msg.content["type"] == "text" and msg.content.get("subtype", "text") == "text":
-            if isinstance(merged[-1], Delta) and merged[-1].content["type"] == "text" and merged[-1].content.get("subtype", "text") == "text":
-                merged[-1].content["data"] += msg.content["data"]
+        if merged and isinstance(msg, Delta) and isinstance(msg.content, DeltaText) and msg.content.subtype == "text":
+            if isinstance(merged[-1], Delta) and isinstance(merged[-1].content, DeltaText) and merged[-1].content.subtype == "text":
+                merged[-1].content.data += msg.content.data
             else:
                 merged.append(msg)
                 
@@ -23,7 +23,7 @@ def merge_history(history: History) -> History:
             merged.append(msg)
     
     # prune empty text
-    merged = [m for m in merged if not (isinstance(m, Delta) and m.content["type"] == "text" and not m.content["data"].strip())]
+    merged = [m for m in merged if not (isinstance(m, Delta) and isinstance(m.content, DeltaText) and not m.content.data.strip())]
 
     return merged
 
@@ -37,20 +37,22 @@ class IterableResult:
     
     async def __aiter__(self):
         async for msg in self.iterable:
-            if msg.content["type"] == "text":
-                self.total += msg.content["data"]
-            elif msg.content["type"] == "tool_use":
-                self.total += f"Running tool: {msg.content['data'].name}"
-            elif msg.content["type"] == "tool_result":
+            if isinstance(msg.content, DeltaText) and msg.content.subtype == "text":
+                self.total += msg.content.data
+            elif isinstance(msg.content, DeltaToolUse):
+                self.total += f"Running tool: {msg.content.data.name}"
+            elif isinstance(msg.content, DeltaToolResult):
                 self.total += "Tool applied"
             if msg.usage:
-                self.usage["input_tokens"] += msg.usage["input_tokens"]
-                self.usage["output_tokens"] += msg.usage["output_tokens"]
-                self.usage["cache_read_input_tokens"] += msg.usage.get("cache_read_input_tokens", 0)
-                self.usage["cache_written_input_tokens"] += msg.usage.get("cache_written_input_tokens", 0)
-            if msg.content["type"] == "history":
+                self.usage = Usage(
+                    input_tokens=self.usage.input_tokens + msg.usage.input_tokens,
+                    output_tokens=self.usage.output_tokens + msg.usage.output_tokens,
+                    cache_read_input_tokens=self.usage.cache_read_input_tokens + msg.usage.cache_read_input_tokens,
+                    cache_written_input_tokens=self.usage.cache_written_input_tokens + msg.usage.cache_written_input_tokens,
+                )
+            if isinstance(msg.content, DeltaHistory):
                 # TODO: Merge deltas here
-                self.history.extend(merge_history(msg.content["data"]))
+                self.history.extend(merge_history(msg.content.data))
             else:
                 yield msg
         self.has_iterated = True
@@ -168,7 +170,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 # first message, and then continue with the rest of the query
                 # this is helpful when doing structured generation
                 if last.echo:
-                    yield Delta(content={"type": "text", "data": last.val})
+                    yield Delta(content=DeltaText(data=last.val))
 
         async for msg in self.client.stream(
             prompt=dedented_prompt,
@@ -187,20 +189,20 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             yield msg
             
             history = history + [msg]
-            if msg.content["type"] == "tool_use":
-                print("Invoking tool:", msg.content["data"].name, "with input:", msg.content["data"].input)
-                func_result = await invoke_function(msg.content["data"].name, msg.content["data"].input, func_map)
-                fd = Delta(content={"data": ToolResult(id=msg.content["data"].id, content=func_result), "type": "tool_result"})
+            if isinstance(msg.content, DeltaToolUse):
+                print("Invoking tool:", msg.content.data.name, "with input:", msg.content.data.input)
+                func_result = await invoke_function(msg.content.data.name, msg.content.data.input, func_map)
+                fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
                 yield fd
                 history.append(fd)
                 async for msg in self.query(history=history, **kwargs):
-                    if msg.content["type"] == "history":
-                        history.extend(msg.content["data"][len(history):])
+                    if isinstance(msg.content, DeltaHistory):
+                        history.extend(msg.content.data[len(history):])
                     else:
                         yield msg
-                
-            
-        yield Delta(content={"type": "history", "data": history})
+
+
+        yield Delta(content=DeltaHistory(data=history))
 
     @t.overload
     def __call__(self, query: QueryOrSystem, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
@@ -233,8 +235,8 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 schema=to_schema(structure)
             )
             async for msg in self.query(query, functions=[as_tool], function_choice="any", no_stream=True):
-                if msg.content["type"] == "tool_use":
-                    input = msg.content["data"].input
+                if isinstance(msg.content, DeltaToolUse):
+                    input = msg.content.data.input
                     input = verify_schema_inputs(as_tool.schema, input)
                     return structure(**input)
             else:
@@ -274,8 +276,8 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
             async for msg in self.query(query, functions=[function], function_choice="any", no_stream=True): # type: ignore
-                if msg.content["type"] == "tool_use":
-                    return await function(**(msg.content["data"].input))
+                if isinstance(msg.content, DeltaToolUse):
+                    return await function(**(msg.content.data.input))
             else:
                 raise ValueError("LLM did not invoke the function")
         return decorated_function

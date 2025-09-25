@@ -17,7 +17,7 @@ from mus.llm.google import (
     tool_result_to_parts,
     deltas_to_contents,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory
 from mus.functions import to_schema
 
 
@@ -208,15 +208,9 @@ def test_tool_result_to_parts_mixed_list():
 def test_deltas_to_contents():
     deltas = [
         Query(["User question"]),
-        Delta(content={"type": "text", "data": "Assistant response"}),
-        Delta(content={
-            "type": "tool_use", 
-            "data": ToolUse(id="tool1", name="search", input={"query": "test"})
-        }),
-        Delta(content={
-            "type": "tool_result", 
-            "data": ToolResult(id="tool1", content="Search results")
-        }),
+        Delta(content=DeltaText(data="Assistant response")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="search", input={"query": "test"}, id="tool1"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="tool1", content="Searchresults"))),
     ]
     
     contents = deltas_to_contents(deltas)
@@ -258,12 +252,12 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
         results.append(delta)
 
     assert len(results) == 3  # 2 text deltas + 1 usage delta
-    assert results[0].content["type"] == "text"
-    assert results[0].content["data"] == "Hello"
-    assert results[1].content["type"] == "text"
-    assert results[1].content["data"] == " world!"
-    assert results[2].usage["input_tokens"] == 10
-    assert results[2].usage["output_tokens"] == 5
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Hello"
+    assert isinstance(results[1].content, DeltaText)
+    assert results[1].content.data == " world!"
+    assert results[2].usage.input_tokens == 10
+    assert results[2].usage.output_tokens == 5
 
 
 @pytest.mark.asyncio
@@ -297,8 +291,8 @@ async def test_google_genai_stream_with_tools(google_genai_llm, mock_genai_clien
         results.append(delta)
     
     assert len(results) == 1
-    assert results[0].content["type"] == "tool_use"
-    tool_use = results[0].content["data"]
+    assert isinstance(results[0].content, DeltaToolUse)
+    tool_use = results[0].content.data
     assert tool_use.id == "call_123"
     assert tool_use.name == "search_tool"
     assert tool_use.input == {"query": "test"}
@@ -328,10 +322,10 @@ async def test_google_genai_no_stream(google_genai_llm, mock_genai_client):
         results.append(delta)
     
     assert len(results) == 2  # 1 text delta + 1 usage delta
-    assert results[0].content["type"] == "text"
-    assert results[0].content["data"] == "Complete response"
-    assert results[1].usage["input_tokens"] == 15
-    assert results[1].usage["output_tokens"] == 8
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Complete response"
+    assert results[1].usage.input_tokens == 15
+    assert results[1].usage.output_tokens == 8
 
 
 @pytest.mark.asyncio
@@ -376,7 +370,7 @@ async def test_google_genai_stream_with_history(google_genai_llm, mock_genai_cli
     
     history = [
         Query(["First user message"]),
-        Delta(content={"type": "text", "data": "First assistant response"}),
+        Delta(content=DeltaText(data="First assistant response")),
         Query(["Second user message"])
     ]
     
@@ -462,6 +456,6 @@ async def test_google_genai_function_call_without_id(google_genai_llm, mock_gena
         results.append(delta)
     
     assert len(results) == 1
-    tool_use = results[0].content["data"]
+    tool_use = results[0].content.data
     assert tool_use.id == "test_function"  # Should use name as fallback
     assert tool_use.name == "test_function"

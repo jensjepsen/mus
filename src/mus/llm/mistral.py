@@ -1,5 +1,8 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations
+from .types import (
+    LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
+    DeltaToolUse, DeltaToolResult
+)
 import json
 
 from mistralai import Mistral
@@ -146,14 +149,14 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
     tool_id_to_name: t.Dict[str, str] = {}
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text":
-                if delta.content["data"]:
+            if isinstance(delta.content, DeltaText):
+                if delta.content.data:
                     messages.append(AssistantMessage(
                         role="assistant",
-                        content=delta.content["data"]
+                        content=delta.content.data
                     ))
-            elif delta.content["type"] == "tool_use":
-                tool_use = delta.content["data"]
+            elif isinstance(delta.content, DeltaToolUse):
+                tool_use = delta.content.data
                 tool_id_to_name[tool_use.id] = tool_use.name
                 messages.append(AssistantMessage(
                     role="assistant",
@@ -169,8 +172,8 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
                         )
                     ]
                 ))
-            elif delta.content["type"] == "tool_result":
-                tool_result = delta.content["data"]
+            elif isinstance(delta.content, DeltaToolResult):
+                tool_result = delta.content.data
                 tool_name = tool_id_to_name.get(tool_result.id, "unknown_tool")
                 messages.append(ToolMessage(
                     role="tool",
@@ -179,7 +182,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
                     content=tool_result_to_content(tool_result)
                 ))
             else:
-                raise ValueError(f"Invalid delta type: {delta.content['type']}")
+                raise ValueError(f"Invalid delta type: {type(delta.content)}")
         else:
             messages.extend(query_to_messages(delta))
 
@@ -206,22 +209,13 @@ def convert_tool_arguments(args: Arguments):
 
 async def choice_content_to_chunks(content: mt.Content):
     if isinstance(content, str):
-        yield Delta(content={
-            "type": "text",
-            "data": content
-        })
+        yield Delta(content=DeltaText(data=content))
     else:
         for content_chunk in content:
             if isinstance(content_chunk, TextChunk):
-                yield Delta(content={
-                    "type": "text",
-                    "data": content_chunk.text
-                })
+                yield Delta(content=DeltaText(data=content_chunk.text))
             elif isinstance(content_chunk, str):
-                yield Delta(content={
-                    "type": "text",
-                    "data": content_chunk
-                })
+                yield Delta(content=DeltaText(data=content_chunk))
             else:
                 raise ValueError(f"Unsupported content type: {type(content_chunk)}")
 
@@ -284,25 +278,20 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                                     name=tool_call.function.name,
                                     input=convert_tool_arguments(tool_call.function.arguments) if tool_call.function.arguments else {}
                                 )
-                                yield Delta(content={
-                                    "data": tool_use,
-                                    "type": "tool_use"
-                                })
+                                yield Delta(content=DeltaToolUse(data=tool_use))
+                                    
                     
                     if choice.finish_reason:
                         # Handle usage information if available
                         if chunk.data and chunk.data.usage:
-                            usage: Usage = {
-                                "input_tokens": chunk.data.usage.prompt_tokens or 0,
-                                "output_tokens": chunk.data.usage.completion_tokens or 0,
-                                "cache_read_input_tokens": 0,  # Mistral doesn't provide cache info
-                                "cache_written_input_tokens": 0
-                            }
+                            usage = Usage(
+                                input_tokens=chunk.data.usage.prompt_tokens or 0,
+                                output_tokens=chunk.data.usage.completion_tokens or 0,
+                                cache_read_input_tokens=0,  # Mistral doesn't provide cache info
+                                cache_written_input_tokens=0
+                            )
                             yield Delta(
-                                content={
-                                    "type": "text",
-                                    "data": "",
-                                },
+                                content=DeltaText(data=""),
                                 usage=usage
                             )
         else:
@@ -323,23 +312,17 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                                 name=tool_call.function.name,
                                 input=convert_tool_arguments(tool_call.function.arguments) if tool_call.function.arguments else {}
                             )
-                            yield Delta(content={
-                                "data": tool_use,
-                                "type": "tool_use"
-                            })
+                            yield Delta(content=DeltaToolUse(data=tool_use))
                 
                 # Handle usage information
                 if response.usage:
-                    usage: Usage = {
-                        "input_tokens": response.usage.prompt_tokens or 0,
-                        "output_tokens": response.usage.completion_tokens or 0,
-                        "cache_read_input_tokens": 0,  # Mistral doesn't provide cache info
-                        "cache_written_input_tokens": 0
-                    }
+                    usage = Usage(
+                        input_tokens=response.usage.prompt_tokens or 0,
+                        output_tokens=response.usage.completion_tokens or 0,
+                        cache_read_input_tokens=0,  # Mistral doesn't provide cache info
+                        cache_written_input_tokens=0
+                    )
                     yield Delta(
-                        content={
-                            "type": "text",
-                            "data": "",
-                        },
+                        content=DeltaText(data=""),
                         usage=usage
                     )

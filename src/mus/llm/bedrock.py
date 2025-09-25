@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations
+from .types import LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaToolUse, DeltaToolResult
 import base64
 
 from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
@@ -182,8 +182,8 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
-            if delta.content["type"] == "text" and delta.content.get("subtype", None) == "reasoning":
-                metadata = delta.content.get("metadata", {})
+            if isinstance(delta.content, DeltaText) and delta.content.subtype == "reasoning":
+                metadata = delta.content.metadata or {}
                 messages.append(bt.MessageTypeDef(
                     role="assistant",
                     content=[
@@ -192,7 +192,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                                 **(
                                     {
                                         "reasoningText": bt.ReasoningTextBlockTypeDef(
-                                            text=delta.content["data"],
+                                            text=delta.content.data,
                                             signature=str(metadata.get("signature", None))
                                         )
                                     } if not metadata.get("redactedContent", False)
@@ -203,33 +203,33 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                         )
                     ]
                 ))
-            elif delta.content["type"] == "text":
-                if delta.content["data"]:
+            elif isinstance(delta.content, DeltaText):
+                if delta.content.data:
                     messages.append(bt.MessageTypeDef(
                         role="assistant",
-                        content=[str_to_text_block(delta.content["data"])]
+                        content=[str_to_text_block(delta.content.data)]
                     ))
-            elif delta.content["type"] == "tool_use":
+            elif isinstance(delta.content, DeltaToolUse):
                 messages.append(bt.MessageTypeDef(
                     role="assistant",
                     content=[
                         bt.ContentBlockTypeDef(
                             toolUse=bt.ToolUseBlockTypeDef({
-                                "name": delta.content["data"].name,
-                                "toolUseId": delta.content["data"].id,
-                                "input": delta.content["data"].input,
+                                "name": delta.content.data.name,
+                                "toolUseId": delta.content.data.id,
+                                "input": delta.content.data.input,
                             }),
                         )
                     ]
                 ))
-            elif delta.content["type"] == "tool_result":
+            elif isinstance(delta.content, DeltaToolResult):
                 messages.append(bt.MessageTypeDef(
                     role="user",
                     content=[
                         bt.ContentBlockTypeDef(
                             toolResult=bt.ToolResultBlockTypeDef(
-                                toolUseId=delta.content["data"].id,
-                                content=tool_result_to_content(delta.content["data"]),
+                                toolUseId=delta.content.data.id,
+                                content=tool_result_to_content(delta.content.data),
                             )
                         ),
                         # example of how to add a cache point, if needed
@@ -241,7 +241,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                     ]
                 ))
             else:
-                raise ValueError(f"Invalid delta type: {delta.content['type']}")
+                raise ValueError(f"Invalid delta type: {type(delta.content)}")
         else:
             messages.extend(query_to_messages(delta))
 
@@ -330,22 +330,18 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 if "contentBlockDelta" in event:
                     delta = event["contentBlockDelta"]["delta"]
                     if "text" in delta:
-                        yield Delta(content={
-                            "type": "text",
-                            "data": delta["text"]
-                        })
+                        yield Delta(content=DeltaText(data=delta["text"]))
                     if "reasoningContent" in delta:
                         reasoning = delta["reasoningContent"]
 
-                        yield Delta(content={
-                            "type": "text",
-                            "data": reasoning.get("text", ""),
-                            "subtype": "reasoning",
-                            "metadata": {
+                        yield Delta(content=DeltaText(
+                            data=reasoning.get("text", "")
+                            , subtype="reasoning",
+                            metadata={
                                 "signature": reasoning.get("signature", None),
                                 "redactedContent": reasoning.get("redactedContent", None)
                             }
-                        })
+                        ))
                     if "toolUse" in delta:
                         tu = delta["toolUse"]
                         if current_function:
@@ -367,23 +363,20 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     if stop_reason == "tool_use":
                         for block in function_blocks:
                             tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
-                            yield Delta(content={
-                                "data": tool_use,
-                                "type": "tool_use"
-                            })
+                            yield Delta(content=DeltaToolUse(data=tool_use))
 
                 if "metadata" in event:
                     metadata = event["metadata"]
-                    usage: Usage = {
-                        "input_tokens": metadata["usage"]["inputTokens"], 
-                        "output_tokens": metadata["usage"]["outputTokens"],
-                        "cache_read_input_tokens": metadata["usage"].get("cacheReadInputTokens", 0),
-                        "cache_written_input_tokens": metadata["usage"].get("cacheWriteInputTokens", 0)
-                    }
-                    yield Delta(content={
-                            "type": "text",
-                            "data": "",
-                        },
+                    usage = Usage(
+                        input_tokens=metadata["usage"]["inputTokens"], 
+                        output_tokens=metadata["usage"]["outputTokens"],
+                        cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
+                        cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
+                    )
+                    yield Delta(
+                        content=DeltaText(
+                            data="",
+                        ),
                         usage=usage
                     )
         else:
@@ -395,30 +388,25 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 message = output["message"]
                 for content in message["content"]:
                     if text := content.get("text", None):
-                        yield Delta(content={
-                            "type": "text",
-                            "data": text
-                        })
+                        yield Delta(content=DeltaText(
+                            data=text,
+                        ))
                     if toolUse := content.get("toolUse", None):
                         tool_use = ToolUse(id=toolUse["toolUseId"], name=toolUse["name"], input=toolUse["input"])
-                        tools.append(Delta(content={
-                            "data": tool_use,
-                            "type": "tool_use"
-                        }))
-                
+                        tools.append(Delta(content=DeltaToolUse(
+                            data=tool_use
+                        )))
+
             if response["stopReason"] == "tool_use":
                 for tool in tools:
                     yield tool
 
-            usage: Usage = {
-                "input_tokens": response["usage"]["inputTokens"], 
-                "output_tokens": response["usage"]["outputTokens"],
-                "cache_read_input_tokens": response["usage"].get("cacheReadInputTokens", 0),
-                "cache_written_input_tokens": response["usage"].get("cacheWrittenInputTokens", 0)
-            }
-            yield Delta(content={
-                    "type": "text",
-                    "data": "",
-                },
-                usage=usage
+            usage = Usage(
+                input_tokens=response["usage"]["inputTokens"],
+                output_tokens=response["usage"]["outputTokens"],
+                cache_read_input_tokens=response["usage"].get("cacheReadInputTokens", 0),
+                cache_written_input_tokens=response["usage"].get("cacheWrittenInputTokens", 0)
             )
+            yield Delta(content=DeltaText(
+                data="",
+            ), usage=usage)
