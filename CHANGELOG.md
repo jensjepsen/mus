@@ -1,3 +1,13 @@
+## v0.22.0 (2025-09-25)
+
+### Feat
+
+- remove-json-pickle
+- remove jsonpickle dep
+- remove jsonpickle dep
+- remove jsonpickle dep
+- remove jsonpickle dep
+
 ## v0.21.0 (2025-09-22)
 
 ### Feat

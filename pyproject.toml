@@ -1,6 +1,6 @@
 [project]
 name = "mus"
-version = "0.21.0"
+version = "0.22.0"
 description = ""
 authors = [
     {name="Jens Jepsen", email="jens.jepsen@gmail.com"}
@@ -69,7 +69,7 @@ include = ["pyproject.toml", "src/**/*.py"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.21.0"
+version = "0.22.0"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",
