@@ -280,7 +280,7 @@ class Query:
             return Query(other + self.val)
 
 HistoryItem = t.Union[Delta, Query]
-History = t.Sequence[HistoryItem]
+History = t.List[HistoryItem]
 
 LLMDecoratedFunctionReturnType = t.TypeVar("LLMDecoratedFunctionReturnType", covariant=True)
 
