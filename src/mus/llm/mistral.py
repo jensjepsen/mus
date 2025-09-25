@@ -1,7 +1,7 @@
 import typing as t
 from .types import (
     LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
-    DeltaHistory, DeltaToolUse, DeltaToolResult
+    DeltaToolUse, DeltaToolResult
 )
 import json
 

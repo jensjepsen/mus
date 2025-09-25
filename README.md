@@ -151,9 +151,6 @@ uv build
 - [ ] Figure out mistral prefilling (w. prefix=True)
 - [ ] Test merging and pruning deltas 
 - [ ] Fill retry on bad LLM output
-- [X] Remove deps
-    - [ ] jsonpickle
-        - [ ] Sandbox
 - [ ] BUG: tools are intercepted before usage is yielded, which means that usage is yielded in wrong order
 - [ ] Return usage for fill operations
 - [ ] Prefill examples should fail when encountering unknown type
@@ -175,7 +172,6 @@ uv build
     - [ ] Bandit
     - [ ] commitzen
     - [ ] pyright
-- [X] Allow passing stop sequences to llm
 - [X] Add code coverage
 - [ ] Pyodide patching
     - [ ] Anthropic

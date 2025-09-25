@@ -1,6 +1,4 @@
 import asyncio
-import cattrs, cattrs.preconf.json
-import jsonpickle
 import threading
 import queue
 import uuid
