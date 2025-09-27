@@ -116,6 +116,12 @@ def remove_keys(obj: t.Union[t.Dict[str, t.Any], t.Any], keys: set):
     else:
         return obj
 
+def get_pydantic_schema(py_type: t.Type) -> t.Optional[t.Dict[str, t.Any]]:
+    if hasattr(py_type, 'model_json_schema') and callable(py_type.model_json_schema):
+        return py_type.model_json_schema() # type: ignore
+    else:
+        return None
+
 def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     """Convert Python type annotations to JSON Schema format."""
     
@@ -136,7 +142,9 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     elif t.is_typeddict(py_type):
         # Handle TypedDicts
         return get_schema(py_type.__name__, list(py_type.__annotations__.items()))
-    
+    elif (pd_schema := get_pydantic_schema(py_type)):
+        # Handle Pydantic models
+        return pd_schema
     
     # Handle generic types
     origin = t.get_origin(py_type)

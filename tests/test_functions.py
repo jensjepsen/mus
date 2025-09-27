@@ -310,3 +310,38 @@ def test_parse_tools_with_string_with_metadata():
     assert "param2" in tools[0].schema["schema"]["properties"]
     assert tools[0].schema["schema"]["properties"]["param1"]["type"] == "string"
     assert tools[0].schema["schema"]["properties"]["param2"]["type"] == "integer"
+
+def test_pydantic_type_to_schema():
+    from pydantic import BaseModel, Field
+
+    class NestedModel(BaseModel):
+        field1: str
+        field2: int
+
+    class PydanticModel(BaseModel):
+        """This is a sample Pydantic model."""
+        field1: str
+        field2: int
+        field3: Optional[List[str]] = None
+        field4: NestedModel
+
+    schema = to_schema(PydanticModel)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "PydanticModel"
+    assert schema["description"] == "This is a sample Pydantic model."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "PydanticModel"
+    assert "field1" in json_schema["properties"]
+    assert "field2" in json_schema["properties"]
+    assert "field3" in json_schema["properties"]
+    assert "field4" in json_schema["properties"]
+    assert json_schema["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field2"]["type"] == "integer"
+    assert json_schema["properties"]["field3"]["type"] == "array"
+    assert json_schema["properties"]["field3"]["items"]["type"] == "string"
+    assert json_schema["properties"]["field4"]["type"] == "object"
+    assert json_schema["properties"]["field4"]["title"] == "NestedModel"
+    assert "field1" in json_schema["properties"]["field4"]["properties"]
+    assert "field2" in json_schema["properties"]["field4"]["properties"]
+    assert json_schema["properties"]["field4"]["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field4"]["properties"]["field2"]["type"] == "integer"
