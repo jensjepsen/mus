@@ -41,7 +41,7 @@ def func_to_schema(func: ToolCallableType, ensure_docstring: bool=True) -> Funct
             return definition
     if not func.__doc__ and ensure_docstring:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
-    annotations = list(func.__annotations__.items())
+    annotations = list(t.get_type_hints(func).items())
     if annotations and annotations[-1][0] == "return":
         annotations = annotations[:-1]  # Remove the return annotation if present
     p = FunctionSchema(
@@ -72,11 +72,12 @@ def schema_to_example(schema: t.Union[FunctionSchema, t.Dict[str, t.Any]]):
         raise ValueError(f"Couldn't parse schema: {json.dumps(schema, indent=2)}")
 
 def dataclass_to_schema(dataclass) -> FunctionSchema:
+    annotations = list(t.get_type_hints(dataclass).items())
     p = FunctionSchema(
         name=dataclass.__name__,
         description=dataclass.__doc__,
-        schema=get_schema(dataclass.__name__, list(dataclass.__annotations__.items())),
-        annotations=list(dataclass.__annotations__.items())
+        schema=get_schema(dataclass.__name__, annotations),
+        annotations=annotations
     )
     return p    
 
@@ -145,6 +146,8 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     elif (pd_schema := get_pydantic_schema(py_type)):
         # Handle Pydantic models
         return pd_schema
+    elif py_type is t.Any:
+        return {}
     
     # Handle generic types
     origin = t.get_origin(py_type)
@@ -169,7 +172,7 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
             return schema
         else:
             raise ValueError("Annotated type must have at least one argument")
-    elif origin in [dict, t.Dict]:
+    elif origin in [dict, t.Dict, t.Mapping]:
         schema: dict[str, t.Any] = {"type": "object"}
         if len(args) >= 2:
             schema["additionalProperties"] = python_type_to_json_schema(args[1])
