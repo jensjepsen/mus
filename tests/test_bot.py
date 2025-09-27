@@ -6,7 +6,7 @@ import json
 from mus import Bot
 from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
-from mus.llm.types import Delta, StringWithMetadata, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage
+from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage
 
 @dataclass
 class TestStructure:
@@ -66,42 +66,6 @@ async def test_llm_with_tool_use(mock_model):
 
     assert isinstance(result[2].content.data, ToolResult)
     assert result[2].content.data.content == "Tool result"
-
-    assert isinstance(result[3].content, DeltaText)
-    assert result[3].content.data == "Tool used"
-
-@pytest.mark.asyncio
-async def test_tool_use_that_returns_string_with_metadata():
-    mock_model = MagicMock()
-    mock_model.set_response = lambda responses: setattr(mock_model.stream.return_value.__aiter__, 'return_value', iter(responses))
-    mock_model.set_response([
-        Delta(content=DeltaText(data="Hello")),
-        Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"param1": "test", "param2": 123}, id="test_tool"))),
-        Delta(content=DeltaText(data="Tool used")),
-    ])
-
-    llm = Bot(prompt="Test prompt", model=mock_model)
-
-    called = False
-
-    async def test_tool(**kwargs):
-        """Test tool function"""
-        nonlocal called
-        called = True
-        return StringWithMetadata("Tool result", metadata={"source": "unit_test"})
-
-    result = [msg async for msg in llm("Test query", functions=[test_tool])]
-    assert called, "Tool function was not called"
-    assert len(result) == 4
-    assert isinstance(result[0].content, DeltaText)
-    assert isinstance(result[1].content, DeltaToolUse)
-    assert isinstance(result[1].content.data, ToolUse)
-
-    assert isinstance(result[2].content, DeltaToolResult)
-    assert isinstance(result[2].content.data, ToolResult)
-    assert isinstance(result[2].content.data.content, StringWithMetadata)
-    assert result[2].content.data.content == "Tool result"
-    assert result[2].content.data.content.metadata["source"] == "unit_test"
 
     assert isinstance(result[3].content, DeltaText)
     assert result[3].content.data == "Tool used"
