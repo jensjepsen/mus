@@ -4,6 +4,7 @@ from dataclasses import is_dataclass
 import json
 import attrs
 import fastjsonschema
+import collections.abc
 
 @attrs.define
 class ToolCallable():
@@ -172,7 +173,7 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
             return schema
         else:
             raise ValueError("Annotated type must have at least one argument")
-    elif origin in [dict, t.Dict, t.Mapping]:
+    elif origin in [dict, t.Dict, t.Mapping] or (origin and issubclass(origin, collections.abc.Mapping)):
         schema: dict[str, t.Any] = {"type": "object"}
         if len(args) >= 2:
             schema["additionalProperties"] = python_type_to_json_schema(args[1])

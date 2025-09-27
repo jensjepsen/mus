@@ -345,3 +345,25 @@ def test_pydantic_type_to_schema():
     assert "field2" in json_schema["properties"]["field4"]["properties"]
     assert json_schema["properties"]["field4"]["properties"]["field1"]["type"] == "string"
     assert json_schema["properties"]["field4"]["properties"]["field2"]["type"] == "integer"
+
+
+def test_dataclass_typing_mapping():
+    from typing import Mapping, Any
+
+    @dataclass
+    class MappingDataclass:
+        """This is a dataclass with a mapping."""
+        field1: str
+        field2: Mapping[str, Any]
+
+    schema = to_schema(MappingDataclass)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "MappingDataclass"
+    assert schema["description"] == "This is a dataclass with a mapping."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "MappingDataclass"
+    assert "field1" in json_schema["properties"]
+    assert "field2" in json_schema["properties"]
+    assert json_schema["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field2"]["type"] == "object"
+    assert json_schema["properties"]["field2"]["additionalProperties"] == {}
