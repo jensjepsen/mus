@@ -1,3 +1,9 @@
+## v0.22.2 (2025-09-27)
+
+### Fix
+
+- handle pydantic models when generating schemas
+
 ## v0.22.1 (2025-09-27)
 
 ### Fix
