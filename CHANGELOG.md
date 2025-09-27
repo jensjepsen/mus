@@ -1,3 +1,11 @@
+## v0.22.7 (2025-09-27)
+
+### Fix
+
+- throw errors in host
+- throw errors in host
+- remove string with metadata - should be a dedicated return type instead
+
 ## v0.22.6 (2025-09-27)
 
 ### Fix
