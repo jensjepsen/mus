@@ -59,6 +59,64 @@ class LLM(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[STREAM_EXTRA_ARGS, MODEL_TYPE]]) -> t.AsyncGenerator["Delta", None]:
         ...
 
+@dataclass
+class File:
+    b64type: str
+    content: str
+    _type: t.Literal["file"] = "file"
+    
+    def to_b64(self):
+        return f"data:{self.b64type};base64,{self.content}"
+
+    def __add__(self, other):
+        return Query([self, other])
+    
+    def __radd__(self, other):
+        return Query([other, self])
+    
+    @staticmethod
+    def image(path: t.Union[str, Path], as_format: t.Literal["png", "jpeg"]="png"):
+        from PIL import Image
+        if isinstance(path, str):
+            path = Path(path)
+        img = Image.open(path)
+        # Create a BytesIO object
+        buffered = io.BytesIO()
+        # Save the image to the BytesIO object in PNG format
+        img.save(buffered, format=as_format.upper())
+        # Get the byte value of the image
+        img_byte = buffered.getvalue()
+        # Encode the bytes to base64
+        img_base64 = base64.b64encode(img_byte)
+        # Convert bytes to string
+        img_base64_string = img_base64.decode()
+        return File(b64type="image/png", content=img_base64_string)
+
+
+class StringWithMetadata(str):
+    """
+    A string with associated metadata.
+    Useful for passing additional context from tools.
+    The metadata will not be shown to the LLM, but can be used to store extra information, such as presentation hints, source information, etc.
+    """
+    def __new__(cls, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
+        instance = super().__new__(cls, value)
+        instance.metadata = metadata or {}
+        return instance
+
+    def __init__(self, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
+        super().__init__()
+        self.metadata = metadata or {}
+
+ToolSimpleReturnValue = t.Union[str, File, StringWithMetadata]
+ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
+
+def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
+    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
+
+def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
+    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata)
+
 
 @dataclass
 class ToolUse:
@@ -69,7 +127,7 @@ class ToolUse:
 @dataclass
 class ToolResult:
     id: str
-    content: "ToolReturnValue"
+    content: ToolReturnValue
 
 @dataclass
 class DeltaText():
@@ -129,63 +187,7 @@ class Delta:
     """
 
 
-@dataclass
-class File:
-    b64type: str
-    content: str
-    _type: t.Literal["file"] = "file"
-    
-    def to_b64(self):
-        return f"data:{self.b64type};base64,{self.content}"
 
-    def __add__(self, other):
-        return Query([self, other])
-    
-    def __radd__(self, other):
-        return Query([other, self])
-    
-    @staticmethod
-    def image(path: t.Union[str, Path], as_format: t.Literal["png", "jpeg"]="png"):
-        from PIL import Image
-        if isinstance(path, str):
-            path = Path(path)
-        img = Image.open(path)
-        # Create a BytesIO object
-        buffered = io.BytesIO()
-        # Save the image to the BytesIO object in PNG format
-        img.save(buffered, format=as_format.upper())
-        # Get the byte value of the image
-        img_byte = buffered.getvalue()
-        # Encode the bytes to base64
-        img_base64 = base64.b64encode(img_byte)
-        # Convert bytes to string
-        img_base64_string = img_base64.decode()
-        return File(b64type="image/png", content=img_base64_string)
-
-
-class StringWithMetadata(str):
-    """
-    A string with associated metadata.
-    Useful for passing additional context from tools.
-    The metadata will not be shown to the LLM, but can be used to store extra information, such as presentation hints, source information, etc.
-    """
-    def __new__(cls, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
-        instance = super().__new__(cls, value)
-        instance.metadata = metadata or {}
-        return instance
-
-    def __init__(self, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
-        super().__init__()
-        self.metadata = metadata or {}
-
-ToolSimpleReturnValue = t.Union[str, "File", StringWithMetadata]
-ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
-
-def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
-    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
-
-def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
-    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata)
 
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
