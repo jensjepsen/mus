@@ -1,3 +1,10 @@
+## v0.22.1 (2025-09-27)
+
+### Fix
+
+- new version of anthropic sdk contained breaking changes - use omit instead of notgiven
+- reexport delta types from __init__
+
 ## v0.22.0 (2025-09-25)
 
 ### Feat
