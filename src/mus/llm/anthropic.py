@@ -1,7 +1,10 @@
 import typing as t
-from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, NotGiven
+from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, Omit
 from anthropic import types as at
 from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
+
+omit = Omit()
+
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> at.ToolParam:
     p = at.ToolParam(name=func["name"], description=func["description"], input_schema=func["schema"])
@@ -174,10 +177,10 @@ class AnthropicLLM(LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock
             max_tokens=kwargs.get("max_tokens", None) or 4096,
             model=self.model,
             messages=messages,
-            top_k=kwargs.get("top_k", None) or NotGiven(),
-            top_p=kwargs.get("top_p", None) or NotGiven(),
-            stop_sequences=kwargs.get("stop_sequences", None) or NotGiven(),
-            temperature=kwargs.get("temperature", None) or NotGiven(),
+            top_k=kwargs.get("top_k", None) or omit,
+            top_p=kwargs.get("top_p", None) or omit,
+            stop_sequences=kwargs.get("stop_sequences", None) or omit,
+            temperature=kwargs.get("temperature", None) or omit,
             **extra_kwargs
         ) as response:
             function_blocks: t.List[at.ToolUseBlock] = []
