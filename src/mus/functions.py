@@ -154,7 +154,7 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     origin = t.get_origin(py_type)
     args = t.get_args(py_type)
     
-    if origin in [list, t.List]:
+    if origin in [list, t.List, t.Sequence] or (origin and isinstance(origin, type) and issubclass(origin, collections.abc.Sequence)):
         if args:
             return {
                 "type": "array",

@@ -367,3 +367,24 @@ def test_dataclass_typing_mapping():
     assert json_schema["properties"]["field1"]["type"] == "string"
     assert json_schema["properties"]["field2"]["type"] == "object"
     assert json_schema["properties"]["field2"]["additionalProperties"] == {}
+
+def test_dataclass_sequence():
+    from typing import Sequence, Any
+
+    @dataclass
+    class SequenceDataclass:
+        """This is a dataclass with a sequence."""
+        field1: str
+        field2: Sequence[Any]
+
+    schema = to_schema(SequenceDataclass)
+    assert isinstance(schema, dict)
+    assert schema["name"] == "SequenceDataclass"
+    assert schema["description"] == "This is a dataclass with a sequence."
+    json_schema = schema["schema"]
+    assert json_schema["title"] == "SequenceDataclass"
+    assert "field1" in json_schema["properties"]
+    assert "field2" in json_schema["properties"]
+    assert json_schema["properties"]["field1"]["type"] == "string"
+    assert json_schema["properties"]["field2"]["type"] == "array"
+    assert json_schema["properties"]["field2"]["items"] == {}
