@@ -1,3 +1,9 @@
+## v0.22.3 (2025-09-27)
+
+### Fix
+
+- use get_type_hints instead of annotations, remove unneccesary forward refs
+
 ## v0.22.2 (2025-09-27)
 
 ### Fix
