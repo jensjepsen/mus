@@ -117,7 +117,7 @@ async def main():
         @mus.Bot(model=model, functions=[run_some_code])
         def danger_bot(task: str):
             return "Generate python code to solve this task: " + task
-
+        
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
             print(msg, end="")
         
@@ -128,7 +128,7 @@ asyncio.run(main())
 
 
 ## Contributing
-We use pipx and uv.
+We use uv.
 
 See uv docs on installation here: [uv installation](https://docs.astral.sh/uv/getting-started/installation/)
 
@@ -137,8 +137,10 @@ See uv docs on installation here: [uv installation](https://docs.astral.sh/uv/ge
 uv sync --all-extras
 ```
 
-### Testing
+### Linting & Testing
 ```bash
+uv run pyright
+uv run ruff
 uv run pytest
 ```
 
@@ -155,13 +157,6 @@ uv build
 - [ ] Return usage for fill operations
 - [ ] Prefill examples should fail when encountering unknown type
     - [ ] Example generation should be optional and be simpler (i.e. no special chars etc)
-- [X] Pass additional arguments to stream calls in underlying sdk, such as num tokens, headers etc
-    - [X] Max tokens
-    - [X] Model
-    - [X] Top k
-    - [X] Top p
-    - [X] Temperature
-    - [X] Headers
 - [ ] Allow for trimming historic messages
 - [ ] Error handling
     - [ ] Handle errors from underlying sdks
@@ -180,7 +175,3 @@ uv build
     - [ ] A single method to patch everything
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
-- [X] Default client init from client wrapper, to avoid having to pass the low level client explicitly
-- [X] Remove all interpreter code
-- [X] Extism first class support w. tests
-

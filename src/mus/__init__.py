@@ -1,9 +1,10 @@
-from .llm.types import File as File, Query as Query, ToolUse as ToolUse, ToolResult as ToolResult, Assistant as Assistant, System as System, StringWithMetadata as StringWithMetadata
+import sys
+import importlib.util
+
+from .llm.types import File as File, Query as Query, ToolUse as ToolUse, ToolResult as ToolResult, Assistant as Assistant, System as System, StringWithMetadata as StringWithMetadata, Delta as Delta, DeltaHistory as DeltaHistory, DeltaText as DeltaText, DeltaToolResult as DeltaToolResult, DeltaToolUse as DeltaToolUse
 from .llm.llm import IterableResult as IterableResult, Bot as Bot, LLM as LLM
 from .llm.mock_client import StubLLM as StubLLM
 from .state import State as State, StateReference as StateReference
-import sys
-import importlib.util
 
 # Try to import wasmtime, if it fails, we are probably in a sandbox
 # so we can't import it again
