@@ -1,3 +1,10 @@
+## v0.22.4 (2025-09-27)
+
+### Fix
+
+- handle mapping collections and any
+- handle mapping collections and any
+
 ## v0.22.3 (2025-09-27)
 
 ### Fix
