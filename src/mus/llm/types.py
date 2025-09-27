@@ -93,29 +93,15 @@ class File:
         return File(b64type="image/png", content=img_base64_string)
 
 
-class StringWithMetadata(str):
-    """
-    A string with associated metadata.
-    Useful for passing additional context from tools.
-    The metadata will not be shown to the LLM, but can be used to store extra information, such as presentation hints, source information, etc.
-    """
-    def __new__(cls, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
-        instance = super().__new__(cls, value)
-        instance.metadata = metadata or {}
-        return instance
 
-    def __init__(self, value="", metadata: t.Optional[t.Dict[str, t.Any]] = None):
-        super().__init__()
-        self.metadata = metadata or {}
-
-ToolSimpleReturnValue = t.Union[str, File, StringWithMetadata]
+ToolSimpleReturnValue = t.Union[str, File]
 ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
 
 def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
-    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
+    return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
 
 def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
-    return isinstance(val, str) or isinstance(val, File) or isinstance(val, StringWithMetadata)
+    return isinstance(val, str) or isinstance(val, File)
 
 
 @dataclass
