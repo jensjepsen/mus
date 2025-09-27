@@ -160,9 +160,9 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                         return guest_types.Ok("")
                     try:
                         return guest_types.Ok(input())
-                    except EOFError:
+                    except EOFError as e:
                         print("EOFError: No input provided")
-                        return guest_types.Err("EOFError: No input provided")
+                        raise e
                 
                 def startstream(self, llm: str, kwargs: str) -> guest_types.Result[str, str]:
                     if llm not in llms:
@@ -185,7 +185,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                     if qid in queues:
                         result = queues[qid].get()
                         if isinstance(result, Exception):
-                            return guest_types.Err("Exception: " + str(result))
+                            raise result
                         elif isinstance(result, Stop):
                             del queues[qid]
                             return guest_types.Ok("[[STOP]]")
