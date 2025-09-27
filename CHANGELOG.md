@@ -1,3 +1,9 @@
+## v0.22.5 (2025-09-27)
+
+### Fix
+
+- avoid unnecessary forward refs
+
 ## v0.22.4 (2025-09-27)
 
 ### Fix
