@@ -1,3 +1,9 @@
+## v0.22.9 (2025-09-28)
+
+### Fix
+
+- don't destructure dc completely
+
 ## v0.22.8 (2025-09-28)
 
 ### Fix
