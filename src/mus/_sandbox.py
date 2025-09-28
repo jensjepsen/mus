@@ -15,6 +15,7 @@ from .guest.bindings import Root, RootImports
 from wasmtime import Store, Engine, Config
 import functools
 import json
+import dataclasses as dc
 from .converters.delta import delta_converter
 
 class Stop:
@@ -92,6 +93,12 @@ def sandbox(**kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxDecorator:
 def callable_to_code(callable: SandboxableCallable) -> str:
     """Convert a callable to its source code."""
     return "\n".join(inspect.getsource(callable).split("\n")[2:])
+
+def func_params_to_dataclass(func: t.Callable):
+    """Convert a function's annotations to a dataclass."""
+    annotations = t.get_type_hints(func)
+    fields = [(name, typ, dc.field(default=None)) for name, typ in annotations.items() if name != 'return']
+    return dc.make_dataclass(f"{func.__name__.capitalize()}Params", fields)
 
 SandboxContext = t.Union[LLM, t.Callable[..., t.Any]]
 
@@ -198,8 +205,11 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                 def runfunction(self, name: str, inputs: str) -> guest_types.Result[str, str]:
                     if name not in function_schemas:
                         raise KeyError(f"Function '{name}' not found in context")
+                    params = func_params_to_dataclass(tool_map[name])
+                    
                     try:
-                        inputs_dict = json.loads(inputs)
+                        inputs_dc = delta_converter.structure(json.loads(inputs), params)
+                        inputs_dict = dc.asdict(inputs_dc)
                         # TODO: Validate inputs against function schema
                         result = run_in_new_loop(tool_map[name](**inputs_dict))
                         return guest_types.Ok(json.dumps(result))

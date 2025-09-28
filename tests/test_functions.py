@@ -369,4 +369,4 @@ def test_dataclass_sequence():
     assert "field2" in json_schema["properties"]
     assert json_schema["properties"]["field1"]["type"] == "string"
     assert json_schema["properties"]["field2"]["type"] == "array"
-    assert json_schema["properties"]["field2"]["items"] == {}
+    assert json_schema["properties"]["field2"]["items"] == {}    

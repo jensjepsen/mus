@@ -143,7 +143,7 @@ def invoke_function(name: str, inputs: dict) -> t.Any:
     #       by polling the generator and yielding results back to the caller
     # Question: What happens if the function returns something that is not JSON serializable?
     #           We should probably catch that in the host
-    result = wit_world.runfunction(name, json.dumps(inputs))
+    result = wit_world.runfunction(name, json.dumps(delta_converter.unstructure(inputs)))
     result_obj = json.loads(result)
     return result_obj
 
@@ -167,7 +167,7 @@ def make_function_proxies(functions: t.Dict[str, mus.llm.types.FunctionSchemaNoA
 class WitWorld(wit_world.WitWorld):
   def run(self, code: str, llms: str, functions: str) -> str:
     try:
-      function_list = cattrs.structure(json.loads(functions), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
+      function_list = delta_converter.structure(json.loads(functions), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
       function_proxies = make_function_proxies(function_list)
       indented = code.split("\n")
       code = "    " + "\n    ".join(indented)
