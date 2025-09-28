@@ -99,7 +99,7 @@ async def main():
 
     # Sandboxing a bot
     from mus import sandbox
-    @sandbox()
+    @sandbox(llms={"model": model})
     async def sandbot():
         """
         All the code in this function will be sandboxed,
@@ -121,7 +121,7 @@ async def main():
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
             print(msg, end="")
         
-    await sandbot(llms={"model": model})
+    await sandbot()
 
 asyncio.run(main())
 ```
