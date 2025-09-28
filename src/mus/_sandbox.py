@@ -121,10 +121,20 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
             else:
                 raise ValueError("Must provide either code or a callable")
         
+        config = Config()
+        kwargs = outer_kwargs
+        fuel = kwargs.get("fuel")
+        if fuel:
+            config.consume_fuel = True
+        engine = Engine(config=config)
+        store = Store(engine=engine)
+        if fuel:
+            store.set_fuel(fuel)
+
         code = textwrap.dedent(code)
         async def inner(**context: SandboxContext):
             nonlocal code
-            kwargs = outer_kwargs
+            
             queues = {}
 
             llms = {
@@ -215,15 +225,6 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                         return guest_types.Ok(json.dumps(result))
                     except Exception as e:
                         raise e 
-            config = Config()
-            
-            fuel = kwargs.get("fuel")
-            if fuel:
-                config.consume_fuel = True
-            engine = Engine(config=config)
-            store = Store(engine=engine)
-            if fuel:
-                store.set_fuel(fuel)
             root = Root(store, RootImports(host=Host()))
             
             result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas)))
