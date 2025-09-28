@@ -1,3 +1,9 @@
+## v0.22.8 (2025-09-28)
+
+### Fix
+
+- unstructure and structure sandbox function args properly
+
 ## v0.22.7 (2025-09-27)
 
 ### Fix
