@@ -100,7 +100,7 @@ async def main():
     # Sandboxing a bot
     from mus import sandbox
     @sandbox
-    async def sandbot(model):
+    async def sandbot(llms):
         """
         All the code in this function will be sandboxed,
         and run in a WASM interpreter.
@@ -114,14 +114,14 @@ async def main():
             return exec(code)
 
 
-        @mus.Bot(model=model, functions=[run_some_code])
+        @mus.Bot(model=llms["model"], functions=[run_some_code])
         def danger_bot(task: str):
             return "Generate python code to solve this task: " + task
         
         async for msg in danger_bot("Generate a function that returns the sum of two numbers"):
             print(msg, end="")
         
-    await sandbot(model=model)
+    await sandbot(llms={"model": model})
 
 asyncio.run(main())
 ```
