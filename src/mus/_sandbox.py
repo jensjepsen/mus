@@ -17,6 +17,7 @@ from wasmtime import Store, Engine, Config
 import functools
 import json
 import dataclasses as dc
+import functools
 from .converters.delta import delta_converter
 
 class Stop:
@@ -55,40 +56,28 @@ def run_in_new_loop(coro):
         future = executor.submit(_run)
         return future.result()
 
-    
+LLMs = dict[str, LLM]
 
-class SandboxSharedKwargs(t.TypedDict, total=False):
+
+class SandboxContext(t.TypedDict, total=False):
+    llms: t.NotRequired[LLMs]
+    functions: t.NotRequired[list[t.Callable[..., t.Any]]]
+    tools: t.NotRequired[list[t.Union[ToolCallableType, ToolCallable]]]
+
+
+class SandboxSharedKwargs(SandboxContext, total=False):
     fuel: t.Optional[int]
     stdout: t.Optional[bool]
     stdin: t.Optional[bool]
+    
 
-LLMs = dict[str, LLM]
-
-SandboxableParams = t.ParamSpec("SandboxableParams")
-
-class SandboxableCallable(t.Protocol[SandboxableParams]):
-    async def __call__(self, *args: SandboxableParams.args, **kwargs: SandboxableParams.kwargs) -> None:
+class SandboxableCallable(t.Protocol):
+    async def __call__(self) -> None:
         ...
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, **context: t.Unpack["SandboxContext"]) -> str:
+    async def __call__(self, code: str="") -> str:
         ...
-
-class SandboxDecorator(t.Protocol):
-    def __call__(self, callable: SandboxableCallable, /) -> SandboxReturnCallable:
-        ...
-
-@t.overload
-def sandbox(callable: SandboxableCallable, /) -> SandboxReturnCallable:
-    ...
-
-@t.overload
-def sandbox(*, code: str, **kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxReturnCallable:
-    ...
-
-@t.overload
-def sandbox(**kwargs: t.Unpack[SandboxSharedKwargs]) -> SandboxDecorator:
-    ...
 
 
 def callable_to_code(callable: SandboxableCallable) -> str:
@@ -101,10 +90,6 @@ def func_params_to_dataclass(func: t.Callable):
     fields = [(name, typ, dc.field(default=None)) for name, typ in annotations.items() if name != 'return']
     return dc.make_dataclass(f"{func.__name__.capitalize()}Params", fields)
 
-class SandboxContext(t.TypedDict):
-    llms: t.NotRequired[LLMs]
-    functions: t.NotRequired[list[t.Callable[..., t.Any]]]
-    tools: t.NotRequired[list[t.Union[ToolCallableType, ToolCallable]]]
 
 
 iscallable = callable
@@ -112,146 +97,128 @@ iscallable = callable
 class Empty(t.TypedDict):
     pass
 
-def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[str]=None, **outer_kwargs: t.Unpack[SandboxSharedKwargs]) -> t.Union[SandboxReturnCallable, t.Awaitable[str], SandboxDecorator]:
-    if code and callable:
-        raise ValueError("Cannot provide both code and callable")
+def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
+    config = Config()
+    kwargs = outer_kwargs
+    fuel = kwargs.get("fuel")
+    if fuel:
+        config.consume_fuel = True
+    engine = Engine(config=config)
+    store = Store(engine=engine)
+    if fuel:
+        store.set_fuel(fuel)
     
-    def wrapper(callable: t.Optional[SandboxableCallable]=None, code: t.Optional[str]=None) -> SandboxReturnCallable:
-        if code and callable:
-            raise ValueError("Cannot provide both code and callable")
+    queues = {}
+
+    llms = kwargs.get("llms", {})
+            
+    functions = {
+        func.__name__: func
+        for func in
+        kwargs.get("functions", {})
+    }
+
+    tools = mus.functions.parse_tools(kwargs.get("tools", []))
+
+    tool_map = {
+        **{
+            func.schema["name"]: func.function
+            for func in tools
+        },
+        **{
+            name: func
+            for name, func in functions.items()
+        }
+    }
     
-        if not code:
-            if callable:
-                code = callable_to_code(callable)
+
+    function_schemas = {
+        func.schema["name"]: mus.functions.remove_annotations(func.schema)
+        for func in tools
+    }
+
+    class Host(guest_imports.Host):
+        def print(self, s: str) -> guest_types.Result[None, str]:
+            if not kwargs.get("stdout", False):
+                return guest_types.Ok(None)
+            print(s, end="", flush=True)
+            return guest_types.Ok(None)
+        
+        def input(self) -> guest_types.Result[str, str]:
+            if not kwargs.get("stdin", False):
+                return guest_types.Ok("")
+            try:
+                return guest_types.Ok(input())
+            except EOFError as e:
+                print("EOFError: No input provided")
+                raise e
+        
+        def startstream(self, llm: str, kwargs: str) -> guest_types.Result[str, str]:
+            if llm not in llms:
+                raise KeyError(f"LLM '{llm}' not found in context")
+
+            unpickled_kwargs = delta_converter.structure(json.loads(kwargs), LLMClientStreamArgs[Empty, str])
+            async def main(q_id, queue):
+                try:
+                    async for delta in llms[llm].stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
+                        queue.put(json.dumps(delta_converter.unstructure(delta)))
+                except Exception as e:
+                    queue.put(e)
+                finally:
+                    queue.put(Stop())
+            q_id, q = run_coroutine_in_thread(main)
+            queues[q_id] = q
+            return guest_types.Ok(q_id)
+        
+        def pollstream(self, qid: str) -> guest_types.Result[str, str]:
+            if qid in queues:
+                result = queues[qid].get()
+                if isinstance(result, Exception):
+                    raise result
+                elif isinstance(result, Stop):
+                    del queues[qid]
+                    return guest_types.Ok("[[STOP]]")
+                else:
+                    payload = str(result)
+                    return guest_types.Ok(payload)
             else:
-                raise ValueError("Must provide either code or a callable")
-        
-        config = Config()
-        kwargs = outer_kwargs
-        fuel = kwargs.get("fuel")
-        if fuel:
-            config.consume_fuel = True
-        engine = Engine(config=config)
-        store = Store(engine=engine)
-        if fuel:
-            store.set_fuel(fuel)
-        
-        queues = {}
-
-        code = textwrap.dedent(code)
-        async def inner(**context: t.Unpack["SandboxContext"]):
-            nonlocal code
-            context = context or {}
-
-            llms = context.get("llms", {})
+                return guest_types.Ok("[[STOP]]")
+        def runfunction(self, name: str, inputs: str) -> guest_types.Result[str, str]:
+            if name not in tool_map:
+                raise KeyError(f"Function '{name}' not found in context")
+            params = func_params_to_dataclass(tool_map[name])
             
-            functions = {
-                func.__name__: func
-                for func in
-                context.get("functions", {})
-            }
+            try:
+                inputs_dc = delta_converter.structure(json.loads(inputs), params)
+                inputs_dict = inputs_dc.__dict__
+                # TODO: Validate inputs against function schema
+                
+                result = run_in_new_loop(tool_map[name](**inputs_dict))
+                return guest_types.Ok(json.dumps(result))
+            except Exception as e:
+                raise e 
+    root = Root(store, RootImports(host=Host()))
 
-            tools = mus.functions.parse_tools(context.get("tools", []))
-
-            tool_map = {
-                **{
-                    func.schema["name"]: func.function
-                    for func in tools
-                },
-                **{
-                    name: func
-                    for name, func in functions.items()
-                }
-            }
-            
-
-            function_schemas = {
-                func.schema["name"]: mus.functions.remove_annotations(func.schema)
-                for func in tools
-            }
-
+    @t.overload
+    def wrapper(callable_or_code: SandboxableCallable) -> SandboxReturnCallable: ...
+    @t.overload
+    def wrapper(callable_or_code: str) -> t.Awaitable[str]: ...
+    def wrapper(callable_or_code: t.Union[SandboxableCallable, str]) -> t.Union[SandboxReturnCallable, t.Awaitable[str]]:
+        async def inner(code: str):
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
-            class Host(guest_imports.Host):
-                def print(self, s: str) -> guest_types.Result[None, str]:
-                    if not kwargs.get("stdout", False):
-                        return guest_types.Ok(None)
-                    print(s, end="", flush=True)
-                    return guest_types.Ok(None)
-                
-                def input(self) -> guest_types.Result[str, str]:
-                    if not kwargs.get("stdin", False):
-                        return guest_types.Ok("")
-                    try:
-                        return guest_types.Ok(input())
-                    except EOFError as e:
-                        print("EOFError: No input provided")
-                        raise e
-                
-                def startstream(self, llm: str, kwargs: str) -> guest_types.Result[str, str]:
-                    if llm not in llms:
-                        raise KeyError(f"LLM '{llm}' not found in context")
-
-                    unpickled_kwargs = delta_converter.structure(json.loads(kwargs), LLMClientStreamArgs[Empty, str])
-                    async def main(q_id, queue):
-                        try:
-                            async for delta in llms[llm].stream(**unpickled_kwargs): # type: ignore # we know model is an LLMClient, since we check it above
-                                queue.put(json.dumps(delta_converter.unstructure(delta)))
-                        except Exception as e:
-                            queue.put(e)
-                        finally:
-                            queue.put(Stop())
-                    q_id, q = run_coroutine_in_thread(main)
-                    queues[q_id] = q
-                    return guest_types.Ok(q_id)
-                
-                def pollstream(self, qid: str) -> guest_types.Result[str, str]:
-                    if qid in queues:
-                        result = queues[qid].get()
-                        if isinstance(result, Exception):
-                            raise result
-                        elif isinstance(result, Stop):
-                            del queues[qid]
-                            return guest_types.Ok("[[STOP]]")
-                        else:
-                            payload = str(result)
-                            print("Sending payload", payload)
-                            return guest_types.Ok(payload)
-                    else:
-                        return guest_types.Ok("[[STOP]]")
-                def runfunction(self, name: str, inputs: str) -> guest_types.Result[str, str]:
-                    if name not in tool_map:
-                        raise KeyError(f"Function '{name}' not found in context")
-                    params = func_params_to_dataclass(tool_map[name])
-                    
-                    try:
-                        inputs_dc = delta_converter.structure(json.loads(inputs), params)
-                        inputs_dict = inputs_dc.__dict__
-                        # TODO: Validate inputs against function schema
-                        
-                        result = run_in_new_loop(tool_map[name](**inputs_dict))
-                        return guest_types.Ok(json.dumps(result))
-                    except Exception as e:
-                        raise e 
-            root = Root(store, RootImports(host=Host()))
+            code = textwrap.dedent(code)
             
             result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas), functions=list(functions.keys())))
             if result.get("status") == "error":
                 raise RuntimeError(result.get("message", "Unknown error in sandbox"))
             return result.get("message", "No message returned from sandbox")
 
-        if callable:
-            return functools.wraps(callable)(inner) # type: ignore # we know callable is a SandboxableCallable
+        if iscallable(callable_or_code):
+            return functools.wraps(callable_or_code)(functools.partial(inner, code=callable_to_code(callable_or_code)))
+        elif isinstance(callable_or_code, str):
+            return inner(callable_or_code)
         else:
-            return inner
-    
-    if not code and not callable:
-        # If no code or callable is provided, return a decorator
-        return wrapper
-    elif callable:
-        # If a callable is provided, return a callable that runs it
-        return wrapper(callable=callable)
-    else: 
-        # If code is provided, run it directly
-        return wrapper(code=code)
-    
+            raise ValueError("Must provide either code or a callable or code string")
+            
+    return wrapper

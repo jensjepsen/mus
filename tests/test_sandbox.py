@@ -22,12 +22,13 @@ async def test_sandbox_simple(mock_client):
             async for delta in bot("Test query"):
                 print(str(delta))
             """
-
-    await sandbox(code=code)(
+    sb = sandbox(
         llms={
             "model": mock_client
         }
     )
+
+    res = await sb(code)
     assert mock_client.stream.called
 
 @pytest.mark.asyncio
@@ -35,7 +36,8 @@ async def test_sandbox_no_model(capsys):
     code = """\
             print("This should not run without a model")
             """
-    await sandbox(code=code, stdout=True)()
+    sb = sandbox(stdout=True)
+    await sb(code)
     captured = capsys.readouterr()
     assert captured.out == "This should not run without a model\n"
 
@@ -51,39 +53,24 @@ async def test_sandbox_no_model(capsys):
 
 @pytest.mark.asyncio
 async def test_sandbox_as_decorator(mock_client):
-    @sandbox
-    async def decorated_func(model: LLM):
+    
+    @sandbox(llms={"mock_client": mock_client})
+    async def decorated_func():
         """A simple bot that uses the LLMClient."""
 
         import mus
-        bot = mus.Bot(model=model)
+        bot = mus.Bot(model=mock_client)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
 
-    await decorated_func(llms={"model": mock_client})
+    await decorated_func()
 
     # Check that the function is decorated correctly
     assert decorated_func.__name__ == "decorated_func"
     assert decorated_func.__doc__ == "A simple bot that uses the LLMClient."
     
     assert mock_client.stream.called
-
-    @sandbox
-    async def decorated_func_with_wrapper(model: LLM):
-        """A simple bot that uses the LLMClient with a wrapper."""
-
-        import mus
-        bot = mus.Bot(model=model)
-        await (bot("Test query").string())
-        async for delta in bot("Test query with"):
-            print(str(delta))
-    await decorated_func_with_wrapper(llms={"model": mock_client})
-
-    # Check that the function is decorated correctly
-    assert decorated_func_with_wrapper.__name__ == "decorated_func_with_wrapper"
-    assert decorated_func_with_wrapper.__doc__ == "A simple bot that uses the LLMClient with a wrapper."
-
 
 @pytest.mark.asyncio
 async def test_sandbox_with_tools(capsys, mock_client):
@@ -102,7 +89,7 @@ async def test_sandbox_with_tools(capsys, mock_client):
             async for delta in bot("Call test_function with a=2, b='world'"):
                 print(str(delta))
             """
-    await sandbox(code=code, stdout=True)(llms={"model": mock_client})
+    await sandbox(stdout=True, llms={"model": mock_client})(code)
     captured = capsys.readouterr()
     assert "Function called with a=2, b=world" in captured.out
     assert "Received a=2, b=world" in captured.out
@@ -118,14 +105,14 @@ async def test_sandbox_with_fuel(mock_client):
     
     # Test with insufficient fuel
     with pytest.raises(Trap):
-        await sandbox(code=code, fuel=10)(llms={"model": mock_client})
+        await sandbox(fuel=10, llms={"model": mock_client})(code)
 
     # Test with sufficient fuel
-    await sandbox(code=code, fuel=100_000_000)(llms={"model": mock_client})
+    await sandbox(fuel=100_000_000, llms={"model": mock_client})(code)
     assert mock_client.stream.called
 
-    @sandbox(fuel=10)
-    async def decorated_func_with_fuel(model: LLM):
+    @sandbox(fuel=10, llms={"model": mock_client})
+    async def decorated_func_with_fuel():
         import mus
         bot = mus.Bot(model=model)
         await (bot("Test query").string())
@@ -133,18 +120,16 @@ async def test_sandbox_with_fuel(mock_client):
             print(str(delta))
     
     with pytest.raises(Trap):
-        await decorated_func_with_fuel(llms={
-            "model": mock_client
-        })
+        await decorated_func_with_fuel()
 
-    @sandbox(fuel=100_000_000)
-    async def decorated_func_with_sufficient_fuel(model: LLM):
+    @sandbox(fuel=100_000_000, llms={"model": mock_client})
+    async def decorated_func_with_sufficient_fuel():
         import mus
         bot = mus.Bot(model=model)
         await (bot("Test query").string())
         async for delta in bot("Test query"):
             print(str(delta))
-    await decorated_func_with_sufficient_fuel(llms={"model": mock_client})
+    await decorated_func_with_sufficient_fuel()
 
 @pytest.mark.asyncio
 async def test_sandbox_stdout(capsys):
@@ -152,7 +137,7 @@ async def test_sandbox_stdout(capsys):
             print("Hello world!")
             """
     
-    await sandbox(code=code, stdout=True)()
+    await sandbox(stdout=True)(code)
     captured = capsys.readouterr()
     assert captured.out == "Hello world!\n", "No output captured"
 
@@ -170,9 +155,9 @@ async def test_sandbox_no_stdout(capsys):
             print("This should not be printed")
             """
     
-    await sandbox(code=code)()
+    await sandbox()(code)
 
-    @sandbox
+    @sandbox()
     async def decorated_func_without_stdout():
         print("This should also not be printed")
     
@@ -193,7 +178,7 @@ async def test_sandbox_multiple_models(mock_client):
             async for delta in bot2("Test query 2"):
                 print(str(delta))
             """
-    await sandbox(code=code)(llms={"model1": mock_client, "model2": another_mock_client})
+    await sandbox(llms={"model1": mock_client, "model2": another_mock_client})(code)
     assert mock_client.stream.called
     assert another_mock_client.stream.called
 
@@ -212,7 +197,7 @@ async def test_sandbox_stdin(capsys, mock_stdin):
             """
     mock_stdin("Test input")
 
-    await sandbox(code=code, stdin=True, stdout=True)()
+    await sandbox(stdin=True, stdout=True)(code)
     
     
     captured = capsys.readouterr()
@@ -236,12 +221,12 @@ async def test_sandbox_call_external_function(capsys):
         """Hello"""
         return f"Received a={a}, b={b}"
     
-    @sandbox(stdout=True)
-    async def decorated_func_with_external_function(test_function):
+    @sandbox(stdout=True, functions=[test_function])
+    async def decorated_func_with_external_function():
         result = await test_function(a=2, b="decorated")
         print(f"Function result: {result}")
 
-    await decorated_func_with_external_function(functions=[test_function])
+    await decorated_func_with_external_function()
     captured = capsys.readouterr()
     assert 'Function result: Received a=2, b=decorated\n' in captured.out
 
@@ -255,7 +240,7 @@ async def test_sandbox_call_external_function_in_code(capsys):
             result = await test_function(a=3, b="code")
             print(f"Function result: {result}")
             """
-    await sandbox(code=code, stdout=True)(functions=[test_function])
+    await sandbox(functions=[test_function], stdout=True)(code)
     captured = capsys.readouterr()
     
     assert captured.out == 'Function result: Received a=3, b=code\n'
@@ -267,10 +252,10 @@ async def test_sandbox_call_nonexistent_function():
             print(f"Function result: {result}")
             """
     with pytest.raises(RuntimeError) as excinfo:
-        await sandbox(code=code)()
+        await sandbox()(code)
     assert "name 'nonexistent_function' is not defined" in str(excinfo.value)
 
-    @sandbox
+    @sandbox()
     async def decorated_func_with_nonexistent_function():
         result = nonexistent_function(a=2, b="decorated")
         print(f"Function result: {result}")
@@ -292,17 +277,17 @@ async def test_sandbox_use_external_function_as_tool(capsys, mock_client):
         Delta(content=DeltaToolUse(data=ToolUse(name="tool", input={"a": 5, "b": "tool"}, id="tool1"))),
     ])
 
-    @sandbox(stdout=True)
-    async def decorated_func_with_tool(tool, model):
+    @sandbox(stdout=True, tools=[tool], llms={"mock_client": mock_client})
+    async def decorated_func_with_tool():
         await tool(a=1, b="test")  # direct call to tool to ensure it's in scope
         print("Starting bot with tool")
         import mus
-        bot = mus.Bot(model=model, functions=[tool])
+        bot = mus.Bot(model=mock_client, functions=[tool])
         async for delta in bot("Call test_function with a=5, b='tool'"):
             print(str(delta))
         
 
-    await decorated_func_with_tool(tools=[tool], llms={"model": mock_client})
+    await decorated_func_with_tool()
     captured = capsys.readouterr()
     #assert "Function 'tool' not found in context" not in captured.out
     #assert "Received a=5, b=tool" in captured.out
