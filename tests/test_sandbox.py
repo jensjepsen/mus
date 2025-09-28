@@ -32,14 +32,33 @@ async def test_sandbox_simple(mock_client):
     assert mock_client.stream.called
 
 @pytest.mark.asyncio
+async def test_sandbox_inputs(capsys):
+    code = """\
+            print("Got some kwargs", a, b, c, type(a), type(a["d"]), type(b), type(c), type(c[0]))
+            """
+    sb = sandbox(stdout=True)
+    await sb(code, a=dict(d=5), b=10, c=[123, 456, 789])
+    captured = capsys.readouterr()
+    assert captured.out == "Got some kwargs {'d': 5} 10 [123, 456, 789] <class 'dict'> <class 'int'> <class 'int'> <class 'list'> <class 'int'>\n"
+
+    @sandbox(stdout=True)
+    async def decorated_func_without_model():
+        """A simple bot that does not use the LLMClient."""
+        print("This should also run without a model")
+    
+    await decorated_func_without_model(a=10)
+    captured = capsys.readouterr()
+    assert captured.out == "This should also run without a model\n"
+
+@pytest.mark.asyncio
 async def test_sandbox_no_model(capsys):
     code = """\
-            print("This should not run without a model")
+            print("This should run without a model")
             """
     sb = sandbox(stdout=True)
     await sb(code)
     captured = capsys.readouterr()
-    assert captured.out == "This should not run without a model\n"
+    assert captured.out == "This should run without a model\n"
 
     @sandbox(stdout=True)
     async def decorated_func_without_model():

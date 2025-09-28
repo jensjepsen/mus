@@ -41,7 +41,6 @@ def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
     thread.start()
     return q_id, q
 
-
 def run_in_new_loop(coro):
     def _run():
         loop = asyncio.new_event_loop()
@@ -58,27 +57,23 @@ def run_in_new_loop(coro):
 
 LLMs = dict[str, LLM]
 
-
 class SandboxContext(t.TypedDict, total=False):
     llms: t.NotRequired[LLMs]
     functions: t.NotRequired[list[t.Callable[..., t.Any]]]
     tools: t.NotRequired[list[t.Union[ToolCallableType, ToolCallable]]]
-
 
 class SandboxSharedKwargs(SandboxContext, total=False):
     fuel: t.Optional[int]
     stdout: t.Optional[bool]
     stdin: t.Optional[bool]
     
-
 class SandboxableCallable(t.Protocol):
     async def __call__(self) -> None:
         ...
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, code: str="") -> str:
+    async def __call__(self, **inputs: t.Optional[t.Any]) -> str:
         ...
-
 
 def callable_to_code(callable: SandboxableCallable) -> str:
     """Convert a callable to its source code."""
@@ -89,10 +84,6 @@ def func_params_to_dataclass(func: t.Callable):
     annotations = t.get_type_hints(func)
     fields = [(name, typ, dc.field(default=None)) for name, typ in annotations.items() if name != 'return']
     return dc.make_dataclass(f"{func.__name__.capitalize()}Params", fields)
-
-
-
-iscallable = callable
 
 class Empty(t.TypedDict):
     pass
@@ -131,7 +122,6 @@ def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
         }
     }
     
-
     function_schemas = {
         func.schema["name"]: mus.functions.remove_annotations(func.schema)
         for func in tools
@@ -202,22 +192,23 @@ def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
     @t.overload
     def wrapper(callable_or_code: SandboxableCallable) -> SandboxReturnCallable: ...
     @t.overload
-    def wrapper(callable_or_code: str) -> t.Awaitable[str]: ...
-    def wrapper(callable_or_code: t.Union[SandboxableCallable, str]) -> t.Union[SandboxReturnCallable, t.Awaitable[str]]:
-        async def inner(code: str):
+    def wrapper(callable_or_code: str, **inputs: t.Optional[t.Any]) -> t.Awaitable[str]: ...
+    def wrapper(callable_or_code: t.Union[SandboxableCallable, str], **inputs: t.Optional[t.Any]) -> t.Union[SandboxReturnCallable, t.Awaitable[str]]:
+        async def inner(code: str, **inputs: t.Optional[t.Any]) -> str:
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
             code = textwrap.dedent(code)
-            
-            result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas), functions=list(functions.keys())))
+            serialized_inputs = json.dumps(delta_converter.unstructure(inputs))
+            result = json.loads(root.run(store, code, serialized_inputs, list(llms.keys()), json.dumps(function_schemas), functions=list(functions.keys())))
             if result.get("status") == "error":
                 raise RuntimeError(result.get("message", "Unknown error in sandbox"))
             return result.get("message", "No message returned from sandbox")
 
-        if iscallable(callable_or_code):
-            return functools.wraps(callable_or_code)(functools.partial(inner, code=callable_to_code(callable_or_code)))
+        if callable(callable_or_code):
+            inner_with_code = functools.partial(inner, callable_to_code(callable_or_code))
+            return functools.wraps(callable_or_code)(inner_with_code)
         elif isinstance(callable_or_code, str):
-            return inner(callable_or_code)
+            return inner(callable_or_code, **inputs)
         else:
             raise ValueError("Must provide either code or a callable or code string")
             

@@ -6,5 +6,5 @@ world muswasm {
   import print: func(s: string) -> result<_, string>;
   import input: func() -> result<string, string>;
   import runfunction: func(name: string, inputs: string) -> result<string, string>;
-  export run: func(code: string, llms: list<string>, tools: string, functions: list<string>) -> string;
+  export run: func(code: string, inputs: string, llms: list<string>, tools: string, functions: list<string>) -> string;
 }

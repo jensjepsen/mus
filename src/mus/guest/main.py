@@ -175,10 +175,10 @@ def make_function_proxies(functions: t.List[str]) -> dict[str, t.Callable[..., t
   return proxies
 
 class WitWorld(wit_world.WitWorld):
-  def run(self, code: str, llms: list[str], tools: str, functions: list[str]) -> str:
+  def run(self, code: str, inputs: str, llms: list[str], tools: str, functions: list[str]) -> str:
     try:
       tools_list = delta_converter.structure(json.loads(tools), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
-
+      deserialized_inputs = delta_converter.structure(json.loads(inputs), t.Dict[str, t.Any])
       tool_proxies = make_tool_proxies(tools_list)
       function_proxies = make_function_proxies(functions)
       indented = code.split("\n")
@@ -196,7 +196,8 @@ run_coro(main())
         "input": wit_world.input,
         **llm_proxies,
         **function_proxies,
-        **tool_proxies
+        **tool_proxies,
+        **deserialized_inputs
       }
       
       with redirect_stdout(wit_world.print):
