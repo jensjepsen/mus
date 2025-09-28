@@ -1,3 +1,13 @@
+## v0.23.0 (2025-09-28)
+
+### Feat
+
+- sandbox inputs
+- sandbox inputs
+- sandbox inputs
+- sandbox inputs
+- refactor sandbox for speed
+
 ## v0.22.10 (2025-09-28)
 
 ### Fix
