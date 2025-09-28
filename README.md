@@ -99,7 +99,7 @@ async def main():
 
     # Sandboxing a bot
     from mus import sandbox
-    @sandbox
+    @sandbox()
     async def sandbot():
         """
         All the code in this function will be sandboxed,
