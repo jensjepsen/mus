@@ -17,7 +17,6 @@ from wasmtime import Store, Engine, Config
 import functools
 import json
 import dataclasses as dc
-import functools
 from .converters.delta import delta_converter
 
 class Stop:
