@@ -219,7 +219,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                     
                     try:
                         inputs_dc = delta_converter.structure(json.loads(inputs), params)
-                        inputs_dict = dc.asdict(inputs_dc)
+                        inputs_dict = inputs_dc.__dict__
                         # TODO: Validate inputs against function schema
                         result = run_in_new_loop(tool_map[name](**inputs_dict))
                         return guest_types.Ok(json.dumps(result))
