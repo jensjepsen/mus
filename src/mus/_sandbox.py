@@ -5,7 +5,8 @@ import uuid
 import typing as t
 import inspect
 from .llm.llm import LLM
-from .llm.types import LLMClientStreamArgs
+from .llm.types import LLMClientStreamArgs, ToolCallableType
+from .functions import ToolCallable
 from concurrent.futures import ThreadPoolExecutor
 import mus.functions
 import textwrap
@@ -70,7 +71,7 @@ class SandboxableCallable(t.Protocol[SandboxableParams]):
         ...
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, **kwargs: t.Any) -> str:
+    async def __call__(self, **context: t.Unpack["SandboxContext"]) -> str:
         ...
 
 class SandboxDecorator(t.Protocol):
@@ -100,7 +101,11 @@ def func_params_to_dataclass(func: t.Callable):
     fields = [(name, typ, dc.field(default=None)) for name, typ in annotations.items() if name != 'return']
     return dc.make_dataclass(f"{func.__name__.capitalize()}Params", fields)
 
-SandboxContext = t.Union[LLM, t.Callable[..., t.Any]]
+class SandboxContext(t.TypedDict):
+    llms: t.NotRequired[LLMs]
+    functions: t.NotRequired[list[t.Callable[..., t.Any]]]
+    tools: t.NotRequired[list[t.Union[ToolCallableType, ToolCallable]]]
+
 
 iscallable = callable
 
@@ -130,33 +135,35 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
         store = Store(engine=engine)
         if fuel:
             store.set_fuel(fuel)
+        
+        queues = {}
 
         code = textwrap.dedent(code)
-        async def inner(**context: SandboxContext):
+        async def inner(**context: t.Unpack["SandboxContext"]):
             nonlocal code
-            
-            queues = {}
+            context = context or {}
 
-            llms = {
-                name: llm
-                for name, llm
-                in context.items()
-                if hasattr(llm, "stream")
+            llms = context.get("llms", {})
+            
+            functions = {
+                func.__name__: func
+                for func in
+                context.get("functions", {})
             }
 
-            functions = [
-                func
-                for name, func
-                in context.items()
-                if not hasattr(func, "stream") and iscallable(func)
-            ]
-
-            tools = mus.functions.parse_tools(functions)
+            tools = mus.functions.parse_tools(context.get("tools", []))
 
             tool_map = {
-                func.schema["name"]: func.function
-                for func in tools
+                **{
+                    func.schema["name"]: func.function
+                    for func in tools
+                },
+                **{
+                    name: func
+                    for name, func in functions.items()
+                }
             }
+            
 
             function_schemas = {
                 func.schema["name"]: mus.functions.remove_annotations(func.schema)
@@ -213,7 +220,7 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                     else:
                         return guest_types.Ok("[[STOP]]")
                 def runfunction(self, name: str, inputs: str) -> guest_types.Result[str, str]:
-                    if name not in function_schemas:
+                    if name not in tool_map:
                         raise KeyError(f"Function '{name}' not found in context")
                     params = func_params_to_dataclass(tool_map[name])
                     
@@ -221,13 +228,14 @@ def sandbox(callable: t.Optional[SandboxableCallable]=None, *, code: t.Optional[
                         inputs_dc = delta_converter.structure(json.loads(inputs), params)
                         inputs_dict = inputs_dc.__dict__
                         # TODO: Validate inputs against function schema
+                        
                         result = run_in_new_loop(tool_map[name](**inputs_dict))
                         return guest_types.Ok(json.dumps(result))
                     except Exception as e:
                         raise e 
             root = Root(store, RootImports(host=Host()))
             
-            result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas)))
+            result = json.loads(root.run(store, code, list(llms.keys()), json.dumps(function_schemas), functions=list(functions.keys())))
             if result.get("status") == "error":
                 raise RuntimeError(result.get("message", "Unknown error in sandbox"))
             return result.get("message", "No message returned from sandbox")

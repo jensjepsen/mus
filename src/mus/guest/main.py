@@ -148,9 +148,9 @@ def invoke_function(name: str, inputs: dict) -> t.Any:
     return result_obj
 
 
-def make_function_proxies(functions: t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations]) -> dict[str, t.Callable[..., t.Any]]:
+def make_tool_proxies(tools: t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations]) -> dict[str, t.Callable[..., t.Any]]:
   proxies = {}
-  for name, func in functions.items():
+  for name, func in tools.items():
     def make_proxy(f: mus.llm.types.FunctionSchemaNoAnnotations) -> ToolCallableWithCall:
       async def proxy(*args, **inputs):
         return invoke_function(f["name"], inputs)
@@ -164,11 +164,23 @@ def make_function_proxies(functions: t.Dict[str, mus.llm.types.FunctionSchemaNoA
     proxies[name] = make_proxy(func)
   return proxies
 
+def make_function_proxies(functions: t.List[str]) -> dict[str, t.Callable[..., t.Any]]:
+  proxies = {}
+  for name in functions:
+    def make_proxy(f_name: str) -> t.Callable[..., t.Any]:
+      async def proxy(*args, **inputs):
+        return invoke_function(f_name, inputs)
+      return proxy
+    proxies[name] = make_proxy(name)
+  return proxies
+
 class WitWorld(wit_world.WitWorld):
-  def run(self, code: str, llms: str, functions: str) -> str:
+  def run(self, code: str, llms: list[str], tools: str, functions: list[str]) -> str:
     try:
-      function_list = delta_converter.structure(json.loads(functions), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
-      function_proxies = make_function_proxies(function_list)
+      tools_list = delta_converter.structure(json.loads(tools), t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations])
+
+      tool_proxies = make_tool_proxies(tools_list)
+      function_proxies = make_function_proxies(functions)
       indented = code.split("\n")
       code = "    " + "\n    ".join(indented)
       code_with_run = f"""\
@@ -177,12 +189,14 @@ async def main():
 {code}
 run_coro(main())
 """
+      
       llm_proxies = {name: ProxyClient(name) for name in llms}
       globals = {
         "run_coro": run_coro,
         "input": wit_world.input,
         **llm_proxies,
         **function_proxies,
+        **tool_proxies
       }
       
       with redirect_stdout(wit_world.print):
