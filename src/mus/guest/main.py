@@ -144,9 +144,10 @@ def invoke_function(name: str, inputs: dict) -> t.Any:
     # Question: What happens if the function returns something that is not JSON serializable?
     #           We should probably catch that in the host
     result = wit_world.runfunction(name, json.dumps(delta_converter.unstructure(inputs)))
-    result_obj = json.loads(result)
-    return result_obj
-
+    while delta := wit_world.pollstream(result):
+      if delta == "[[STOP]]":
+        break
+      return json.loads(delta)
 
 def make_tool_proxies(tools: t.Dict[str, mus.llm.types.FunctionSchemaNoAnnotations]) -> dict[str, t.Callable[..., t.Any]]:
   proxies = {}

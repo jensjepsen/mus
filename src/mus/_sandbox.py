@@ -40,20 +40,6 @@ def run_coroutine_in_thread(coroutine_func, *args, **kwargs):
     thread.start()
     return q_id, q
 
-def run_in_new_loop(coro):
-    def _run():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(coro)
-            return result
-        finally:
-            loop.close()
-    
-    with ThreadPoolExecutor() as executor:
-        future = executor.submit(_run)
-        return future.result()
-
 LLMs = dict[str, LLM]
 
 class SandboxContext(t.TypedDict, total=False):
@@ -181,11 +167,20 @@ def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
                 inputs_dc = delta_converter.structure(json.loads(inputs), params)
                 inputs_dict = inputs_dc.__dict__
                 # TODO: Validate inputs against function schema
-                
-                result = run_in_new_loop(tool_map[name](**inputs_dict))
-                return guest_types.Ok(json.dumps(result))
+                async def main(q_id, queue):
+                    try:
+                        result = json.dumps(await tool_map[name](**inputs_dict))
+                        queue.put(result)
+                    except Exception as e:
+                        queue.put(e)
+                    finally:
+                        queue.put(Stop())
+
+                qid, queue = run_coroutine_in_thread(main)
+                queues[qid] = queue
+                return guest_types.Ok(qid)
             except Exception as e:
-                raise e 
+                raise e
     root = Root(store, RootImports(host=Host()))
 
     @t.overload

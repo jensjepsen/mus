@@ -150,6 +150,7 @@ uv build
 ```
 
 ## TODO
+- [ ] BUG: Sandbox breaks with unhelpful error when trying to use uknown classes (i.e. forgetting to import mus, and doing mus.Delta)
 - [ ] Figure out mistral prefilling (w. prefix=True)
 - [ ] Test merging and pruning deltas 
 - [ ] Fill retry on bad LLM output
