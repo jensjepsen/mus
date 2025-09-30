@@ -7,7 +7,6 @@ import inspect
 from .llm.llm import LLM
 from .llm.types import LLMClientStreamArgs, ToolCallableType
 from .functions import ToolCallable
-from concurrent.futures import ThreadPoolExecutor
 import mus.functions
 import textwrap
 from .guest.bindings import imports as guest_imports
