@@ -1,3 +1,10 @@
+## v0.23.1 (2025-09-30)
+
+### Fix
+
+- poll instead of creating new loop
+- poll instead of creating new loop
+
 ## v0.23.0 (2025-09-28)
 
 ### Feat
