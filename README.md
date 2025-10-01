@@ -150,6 +150,7 @@ uv build
 ```
 
 ## TODO
+- [ ] BUG: Sandbox external functions fail silently, when using positional args - should either work with pos args, or enforce kwargs
 - [ ] BUG: Sandbox breaks with unhelpful error when trying to use uknown classes (i.e. forgetting to import mus, and doing mus.Delta)
 - [ ] Figure out mistral prefilling (w. prefix=True)
 - [ ] Test merging and pruning deltas 
