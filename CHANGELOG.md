@@ -1,3 +1,9 @@
+## v0.24.0 (2025-10-03)
+
+### Feat
+
+- allow structured return from sandbox
+
 ## v0.23.1 (2025-09-30)
 
 ### Fix
