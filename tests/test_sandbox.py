@@ -69,6 +69,26 @@ async def test_sandbox_no_model(capsys):
     captured = capsys.readouterr()
     assert captured.out == "This should also run without a model\n"
 
+@pytest.mark.asyncio
+async def test_sandbox_return_dict():
+    code = """\
+            result = {"key1": "value1", "key2": 42}
+            print("Returning a dict")
+            return result
+            """
+    sb = sandbox(stdout=True)
+    result = await sb(code)
+    assert result == {"key1": "value1", "key2": 42}
+
+    @sandbox(stdout=True)
+    async def decorated_func_returning_dict():
+        """A simple bot that returns a dict."""
+        print("Returning a dict from decorated function")
+        return {"foo": "bar", "baz": 123}
+
+    result = await decorated_func_returning_dict()
+    assert result == {"foo": "bar", "baz": 123}
+
 
 @pytest.mark.asyncio
 async def test_sandbox_as_decorator(mock_client):

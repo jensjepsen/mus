@@ -188,7 +188,7 @@ class WitWorld(wit_world.WitWorld):
 import mus
 async def main():
 {code}
-run_coro(main())
+result = run_coro(main())
 """
       
       llm_proxies = {name: ProxyClient(name) for name in llms}
@@ -203,6 +203,9 @@ run_coro(main())
       
       with redirect_stdout(wit_world.print):
         exec(code_with_run, globals)
-      return json.dumps({"status": "success", "message": "Done"})
+      if "result" in globals:
+        return json.dumps({"status": "success", "message": "Done", "result": delta_converter.unstructure(globals["result"])})
+      
+      return json.dumps({"status": "success", "message": "Done", "result": None})
     except Exception as e:
       return json.dumps({"status": "error", "message": str(e)})

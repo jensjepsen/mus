@@ -50,13 +50,16 @@ class SandboxSharedKwargs(SandboxContext, total=False):
     fuel: t.Optional[int]
     stdout: t.Optional[bool]
     stdin: t.Optional[bool]
-    
+
+SandboxReturnValue = dict[str, t.Any]
+
 class SandboxableCallable(t.Protocol):
-    async def __call__(self) -> None:
-        ...
+    async def __call__(self) -> t.Optional[SandboxReturnValue]: ...
+
+
 
 class SandboxReturnCallable(t.Protocol):
-    async def __call__(self, **inputs: t.Optional[t.Any]) -> str:
+    async def __call__(self, **inputs: t.Optional[t.Any]) -> SandboxReturnValue:
         ...
 
 def callable_to_code(callable: SandboxableCallable) -> str:
@@ -185,9 +188,9 @@ def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
     @t.overload
     def wrapper(callable_or_code: SandboxableCallable) -> SandboxReturnCallable: ...
     @t.overload
-    def wrapper(callable_or_code: str, **inputs: t.Optional[t.Any]) -> t.Awaitable[str]: ...
-    def wrapper(callable_or_code: t.Union[SandboxableCallable, str], **inputs: t.Optional[t.Any]) -> t.Union[SandboxReturnCallable, t.Awaitable[str]]:
-        async def inner(code: str, **inputs: t.Optional[t.Any]) -> str:
+    def wrapper(callable_or_code: str, **inputs: t.Optional[t.Any]) -> t.Awaitable[SandboxReturnValue]: ...
+    def wrapper(callable_or_code: t.Union[SandboxableCallable, str], **inputs: t.Optional[t.Any]) -> t.Union[SandboxReturnCallable, t.Awaitable[SandboxReturnValue]]:
+        async def inner(code: str, **inputs: t.Optional[t.Any]) -> SandboxReturnValue:
             if not code:
                 raise ValueError("No code provided to run in the sandbox")
             code = textwrap.dedent(code)
@@ -195,7 +198,10 @@ def sandbox(**outer_kwargs: t.Unpack[SandboxSharedKwargs]):
             result = json.loads(root.run(store, code, serialized_inputs, list(llms.keys()), json.dumps(function_schemas), functions=list(functions.keys())))
             if result.get("status") == "error":
                 raise RuntimeError(result.get("message", "Unknown error in sandbox"))
-            return result.get("message", "No message returned from sandbox")
+            elif result.get("status") == "success":
+                return delta_converter.structure(result.get("result", {}) or {}, dict[str, t.Any])
+            else:
+                raise RuntimeError(f"Invalid result from sandbox {result}")
 
         if callable(callable_or_code):
             inner_with_code = functools.partial(inner, callable_to_code(callable_or_code))
