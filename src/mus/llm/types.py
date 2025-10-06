@@ -97,11 +97,6 @@ class File:
 ToolSimpleReturnValue = t.Union[str, File]
 ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
 
-@dataclass
-class ToolValue():
-    val: ToolReturnValue
-    metadata: t.Optional[t.Dict[str, t.Any]] = None
-
 @t.runtime_checkable
 class ToolCallableType(t.Protocol):
     __name__: str
@@ -123,9 +118,22 @@ class ToolUse:
     input: t.Mapping[str, t.Any]
 
 @dataclass
+class ToolValue():
+    val: ToolReturnValue
+    metadata: t.Optional[t.Dict[str, t.Any]] = None
+
+def ensure_tool_value(val: t.Any) -> ToolValue:
+    if isinstance(val, ToolValue):
+        return val
+    elif is_tool_return_value(val):
+        return ToolValue(val=val)
+    else:
+        raise ValueError(f"Invalid tool return value: {val}")
+
+@dataclass
 class ToolResult:
     id: str
-    content: ToolReturnValue
+    content: ToolValue
 
 @dataclass
 class DeltaText():

@@ -6,7 +6,7 @@ import json
 from mus import Bot
 from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
-from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage
+from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage, ToolValue
 
 @dataclass
 class TestStructure:
@@ -65,7 +65,7 @@ async def test_llm_with_tool_use(mock_model):
     assert isinstance(result[1].content.data, ToolUse)
 
     assert isinstance(result[2].content.data, ToolResult)
-    assert result[2].content.data.content == "Tool result"
+    assert result[2].content.data.content.val == "Tool result"
 
     assert isinstance(result[3].content, DeltaText)
     assert result[3].content.data == "Tool used"
@@ -688,7 +688,7 @@ async def test_usage_with_tool_calls(mock_model):
     assert result[1].content.data.input == {"param1": "asdf", "param2": 10}
     
     assert isinstance(result[2].content.data, ToolResult)
-    assert result[2].content.data.content == "Tool called with asdf and 10"
+    assert result[2].content.data.content.val == "Tool called with asdf and 10"
 
     assert called, "Tool function was not called"
     

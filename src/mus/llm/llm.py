@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory
+from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
@@ -191,7 +191,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             history = history + [msg]
             if isinstance(msg.content, DeltaToolUse):
                 print("Invoking tool:", msg.content.data.name, "with input:", msg.content.data.input)
-                func_result = await invoke_function(msg.content.data.name, msg.content.data.input, func_map)
+                func_result = ensure_tool_value(await invoke_function(msg.content.data.name, msg.content.data.input, func_map))
                 fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
                 yield fd
                 history.append(fd)
