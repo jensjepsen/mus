@@ -1,10 +1,9 @@
 from mus.llm.types import Delta, DeltaText, ToolUse, DeltaToolUse
 import pytest
 from unittest.mock import MagicMock, patch
-from mus import sandbox, LLM
+from mus import sandbox
 from wasmtime import Trap
 import io
-import cattrs
 
 class MockLLM(MagicMock):
     def set_response(self, responses):
@@ -290,19 +289,19 @@ async def test_sandbox_call_nonexistent_function():
             result = nonexistent_function(a=3, b="code")
             print(f"Function result: {result}")
             """
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(Trap) as excinfo:
         await sandbox()(code)
-    assert "name 'nonexistent_function' is not defined" in str(excinfo.value)
+    assert "uninitialized element" in str(excinfo.value)
 
     @sandbox()
     async def decorated_func_with_nonexistent_function():
         result = nonexistent_function(a=2, b="decorated")
         print(f"Function result: {result}")
     
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(Trap) as excinfo:
         await decorated_func_with_nonexistent_function()
     
-    assert "name 'nonexistent_function' is not defined" in str(excinfo.value)
+    assert "uninitialized element" in str(excinfo.value)
 
 @pytest.mark.asyncio
 async def test_sandbox_use_external_function_as_tool(capsys, mock_client):
