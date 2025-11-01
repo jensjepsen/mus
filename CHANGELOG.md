@@ -1,3 +1,9 @@
+## v0.24.3 (2025-11-01)
+
+### Fix
+
+- use toolvalue in llm clients
+
 ## v0.24.2 (2025-11-01)
 
 ### Fix
