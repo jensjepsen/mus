@@ -122,7 +122,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                     content=[at.ToolUseBlockParam(
                         type="tool_use",
                         name=delta.content.data.name,
-                        input=delta.content.data.input,
+                        input=dict(delta.content.data.input),
                         id=delta.content.data.id
                     )]
                 ))
