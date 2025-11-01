@@ -12,7 +12,7 @@ from mus.llm.bedrock import (
     merge_messages,
     deltas_to_messages,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue
 from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
@@ -106,17 +106,17 @@ def test_query_to_messages():
     assert messages[2]['role'] == 'user'
 
 def test_tool_result_to_content():
-    str_result = ToolResult(id="1", content="text result")
+    str_result = ToolResult(id="1", content=ToolValue("text result"))
     assert tool_result_to_content(str_result) == [{'text': "text result"}]
 
-    file_result = ToolResult(id="2", content=File(b64type="image/png", content=base64.b64encode(b"fake_image_data").decode()))
+    file_result = ToolResult(id="2", content=ToolValue(File(b64type="image/png", content=base64.b64encode(b"fake_image_data").decode())))
     assert 'image' in tool_result_to_content(file_result)[0]
 
-    list_result = ToolResult(id="3", content=["text1", "text2"])
+    list_result = ToolResult(id="3", content=ToolValue(["text1", "text2"]))
     assert tool_result_to_content(list_result) == [{'text': "text1"}, {'text': "text2"}]
 
     with pytest.raises(ValueError):
-        tool_result_to_content(ToolResult(id="4", content=123))
+        tool_result_to_content(ToolResult(id="4", content=ToolValue(123)))
 
 def test_join_content():
     assert join_content("text1", "text2") == [{'text': "text1text2"}]
@@ -137,7 +137,7 @@ def test_deltas_to_messages():
         Query(["User message"]),
         Delta(content=DeltaText(data="Assistant response")),
         Delta(content=DeltaToolUse(data=ToolUse(id="1", name="tool1", input={"param": "value"}))),
-        Delta(content=DeltaToolResult(data=ToolResult(id="1", content="Tool result"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="1", content=ToolValue("Tool result")))),
     ]
     messages = deltas_to_messages(deltas)
     assert len(messages) == 3

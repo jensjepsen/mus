@@ -64,12 +64,12 @@ def parse_tool_content(c: ToolSimpleReturnValue) -> t.Union[str, t.Dict[str, str
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult) -> t.Union[str, t.List[t.Union[str, t.Dict[str, str]]]]:
-    if is_tool_simple_return_value(tool_result.content):
-        return [parse_tool_content(tool_result.content)]
-    elif isinstance(tool_result.content, list):
-        return [parse_tool_content(c) for c in tool_result.content]
+    if is_tool_simple_return_value(tool_result.content.val):
+        return [parse_tool_content(tool_result.content.val)]
+    elif isinstance(tool_result.content.val, list):
+        return [parse_tool_content(c) for c in tool_result.content.val]
     else:
-        raise ValueError(f"Invalid tool result content type: {type(tool_result.content)}")
+        raise ValueError(f"Invalid tool result content type: {type(tool_result.content.val)}")
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[ChatCompletionMessageParam]:
     messages = []

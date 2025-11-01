@@ -70,14 +70,14 @@ def query_to_content(query: Query):
             )
 
 def tool_result_to_content(tool_result: ToolResult):
-    if isinstance(tool_result.content, str):
-        return [str_to_text_block(tool_result.content)]
-    elif isinstance(tool_result.content, File):
-        return [file_to_image(tool_result.content)]
-    elif isinstance(tool_result.content, list):
+    if isinstance(tool_result.content.val, str):
+        return [str_to_text_block(tool_result.content.val)]
+    elif isinstance(tool_result.content.val, File):
+        return [file_to_image(tool_result.content.val)]
+    elif isinstance(tool_result.content.val, list):
         return [
             parse_content(c)
-            for c in tool_result.content
+            for c in tool_result.content.val
         ]
     else:
         raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")

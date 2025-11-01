@@ -117,15 +117,15 @@ def parse_tool_content(c: t.Union[str, File]) -> str:
 
 
 def tool_result_to_content(tool_result: ToolResult) -> str:
-    if is_tool_simple_return_value(tool_result.content):
-        return parse_tool_content(tool_result.content)
-    elif isinstance(tool_result.content, list):
+    if is_tool_simple_return_value(tool_result.content.val):
+        return parse_tool_content(tool_result.content.val)
+    elif isinstance(tool_result.content.val, list):
         return "\n".join([
             parse_tool_content(c)
-            for c in tool_result.content
+            for c in tool_result.content.val
         ])
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
 
 
 def merge_messages(messages: t.List[Messages]) -> t.List[Messages]:

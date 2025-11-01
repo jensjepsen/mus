@@ -128,17 +128,17 @@ def parse_tool_content(c: t.Union[str, File]):
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 def tool_result_to_content(tool_result: ToolResult):
-    if is_tool_simple_return_value(tool_result.content):
+    if is_tool_simple_return_value(tool_result.content.val):
         return [
-            parse_tool_content(tool_result.content)
+            parse_tool_content(tool_result.content.val)
         ]
-    elif isinstance(tool_result.content, list):
+    elif isinstance(tool_result.content.val, list):
         return [
             parse_tool_content(c)
-            for c in tool_result.content
+            for c in tool_result.content.val
         ]
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content)}")
+        raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
     
 def has_reasoning_text(content: t.Union[bt.ContentBlockTypeDef, str]):
     if isinstance(content, str):
