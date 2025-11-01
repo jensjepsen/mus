@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, is_tool_return_value, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value
+from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
