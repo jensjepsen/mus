@@ -110,10 +110,7 @@ async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map
             })
         else:
             raise e from e
-        
-    if not is_tool_return_value(result):
-        result = json.dumps(result)
-
+    
     return result
 
 
