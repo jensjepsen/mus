@@ -1,3 +1,12 @@
+## v0.24.2 (2025-11-01)
+
+### Fix
+
+- don't coerce tool results to json
+- don't coerce tool results to json
+- don't coerce tool results to json
+- don't coerce tool results to json
+
 ## v0.24.1 (2025-10-06)
 
 ### Fix
