@@ -97,19 +97,6 @@ class File:
 ToolSimpleReturnValue = t.Union[str, File]
 ToolReturnValue = t.Union[t.Sequence[ToolSimpleReturnValue], ToolSimpleReturnValue]
 
-@t.runtime_checkable
-class ToolCallableType(t.Protocol):
-    __name__: str
-    #__metadata__: t.Optional[t.Dict[str, t.Any]]
-    async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue:
-        ...
-
-def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
-    return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
-
-def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
-    return isinstance(val, str) or isinstance(val, File)
-
 
 @dataclass
 class ToolUse:
@@ -121,6 +108,19 @@ class ToolUse:
 class ToolValue():
     val: ToolReturnValue
     metadata: t.Optional[t.Dict[str, t.Any]] = None
+
+@t.runtime_checkable
+class ToolCallableType(t.Protocol):
+    __name__: str
+    #__metadata__: t.Optional[t.Dict[str, t.Any]]
+    async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue | ToolValue:
+        ...
+
+def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
+    return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
+
+def is_tool_simple_return_value(val: t.Any) -> t.TypeGuard[ToolSimpleReturnValue]:
+    return isinstance(val, str) or isinstance(val, File)
 
 def ensure_tool_value(val: t.Any) -> ToolValue:
     if isinstance(val, ToolValue):
