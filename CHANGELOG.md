@@ -1,3 +1,10 @@
+## v0.24.4 (2025-11-23)
+
+### Fix
+
+- pin wasmtime version in build script
+- allow returning ToolValue from tools
+
 ## v0.24.3 (2025-11-01)
 
 ### Fix
