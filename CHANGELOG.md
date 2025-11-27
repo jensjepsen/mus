@@ -1,3 +1,10 @@
+## v0.25.0 (2025-11-27)
+
+### Feat
+
+- streaming function calls
+- streaming function calls
+
 ## v0.24.4 (2025-11-23)
 
 ### Fix
