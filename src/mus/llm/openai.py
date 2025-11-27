@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, Usage
+from .types import LLM, Delta, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, Usage, DeltaHistory
 
 import openai
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
@@ -94,8 +94,10 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Chat
                     "content": json.dumps(tool_result_to_content(delta.content.data)),
                     "tool_call_id": delta.content.data.id
                 })
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+                pass
             else:
-                raise ValueError(f"Invalid delta type: {type(delta.content)}")
+                t.assert_never(delta.content)
         else:
             messages.extend(query_to_messages(delta))
     return messages
@@ -173,6 +175,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                     ))
                                 last_call = partial_calls.pop()
                                 
+                                # TODO: yield tool call updates here
+
                                 if not last_call:
                                     raise ValueError("Received tool call chunk without a starting id")
                                 

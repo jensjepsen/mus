@@ -300,7 +300,7 @@ def test_deltas_to_messages_invalid_type():
         Delta(content=InvalidDelta()),
     ]
     
-    with pytest.raises(ValueError, match="Invalid delta type"):
+    with pytest.raises(AssertionError, match="Expected code to be unreachable"):
         deltas_to_messages(deltas)
 
 

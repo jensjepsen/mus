@@ -12,7 +12,7 @@ from mus.llm.bedrock import (
     merge_messages,
     deltas_to_messages,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue
+from mus.llm.types import DeltaToolInputUpdate, File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue
 from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
@@ -232,7 +232,8 @@ async def test_bedrock_llm_stream(bedrock_llm):
         'stream': [
             {'contentBlockDelta': {'delta': {'text': 'Response text'}}},
             {'contentBlockStart': {'start': {'toolUse': {'name': 'tool1', 'toolUseId': '1'}}}},
-            {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param": "value"}'}}}},
+            {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param":'}}}},
+            {'contentBlockDelta': {'delta': {'toolUse': {'input': ' "value"}'}}}},
             {'contentBlockStop': {}},
             {'messageStop': {'stopReason': 'tool_use'}},
             {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWriteInputTokens': 7}}},
@@ -247,12 +248,16 @@ async def test_bedrock_llm_stream(bedrock_llm):
         functions=[],
     )]
     
-    assert len(results) == 3
+    assert len(results) == 5
     assert isinstance(results[0].content, DeltaText)
     assert results[0].content.data == "Response text"
-    assert isinstance(results[1].content, DeltaToolUse)
-    assert results[1].content.data == ToolUse(id="1", name="tool1", input={"param": "value"})
-    assert results[2].usage == Usage(input_tokens=10, output_tokens=20, cache_read_input_tokens=3, cache_written_input_tokens=7)
+    assert isinstance(results[1].content, DeltaToolInputUpdate)
+    assert results[1].content.data == '{"param":'
+    assert isinstance(results[2].content, DeltaToolInputUpdate)
+    assert results[2].content.data == ' "value"}'
+    assert isinstance(results[3].content, DeltaToolUse)
+    assert results[3].content.data == ToolUse(id="1", name="tool1", input={"param": "value"})
+    assert results[4].usage == Usage(input_tokens=10, output_tokens=20, cache_read_input_tokens=3, cache_written_input_tokens=7)
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):

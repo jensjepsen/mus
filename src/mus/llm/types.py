@@ -143,6 +143,13 @@ class DeltaText():
     _type: t.Literal["text"] = "text"
 
 @dataclass
+class DeltaToolInputUpdate():
+    id: str
+    name: str
+    data: str
+    _type: t.Literal["tool-input-update"] = "tool-input-update"
+
+@dataclass
 class DeltaToolUse():
     data: ToolUse
     _type: t.Literal["tool-use"] = "tool-use"
@@ -157,7 +164,7 @@ class DeltaHistory():
     data: "History"
     _type: t.Literal["history"] = "history"
 
-DeltaContent = t.Union[DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory]
+DeltaContent = t.Union[DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate]
 
 @dataclass
 class Usage():
