@@ -177,3 +177,8 @@ uv build
     - [ ] A single method to patch everything
     - [ ] Add tests that actually use pyodide?
 - [ ] Add pyodide example page
+- [ ] Add streaming tool inputs for:
+    - [ ] Google
+    - [ ] Mistral
+    - [ ] Anthropic
+    - [X] Bedrock
