@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaToolUse, DeltaToolResult
+from .types import LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaToolUse, DeltaToolResult, DeltaToolInputUpdate, DeltaHistory
 import base64
 
 from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
@@ -240,8 +240,10 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                         #)
                     ]
                 ))
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+                pass
             else:
-                raise ValueError(f"Invalid delta type: {type(delta.content)}")
+                raise t.assert_never(delta.content)
         else:
             messages.extend(query_to_messages(delta))
 
@@ -345,6 +347,11 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     if "toolUse" in delta:
                         tu = delta["toolUse"]
                         if current_function:
+                            yield Delta(content=DeltaToolInputUpdate(
+                                name=current_function["name"],
+                                id=current_function["toolUseId"],
+                                data=tu["input"]
+                            ))
                             current_function["input"] = current_function.get("input", "") + tu["input"]
                 if "contentBlockStop" in event:
                     if current_function:

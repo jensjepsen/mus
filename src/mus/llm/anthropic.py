@@ -1,7 +1,7 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, Omit
 from anthropic import types as at
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
+from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaToolInputUpdate, DeltaHistory
 
 omit = Omit()
 
@@ -135,8 +135,10 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                         content=tool_result_to_content(delta.content.data),
                     )]
                 ))
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+                pass
             else:
-                raise ValueError(f"Invalid delta type: {type(delta.content)}")
+                raise t.assert_never(delta.content)
         else:
             messages.extend(query_to_content(delta))
 
@@ -187,6 +189,7 @@ class AnthropicLLM(LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock
             async for event in response:
                 if event.type == "text":
                     yield Delta(content=DeltaText(data=event.text))
+                # TODO: Add support for tool input updates here
                 elif event.type == "content_block_stop":
                     if event.content_block.type == "tool_use":
                         function_blocks.append(event.content_block)

@@ -1,6 +1,6 @@
 import typing as t
 from .types import (
-    LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
+    LLM, Delta, DeltaHistory, DeltaText, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
     DeltaToolUse, DeltaToolResult
 )
 import json
@@ -181,8 +181,10 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
                     name=tool_name,
                     content=tool_result_to_content(tool_result)
                 ))
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+                pass
             else:
-                raise ValueError(f"Invalid delta type: {type(delta.content)}")
+                t.assert_never(delta.content)
         else:
             messages.extend(query_to_messages(delta))
 

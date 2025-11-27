@@ -1,5 +1,5 @@
 import typing as t
-from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
+from .types import LLM, Delta, DeltaHistory, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
 import base64
 
 from google import genai
@@ -138,6 +138,10 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                     role="tool",
                     parts=[function_response_part]
                 ))
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+                pass
+            else:
+                t.assert_never(delta.content)
         else:
             contents.extend(query_to_contents(delta))
     
@@ -184,9 +188,15 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
         
         def handle_response(resp: genai_types.GenerateContentResponse):
             deltas = []
+            # TODO: Get streaming function call arguments
+            
+            #if resp.candidates:
+            #    for candidate in resp.candidates:
+            #        if candidate and candidate.content and candidate.content.parts:
+            #            for part in candidate.content.parts:
+            #                if part.function_call.input
             if resp.text:
                 deltas.append(Delta(content=DeltaText(data=resp.text)))
-
             # Handle function calls in streaming
             if resp.function_calls:
                 deltas = []
