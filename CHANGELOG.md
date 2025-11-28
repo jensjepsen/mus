@@ -1,3 +1,11 @@
+## v0.25.1 (2025-11-28)
+
+### Fix
+
+- Merge pull request #45 from jensjepsen/fix/empty-json-function-input
+- empty content input when parsing json in bedrock tool calls
+- empty content input when parsing json in bedrock tool calls
+
 ## v0.25.0 (2025-11-27)
 
 ### Feat
