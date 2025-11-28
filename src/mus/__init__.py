@@ -9,6 +9,7 @@ from .state import State as State, StateReference as StateReference
 # Try to import wasmtime, if it fails, we are probably in a sandbox
 # so we can't import it again
 # and we can't nest sandboxes
+
 if "wasmtime" not in sys.modules:
     if importlib.util.find_spec("wasmtime"):
         from ._sandbox import sandbox as sandbox
