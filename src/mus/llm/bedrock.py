@@ -354,7 +354,7 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                             ))
                             current_function["input"] = current_function.get("input", "") + tu["input"]
                 if "contentBlockStop" in event:
-                    if current_function:
+                    if current_function and current_function.get("input", None):
                         function_blocks.append(
                             bt.ToolUseBlockTypeDef(
                                 **{
