@@ -73,7 +73,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
             a: str
             b: int
 
-        #print(await bot.fill("Fill this with something random", ToFill))
+        print(await bot.fill("Call ToFill with something random", ToFill))
 
         response = None
         h = states("history", [])
@@ -84,7 +84,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
                 async for msg in (response := bot(q, previous=response)):
                     print(msg, end="")
                     if msg.usage:
-                        print(f" ----- (Input: {msg.usage['input_tokens']}, Output: {msg.usage['output_tokens']}, Cache read: {msg.usage['cache_read_input_tokens']}, Cache written: {msg.usage['cache_written_input_tokens']})")
+                        print(f" ----- (Input: {msg.usage.input_tokens}, Output: {msg.usage.output_tokens}, Cache read: {msg.usage.cache_read_input_tokens}, Cache written: {msg.usage.cache_written_input_tokens})")
                 print()
                 h(h() + response.history)
             except KeyboardInterrupt:

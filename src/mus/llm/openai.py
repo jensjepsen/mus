@@ -143,7 +143,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             top_p=kwargs.get("top_p", None) or OMIT,
             stop=kwargs.get("stop_sequences", None) or OMIT,
             stream=stream,
-            stream_options={"include_usage": True},
+            stream_options={"include_usage": True} if stream else OMIT,
             **extra_kwargs,
         )
 
