@@ -32,7 +32,7 @@ mistral = ["mistralai>=1.9.1"]
 images  = ["pillow(>=11.0.0,<12.0.0)"]
 cli  = ["typer(>=0.13.0,<0.17.0)"]
 pyodide = ["partial_json_parser>=0.2.1.1.post5"]
-sandbox = ["wasmtime==34.0.0"]
+sandbox = ["wasmtime==38.0.0"]
 mcp-client = ["mcp>=1.9.1"]
 dev = [
     "pytest(>=8.3.3,<9.0.0)",
