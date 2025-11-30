@@ -1,3 +1,11 @@
+## v0.25.3 (2025-11-30)
+
+### Fix
+
+- openai-no-stream
+- don't pass stream_options to openai when streaming
+- don't include stream options for openai when not streaming
+
 ## v0.25.2 (2025-11-28)
 
 ### Fix
