@@ -5,7 +5,6 @@ import base64
 from types_aiobotocore_bedrock_runtime.client import BedrockRuntimeClient
 from types_aiobotocore_bedrock_runtime import type_defs as bt
 import json
-import aioboto3
 import aiobotocore.session
 
 
