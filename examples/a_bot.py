@@ -12,12 +12,14 @@ from mus import BedrockLLM, GoogleGenAILLM, OpenAILLM
 async def run_bot(state: t.Optional[pathlib.Path]=None):
         
         import boto3
+        import aiobotocore.session
         from mus import State, Bot
-
-        nova = BedrockLLM("us.anthropic.claude-3-7-sonnet-20250219-v1:0", boto3.client("bedrock-runtime", region_name="us-east-1", ))
+        session = aiobotocore.session.get_session()
+        async with session.create_client("bedrock-runtime") as client:
+            nova = BedrockLLM("eu.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
         #gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17")
 
-        openai_llm = OpenAILLM("gpt-5-mini")
+        #openai_llm = OpenAILLM("gpt-5-mini")
         
         states = State()
 
@@ -63,7 +65,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
     You will be provided with a question and you should respond with the answer.
     """
 
-        bot = Bot(prompt, functions=[math, num, poem], model=openai_llm, cache={
+        bot = Bot(prompt, functions=[math, num, poem], model=nova, cache={
             "cache_system_prompt": True,
             "cache_tools": True
         })
