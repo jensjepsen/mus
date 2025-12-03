@@ -2,47 +2,12 @@ import typing as t
 from .types import LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaToolUse, DeltaToolResult, DeltaToolInputUpdate, DeltaHistory
 import base64
 
-from mypy_boto3_bedrock_runtime import BedrockRuntimeClient
-from mypy_boto3_bedrock_runtime import type_defs as bt
+from types_aiobotocore_bedrock_runtime.client import BedrockRuntimeClient
+from types_aiobotocore_bedrock_runtime import type_defs as bt
 import json
-import boto3
+import aioboto3
+import aiobotocore.session
 
-import functools
-import anyio.to_thread
-
-P = t.ParamSpec("P")
-T = t.TypeVar("T")
-
-async def run_in_threadpool(func: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
-    if kwargs:  # pragma: no cover
-        # run_sync doesn't accept 'kwargs', so bind them in here
-        func = functools.partial(func, **kwargs)
-    return await anyio.to_thread.run_sync(func, *args) # type: ignore
-
-
-class _StopIteration(Exception):
-    pass
-
-
-def _next(iterator: t.Iterator[T]) -> T:
-    # We can't raise `StopIteration` from within the threadpool iterator
-    # and catch it outside that context, so we coerce them into a different
-    # exception type.
-    try:
-        return next(iterator)
-    except StopIteration:
-        raise _StopIteration
-
-
-async def iterate_in_threadpool(
-    iterator: t.Iterable[T],
-) -> t.AsyncIterator[T]:
-    as_iterator = iter(iterator)
-    while True:
-        try:
-            yield await anyio.to_thread.run_sync(_next, as_iterator)
-        except _StopIteration:
-            break
 
 def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations):
     return bt.ToolTypeDef(
@@ -158,12 +123,12 @@ def join_content(a: t.Union[t.List[bt.ContentBlockTypeDef], str], b: t.Union[t.L
         })]
     if has_reasoning_text(a[-1]) and has_reasoning_text(b[0]):
         return a[:-1] + [bt.ContentBlockTypeDef({
-            "reasoningContent": {
-                "reasoningText": {
+            "reasoningContent": bt.ReasoningContentBlockTypeDef({
+                "reasoningText": bt.ReasoningTextBlockTypeDef({
                     "text": a[-1]["reasoningContent"]["reasoningText"]["text"] + b[0]["reasoningContent"]["reasoningText"]["text"], # type: ignore
                     "signature": a[-1]["reasoningContent"]["reasoningText"]["signature"] or b[0]["reasoningContent"]["reasoningText"]["signature"], # type: ignore
-                }
-            }
+                })
+            })
         })]
 
     return a + b
@@ -184,22 +149,19 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
         if isinstance(delta, Delta):
             if isinstance(delta.content, DeltaText) and delta.content.subtype == "reasoning":
                 metadata = delta.content.metadata or {}
+                reasoning_content = bt.ReasoningContentBlockTypeDef()
+                if not metadata.get("redactedContent", False):
+                    reasoning_content["reasoningText"] = bt.ReasoningTextBlockTypeDef({
+                        "text": delta.content.data,
+                        "signature": str(metadata.get("signature", None))
+                    })
+                if redacted := metadata.get("redactedContent"):
+                    reasoning_content["redactedContent"] = redacted  # type: ignore[typeddict-item]
                 messages.append(bt.MessageTypeDef(
                     role="assistant",
                     content=[
                         bt.ContentBlockTypeDef(
-                            reasoningContent=bt.ReasoningContentBlockTypeDef(**{
-                                **(
-                                    {
-                                        "reasoningText": bt.ReasoningTextBlockTypeDef(
-                                            text=delta.content.data,
-                                            signature=str(metadata.get("signature", None))
-                                        )
-                                    } if not metadata.get("redactedContent", False)
-                                    else {}
-                                ),
-                                **({"redactedContent": metadata.get("redactedContent")} if metadata.get("redactedContent") else {})
-                            })
+                            reasoningContent=reasoning_content
                         )
                     ]
                 ))
@@ -265,10 +227,9 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
 class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
-    def __init__(self, model: MODEL_TYPE, client: t.Optional[BedrockRuntimeClient]=None):
-        if not client:
-            client = boto3.client("bedrock-runtime")
+    def __init__(self, model: MODEL_TYPE, client: t.Optional[BedrockRuntimeClient]=None, session: t.Optional[aiobotocore.session.AioSession]=None):
         self.client = client
+        self.session = session if session is not None else aiobotocore.session.get_session()
         self.model = model
 
     async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
@@ -291,7 +252,7 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     }
                 ]
             extra_kwargs["toolConfig"] = toolConfig
-            
+
         if prompt := kwargs.get("prompt", None):
             system: list[bt.SystemContentBlockTypeDef] = [
                 {
@@ -306,13 +267,13 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 })
             extra_kwargs["system"] = system
 
-        
+
         messages = deltas_to_messages(kwargs.get("history"))
-        
+
         args = bt.ConverseStreamRequestTypeDef(
             modelId=str(self.model),
             messages=messages,
-            inferenceConfig={ 
+            inferenceConfig={
                 "maxTokens": kwargs.get("max_tokens") or 4096,
                 **({"temperature": kwargs.get("temperature")} if kwargs.get("temperature", None) else {}), # type: ignore
                 **({"topP": kwargs.get("top_p")} if kwargs.get("top_p", None) else {}),
@@ -320,100 +281,204 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             },
             **extra_kwargs
         )
-        if not kwargs.get("no_stream", False):
-            response = await run_in_threadpool(self.client.converse_stream, **args)
-            function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
-            current_function = None
-            async for event in iterate_in_threadpool(response.get("stream")):
-                if "contentBlockStart" in event:
-                    start = event["contentBlockStart"]["start"]
-                    if "toolUse" in start:
-                        current_function = {**start["toolUse"]}
-                if "contentBlockDelta" in event:
-                    delta = event["contentBlockDelta"]["delta"]
-                    if "text" in delta:
-                        yield Delta(content=DeltaText(data=delta["text"]))
-                    if "reasoningContent" in delta:
-                        reasoning = delta["reasoningContent"]
 
-                        yield Delta(content=DeltaText(
-                            data=reasoning.get("text", "")
-                            , subtype="reasoning",
-                            metadata={
-                                "signature": reasoning.get("signature", None),
-                                "redactedContent": reasoning.get("redactedContent", None)
-                            }
-                        ))
-                    if "toolUse" in delta:
-                        tu = delta["toolUse"]
-                        if current_function:
-                            yield Delta(content=DeltaToolInputUpdate(
-                                name=current_function["name"],
-                                id=current_function["toolUseId"],
-                                data=tu["input"]
-                            ))
-                            current_function["input"] = current_function.get("input", "") + tu["input"]
-                if "contentBlockStop" in event:
-                    if current_function and current_function.get("input", None):
-                        function_blocks.append(
-                            bt.ToolUseBlockTypeDef(
-                                **{
-                                    **current_function,
-                                    **dict(input=json.loads(current_function["input"]))
+        # Use provided client or create one from session
+        if self.client is not None:
+            client = self.client
+            if not kwargs.get("no_stream", False):
+                response = await client.converse_stream(**args)
+                function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
+                current_function = None
+                async for event in response.get("stream"):
+                    if "contentBlockStart" in event:
+                        start = event["contentBlockStart"]["start"]
+                        if "toolUse" in start:
+                            current_function = {**start["toolUse"]}
+                    if "contentBlockDelta" in event:
+                        delta = event["contentBlockDelta"]["delta"]
+                        if "text" in delta:
+                            yield Delta(content=DeltaText(data=delta["text"]))
+                        if "reasoningContent" in delta:
+                            reasoning = delta["reasoningContent"]
+
+                            yield Delta(content=DeltaText(
+                                data=reasoning.get("text", "")
+                                , subtype="reasoning",
+                                metadata={
+                                    "signature": reasoning.get("signature", None),
+                                    "redactedContent": reasoning.get("redactedContent", None)
                                 }
+                            ))
+                        if "toolUse" in delta:
+                            tu = delta["toolUse"]
+                            if current_function:
+                                yield Delta(content=DeltaToolInputUpdate(
+                                    name=current_function["name"],
+                                    id=current_function["toolUseId"],
+                                    data=tu["input"]
+                                ))
+                                current_function["input"] = current_function.get("input", "") + tu["input"]
+                    if "contentBlockStop" in event:
+                        if current_function and current_function.get("input", None):
+                            function_blocks.append(
+                                bt.ToolUseBlockTypeDef(
+                                    **{
+                                        **current_function,
+                                        **dict(input=json.loads(current_function["input"]))
+                                    }
+                                )
                             )
+                            current_function = None
+
+                    if "messageStop" in event:
+                        stop_reason = event["messageStop"]["stopReason"]
+                        if stop_reason == "tool_use":
+                            for block in function_blocks:
+                                tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
+                                yield Delta(content=DeltaToolUse(data=tool_use))
+
+                    if "metadata" in event:
+                        metadata = event["metadata"]
+                        usage = Usage(
+                            input_tokens=metadata["usage"]["inputTokens"],
+                            output_tokens=metadata["usage"]["outputTokens"],
+                            cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
+                            cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
                         )
-                        current_function = None
+                        yield Delta(
+                            content=DeltaText(
+                                data="",
+                            ),
+                            usage=usage
+                        )
+            else:
+                response = await client.converse(**args)
 
-                if "messageStop" in event:
-                    stop_reason = event["messageStop"]["stopReason"]
-                    if stop_reason == "tool_use":
-                        for block in function_blocks:
-                            tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
-                            yield Delta(content=DeltaToolUse(data=tool_use))
+                output = response.get("output")
+                tools: t.List[Delta] = []
+                if "message" in output:
+                    message = output["message"]
+                    for content in message["content"]:
+                        if text := content.get("text", None):
+                            yield Delta(content=DeltaText(
+                                data=text,
+                            ))
+                        if toolUse := content.get("toolUse", None):
+                            tool_use = ToolUse(id=toolUse["toolUseId"], name=toolUse["name"], input=toolUse["input"])
+                            tools.append(Delta(content=DeltaToolUse(
+                                data=tool_use
+                            )))
 
-                if "metadata" in event:
-                    metadata = event["metadata"]
-                    usage = Usage(
-                        input_tokens=metadata["usage"]["inputTokens"], 
-                        output_tokens=metadata["usage"]["outputTokens"],
-                        cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
-                        cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
-                    )
-                    yield Delta(
-                        content=DeltaText(
-                            data="",
-                        ),
-                        usage=usage
-                    )
+                if response["stopReason"] == "tool_use":
+                    for tool in tools:
+                        yield tool
+
+                usage = Usage(
+                    input_tokens=response["usage"]["inputTokens"],
+                    output_tokens=response["usage"]["outputTokens"],
+                    cache_read_input_tokens=response["usage"].get("cacheReadInputTokens", 0),
+                    cache_written_input_tokens=response["usage"].get("cacheWrittenInputTokens", 0)
+                )
+                yield Delta(content=DeltaText(
+                    data="",
+                ), usage=usage)
         else:
-            response = await run_in_threadpool(self.client.converse, **args)
+            # Create client from session
+            async with self.session.create_client("bedrock-runtime") as client:
+                if not kwargs.get("no_stream", False):
+                    response = await client.converse_stream(**args)
+                    function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
+                    current_function = None
+                    async for event in response.get("stream"):
+                        if "contentBlockStart" in event:
+                            start = event["contentBlockStart"]["start"]
+                            if "toolUse" in start:
+                                current_function = {**start["toolUse"]}
+                        if "contentBlockDelta" in event:
+                            delta = event["contentBlockDelta"]["delta"]
+                            if "text" in delta:
+                                yield Delta(content=DeltaText(data=delta["text"]))
+                            if "reasoningContent" in delta:
+                                reasoning = delta["reasoningContent"]
 
-            output = response.get("output")
-            tools: t.List[Delta] = []
-            if "message" in output:
-                message = output["message"]
-                for content in message["content"]:
-                    if text := content.get("text", None):
-                        yield Delta(content=DeltaText(
-                            data=text,
-                        ))
-                    if toolUse := content.get("toolUse", None):
-                        tool_use = ToolUse(id=toolUse["toolUseId"], name=toolUse["name"], input=toolUse["input"])
-                        tools.append(Delta(content=DeltaToolUse(
-                            data=tool_use
-                        )))
+                                yield Delta(content=DeltaText(
+                                    data=reasoning.get("text", "")
+                                    , subtype="reasoning",
+                                    metadata={
+                                        "signature": reasoning.get("signature", None),
+                                        "redactedContent": reasoning.get("redactedContent", None)
+                                    }
+                                ))
+                            if "toolUse" in delta:
+                                tu = delta["toolUse"]
+                                if current_function:
+                                    yield Delta(content=DeltaToolInputUpdate(
+                                        name=current_function["name"],
+                                        id=current_function["toolUseId"],
+                                        data=tu["input"]
+                                    ))
+                                    current_function["input"] = current_function.get("input", "") + tu["input"]
+                        if "contentBlockStop" in event:
+                            if current_function and current_function.get("input", None):
+                                function_blocks.append(
+                                    bt.ToolUseBlockTypeDef(
+                                        **{
+                                            **current_function,
+                                            **dict(input=json.loads(current_function["input"]))
+                                        }
+                                    )
+                                )
+                                current_function = None
 
-            if response["stopReason"] == "tool_use":
-                for tool in tools:
-                    yield tool
+                        if "messageStop" in event:
+                            stop_reason = event["messageStop"]["stopReason"]
+                            if stop_reason == "tool_use":
+                                for block in function_blocks:
+                                    tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
+                                    yield Delta(content=DeltaToolUse(data=tool_use))
 
-            usage = Usage(
-                input_tokens=response["usage"]["inputTokens"],
-                output_tokens=response["usage"]["outputTokens"],
-                cache_read_input_tokens=response["usage"].get("cacheReadInputTokens", 0),
-                cache_written_input_tokens=response["usage"].get("cacheWrittenInputTokens", 0)
-            )
-            yield Delta(content=DeltaText(
-                data="",
-            ), usage=usage)
+                        if "metadata" in event:
+                            metadata = event["metadata"]
+                            usage = Usage(
+                                input_tokens=metadata["usage"]["inputTokens"],
+                                output_tokens=metadata["usage"]["outputTokens"],
+                                cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
+                                cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
+                            )
+                            yield Delta(
+                                content=DeltaText(
+                                    data="",
+                                ),
+                                usage=usage
+                            )
+                else:
+                    response = await client.converse(**args)
+
+                    output = response.get("output")
+                    tools: t.List[Delta] = []
+                    if "message" in output:
+                        message = output["message"]
+                        for content in message["content"]:
+                            if text := content.get("text", None):
+                                yield Delta(content=DeltaText(
+                                    data=text,
+                                ))
+                            if toolUse := content.get("toolUse", None):
+                                tool_use = ToolUse(id=toolUse["toolUseId"], name=toolUse["name"], input=toolUse["input"])
+                                tools.append(Delta(content=DeltaToolUse(
+                                    data=tool_use
+                                )))
+
+                    if response["stopReason"] == "tool_use":
+                        for tool in tools:
+                            yield tool
+
+                    usage = Usage(
+                        input_tokens=response["usage"]["inputTokens"],
+                        output_tokens=response["usage"]["outputTokens"],
+                        cache_read_input_tokens=response["usage"].get("cacheReadInputTokens", 0),
+                        cache_written_input_tokens=response["usage"].get("cacheWrittenInputTokens", 0)
+                    )
+                    yield Delta(content=DeltaText(
+                        data="",
+                    ), usage=usage)

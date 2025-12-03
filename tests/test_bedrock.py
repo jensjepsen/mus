@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock
 from mus.llm.bedrock import (
     BedrockLLM,
     functions_for_llm,
@@ -19,7 +19,8 @@ import base64
 
 @pytest.fixture
 def mock_bedrock_client():
-    return Mock()
+    mock = AsyncMock()
+    return mock
 
 @pytest.fixture
 def bedrock_llm(mock_bedrock_client):
@@ -27,8 +28,12 @@ def bedrock_llm(mock_bedrock_client):
 
 @pytest.mark.asyncio
 async def test_bedrock_stream_called(bedrock_llm, mock_bedrock_client):
+    async def async_iter():
+        return
+        yield  # Make this a generator
+
     mock_bedrock_client.converse_stream.return_value = {
-        "stream": iter([])
+        "stream": async_iter()
     }
     async def dummy_tool(hello: int) -> str:
         """Dummy tool for testing"""
@@ -228,8 +233,8 @@ def test_merge_messages_with_reasoning():
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_stream(bedrock_llm):
-    mock_response = {
-        'stream': [
+    async def async_stream_iter():
+        events = [
             {'contentBlockDelta': {'delta': {'text': 'Response text'}}},
             {'contentBlockStart': {'start': {'toolUse': {'name': 'tool1', 'toolUseId': '1'}}}},
             {'contentBlockDelta': {'delta': {'toolUse': {'input': '{"param":'}}}},
@@ -238,6 +243,11 @@ async def test_bedrock_llm_stream(bedrock_llm):
             {'messageStop': {'stopReason': 'tool_use'}},
             {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 3, 'cacheWriteInputTokens': 7}}},
         ]
+        for event in events:
+            yield event
+
+    mock_response = {
+        'stream': async_stream_iter()
     }
     bedrock_llm.client.converse_stream.return_value = mock_response
 
@@ -247,7 +257,7 @@ async def test_bedrock_llm_stream(bedrock_llm):
         history=[],
         functions=[],
     )]
-    
+
     assert len(results) == 5
     assert isinstance(results[0].content, DeltaText)
     assert results[0].content.data == "Response text"
@@ -292,13 +302,18 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_cache_options(bedrock_llm):
-    mock_response = {
-        'stream': [
+    async def async_stream_iter():
+        events = [
             {'contentBlockDelta': {'delta': {'text': 'Response text'}}},
             {'contentBlockStop': {}},
             {'messageStop': {'stopReason': 'end_turn'}},
             {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20}}},
         ]
+        for event in events:
+            yield event
+
+    mock_response = {
+        'stream': async_stream_iter()
     }
 
 
@@ -327,6 +342,19 @@ async def test_bedrock_llm_cache_options(bedrock_llm):
     assert call_args["toolConfig"]["tools"][1] == {'cachePoint': {'type': 'default'}}
 
     # no cache
+    async def async_stream_iter2():
+        events = [
+            {'contentBlockDelta': {'delta': {'text': 'Response text'}}},
+            {'contentBlockStop': {}},
+            {'messageStop': {'stopReason': 'end_turn'}},
+            {'metadata': {'usage': {'inputTokens': 10, 'outputTokens': 20}}},
+        ]
+        for event in events:
+            yield event
+
+    bedrock_llm.client.converse_stream.return_value = {
+        'stream': async_stream_iter2()
+    }
 
     results_no_cache = [delta async for delta in bedrock_llm.stream(
         prompt="Test prompt",
@@ -339,6 +367,6 @@ async def test_bedrock_llm_cache_options(bedrock_llm):
     call_args_no_cache = bedrock_llm.client.converse_stream.call_args[1]
     assert len(call_args_no_cache["system"]) == 1, "System messages should not include cache info when cache is None"
     assert call_args_no_cache["system"][0]["text"] == "Test prompt"
-    
+
     assert len(call_args_no_cache["toolConfig"]["tools"]) == 1, "Tool config should not include cache info when cache is None"
     assert call_args_no_cache["toolConfig"]["tools"][0]["toolSpec"]["name"] == "dummy_tool"
