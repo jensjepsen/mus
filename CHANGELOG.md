@@ -1,3 +1,15 @@
+## v0.26.0 (2025-12-03)
+
+### Feat
+
+- async bedrock
+- async bedrock
+- async bedrock
+
+### Refactor
+
+- remove duplication
+
 ## v0.25.3 (2025-11-30)
 
 ### Fix
