@@ -15,8 +15,8 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
         import aiobotocore.session
         from mus import State, Bot
         session = aiobotocore.session.get_session()
-        async with session.create_client("bedrock-runtime", region_name="us-east-1") as client:
-                nova = BedrockLLM("us.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
+        async with session.create_client("bedrock-runtime") as client:
+            nova = BedrockLLM("eu.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
         #gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17")
 
         #openai_llm = OpenAILLM("gpt-5-mini")
