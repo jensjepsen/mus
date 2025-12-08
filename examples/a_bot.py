@@ -8,6 +8,7 @@ import typer
 import pathlib
 import asyncio
 import openai
+import google.genai
 from mus import BedrockLLM, GoogleGenAILLM, OpenAILLM
 async def run_bot(state: t.Optional[pathlib.Path]=None):
         
@@ -17,7 +18,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
         #session = aiobotocore.session.get_session()
         #async with session.create_client("bedrock-runtime") as client:
         #    nova = BedrockLLM("eu.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
-        gem = GoogleGenAILLM("gemini-2.5-flash-lite")
+        gem = GoogleGenAILLM("gemini-3-pro-preview")
 
         #openai_llm = OpenAILLM("gpt-5-mini")
         
@@ -68,6 +69,12 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
         bot = Bot(prompt, functions=[math, num, poem], model=gem, cache={
             "cache_system_prompt": True,
             "cache_tools": True
+        }, client_kwargs={
+            "generate_content_config": google.genai.types.GenerateContentConfig(
+                thinking_config=google.genai.types.ThinkingConfig(
+                     thinking_level=google.genai.types.ThinkingLevel.LOW
+                )
+            )
         })
 
         class ToFill(t.TypedDict):

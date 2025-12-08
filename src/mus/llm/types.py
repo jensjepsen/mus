@@ -178,6 +178,7 @@ class Usage():
 class Delta:
     content: DeltaContent
     usage: t.Optional[Usage] = None
+    metadata: t.Optional[t.Dict[str, t.Any]] = None # useful for preserving library specific data, s.a. thought signatures
 
     def __str__(self) -> str:
         if isinstance(self.content, DeltaText):

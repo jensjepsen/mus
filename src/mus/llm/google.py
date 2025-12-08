@@ -116,16 +116,23 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 if delta.content.data:
                     contents.append(genai_types.Content(
                         role="model",
-                        parts=[genai_types.Part.from_text(text=delta.content.data)]
+                        parts=[genai_types.Part(
+                            text=delta.content.data,
+                            thought_signature=delta.metadata.get("thought_signature") if delta.metadata else None
+                        )]
                     ))
             elif isinstance(delta.content, DeltaToolUse):
                 tool_use = delta.content.data
                 tool_id_to_name[tool_use.id] = tool_use.name
                 contents.append(genai_types.Content(
                     role="model",
-                    parts=[genai_types.Part.from_function_call(
-                        name=tool_use.name,
-                        args=dict(tool_use.input)
+                    parts=[genai_types.Part(
+                        function_call=genai_types.FunctionCall(
+                            id=tool_use.id,
+                            name=tool_use.name,
+                            args=tool_use.input # type: ignore
+                        ),
+                        thought_signature=delta.metadata.get("thought_signature") if delta.metadata else None
                     )]
                 ))
             elif isinstance(delta.content, DeltaToolResult):
@@ -149,7 +156,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     return contents
 
 class StreamArgs(t.TypedDict, total=False):
-    pass
+    generate_content_config: genai_types.GenerateContentConfig
 
 STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
@@ -182,6 +189,12 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
             
         if stop_sequences := kwargs.get("stop_sequences", None):
             config_kwargs["stop_sequences"] = stop_sequences
+        
+        if generate_content_config := (kwargs.get("kwargs", {}) or {}).get("generate_content_config"):
+            config_kwargs = {
+                **config_kwargs,
+                **generate_content_config.model_dump(exclude_unset=True)
+            }
 
         contents = deltas_to_contents(kwargs.get("history", []))
         
@@ -191,24 +204,29 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
             deltas = []
             # TODO: Update to handle streaming function args
             #       when google-genai supports it
-            if resp.text:
-                deltas.append(Delta(content=DeltaText(data=resp.text)))
-            # Handle function calls in streaming
-            if resp.function_calls:
-                deltas = []
-                for func_call in resp.function_calls:
-                    tool_use = ToolUse(
-                        id=func_call.id or func_call.name, # type: ignore
-                        name=func_call.name, # type: ignore
-                        input=func_call.args # type: ignore
-                    )
-                    deltas.append(Delta(content=DeltaToolInputUpdate(
-                        name=tool_use.name, # type: ignore
-                        id=tool_use.id,
-                        data=json.dumps(tool_use.input or {})
-                    )))
-                    deltas.append(Delta(content=DeltaToolUse(data=tool_use)))
-            
+            if not resp.candidates:
+                return deltas
+            for candidate in resp.candidates:
+                if not candidate.content or not candidate.content.parts:
+                    continue
+                for part in candidate.content.parts:
+                    metadata = {}
+                    if part.thought_signature:
+                        metadata["thought_signature"] = part.thought_signature
+                    if part.text:
+                        deltas.append(Delta(content=DeltaText(data=part.text), metadata=metadata))
+                    if part.function_call:
+                        tool_use = ToolUse(
+                            id=part.function_call.name, # type: ignore
+                            name=part.function_call.name, # type: ignore
+                            input=part.function_call.args # type: ignore
+                        )
+                        deltas.append(Delta(content=DeltaToolInputUpdate(
+                            name=tool_use.name,
+                            id=tool_use.id,
+                            data=json.dumps(tool_use.input or {})
+                        ), metadata=metadata))
+                        deltas.append(Delta(content=DeltaToolUse(data=tool_use), metadata=metadata))
             # Handle usage information
             if resp.usage_metadata:
                 usage = Usage(
