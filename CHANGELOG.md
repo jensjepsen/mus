@@ -1,3 +1,11 @@
+## v0.26.1 (2025-12-08)
+
+### Fix
+
+- Merge pull request #49 from jensjepsen/fix/google-streaming-tool-inputs
+- simluate streaming tool input updates in google genai until supp…
+- simluate streaming tool input updates in google genai until supported by provider
+
 ## v0.26.0 (2025-12-03)
 
 ### Feat
