@@ -14,10 +14,10 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
         import boto3
         import aiobotocore.session
         from mus import State, Bot
-        session = aiobotocore.session.get_session()
-        async with session.create_client("bedrock-runtime") as client:
-            nova = BedrockLLM("eu.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
-        #gem = GoogleGenAILLM("gemini-2.5-flash-lite-preview-06-17")
+        #session = aiobotocore.session.get_session()
+        #async with session.create_client("bedrock-runtime") as client:
+        #    nova = BedrockLLM("eu.anthropic.claude-3-7-sonnet-20250219-v1:0", client)
+        gem = GoogleGenAILLM("gemini-2.5-flash-lite")
 
         #openai_llm = OpenAILLM("gpt-5-mini")
         
@@ -65,7 +65,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
     You will be provided with a question and you should respond with the answer.
     """
 
-        bot = Bot(prompt, functions=[math, num, poem], model=nova, cache={
+        bot = Bot(prompt, functions=[math, num, poem], model=gem, cache={
             "cache_system_prompt": True,
             "cache_tools": True
         })
@@ -75,7 +75,7 @@ async def run_bot(state: t.Optional[pathlib.Path]=None):
             a: str
             b: int
 
-        print(await bot.fill("Call ToFill with something random", ToFill))
+        #print(await bot.fill("Call ToFill with something random", ToFill))
 
         response = None
         h = states("history", [])

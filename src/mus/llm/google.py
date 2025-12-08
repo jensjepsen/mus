@@ -1,6 +1,7 @@
 import typing as t
 from .types import LLM, Delta, DeltaHistory, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
 import base64
+import json
 
 from google import genai
 from google.genai import types as genai_types
@@ -188,13 +189,8 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
         
         def handle_response(resp: genai_types.GenerateContentResponse):
             deltas = []
-            # TODO: Get streaming function call arguments
-            
-            #if resp.candidates:
-            #    for candidate in resp.candidates:
-            #        if candidate and candidate.content and candidate.content.parts:
-            #            for part in candidate.content.parts:
-            #                if part.function_call.input
+            # TODO: Update to handle streaming function args
+            #       when google-genai supports it
             if resp.text:
                 deltas.append(Delta(content=DeltaText(data=resp.text)))
             # Handle function calls in streaming
@@ -206,6 +202,11 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                         name=func_call.name, # type: ignore
                         input=func_call.args # type: ignore
                     )
+                    deltas.append(Delta(content=DeltaToolInputUpdate(
+                        name=tool_use.name, # type: ignore
+                        id=tool_use.id,
+                        data=json.dumps(tool_use.input or {})
+                    )))
                     deltas.append(Delta(content=DeltaToolUse(data=tool_use)))
             
             # Handle usage information
