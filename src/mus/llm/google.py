@@ -217,7 +217,7 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                         deltas.append(Delta(content=DeltaText(data=part.text), metadata=metadata))
                     if part.function_call:
                         tool_use = ToolUse(
-                            id=part.function_call.name, # type: ignore
+                            id=part.function_call.id or part.function_call.name, # type: ignore
                             name=part.function_call.name, # type: ignore
                             input=part.function_call.args # type: ignore
                         )

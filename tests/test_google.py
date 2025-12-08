@@ -226,22 +226,41 @@ def test_deltas_to_contents():
 async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
     # Mock streaming response
     async def resp():
+        # First chunk with text
+        mock_part1 = Mock()
+        mock_part1.text = "Hello"
+        mock_part1.function_call = None
+        mock_part1.thought_signature = None
+
+        mock_candidate1 = Mock()
+        mock_candidate1.content = Mock()
+        mock_candidate1.content.parts = [mock_part1]
+
         yield Mock(
-            text="Hello",
-            function_calls=None,
+            candidates=[mock_candidate1],
             usage_metadata=None
         )
+
+        # Second chunk with text and usage
+        mock_part2 = Mock()
+        mock_part2.text = " world!"
+        mock_part2.function_call = None
+        mock_part2.thought_signature = None
+
+        mock_candidate2 = Mock()
+        mock_candidate2.content = Mock()
+        mock_candidate2.content.parts = [mock_part2]
+
         yield Mock(
-            text=" world!",
-            function_calls=None,
+            candidates=[mock_candidate2],
             usage_metadata=Mock(
                 prompt_token_count=10,
                 candidates_token_count=5
             )
         )
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=resp())
-    
+
     results = []
     async for delta in google_genai_llm.stream(
         prompt="Test prompt",
@@ -265,22 +284,30 @@ async def test_google_genai_stream_with_tools(google_genai_llm, mock_genai_clien
     def search_tool(query: str) -> str:
         """Search for information"""
         return "search results"
-    
+
     mock_function_call = Mock()
     mock_function_call.id = "call_123"
     mock_function_call.name = "search_tool"
     mock_function_call.args = {"query": "test"}
-    
+
+    mock_part = Mock()
+    mock_part.text = None
+    mock_part.function_call = mock_function_call
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
     mock_response = to_async_response([
         Mock(
-            text=None,
-            function_calls=[mock_function_call],
+            candidates=[mock_candidate],
             usage_metadata=None
         )
     ])
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
-    
+
     results = []
     async for delta in google_genai_llm.stream(
         prompt="Test prompt",
@@ -289,7 +316,7 @@ async def test_google_genai_stream_with_tools(google_genai_llm, mock_genai_clien
         functions=[to_schema(search_tool)]
     ):
         results.append(delta)
-    
+
     assert len(results) == 2
     assert isinstance(results[0].content, DeltaToolInputUpdate)
     assert results[0].content.name == "search_tool"
@@ -305,17 +332,25 @@ async def test_google_genai_stream_with_tools(google_genai_llm, mock_genai_clien
 
 @pytest.mark.asyncio
 async def test_google_genai_no_stream(google_genai_llm, mock_genai_client):
+    mock_part = Mock()
+    mock_part.text = "Complete response"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
     mock_response = Mock(
-        text="Complete response",
-        function_calls=None,
+        candidates=[mock_candidate],
         usage_metadata=Mock(
             prompt_token_count=15,
             candidates_token_count=8
         )
     )
-    
+
     mock_genai_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
-    
+
     results = []
     async for delta in google_genai_llm.stream(
         prompt="Test prompt",
@@ -325,7 +360,7 @@ async def test_google_genai_no_stream(google_genai_llm, mock_genai_client):
         no_stream=True
     ):
         results.append(delta)
-    
+
     assert len(results) == 2  # 1 text delta + 1 usage delta
     assert isinstance(results[0].content, DeltaText)
     assert results[0].content.data == "Complete response"
@@ -335,12 +370,21 @@ async def test_google_genai_no_stream(google_genai_llm, mock_genai_client):
 
 @pytest.mark.asyncio
 async def test_google_genai_stream_parameters(google_genai_llm, mock_genai_client):
+    mock_part = Mock()
+    mock_part.text = "Response"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
     mock_response = to_async_response([
-        Mock(text="Response", function_calls=None, usage_metadata=None)
+        Mock(candidates=[mock_candidate], usage_metadata=None)
     ])
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
-    
+
     async for _ in google_genai_llm.stream(
         prompt="System prompt",
         model="gemini-1.5-pro",
@@ -352,11 +396,11 @@ async def test_google_genai_stream_parameters(google_genai_llm, mock_genai_clien
         stop_sequences=["STOP"]
     ):
         pass
-    
+
     # Verify the call was made with correct parameters
     call_args = mock_genai_client.aio.models.generate_content_stream.call_args
     assert call_args[1]["model"] == "gemini-1.5-pro"
-    
+
     config = call_args[1]["config"]
     assert config.system_instruction == "System prompt"
     assert config.max_output_tokens == 1000
@@ -367,28 +411,37 @@ async def test_google_genai_stream_parameters(google_genai_llm, mock_genai_clien
 
 @pytest.mark.asyncio
 async def test_google_genai_stream_with_history(google_genai_llm, mock_genai_client):
+    mock_part = Mock()
+    mock_part.text = "Response"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
     mock_response = to_async_response([
-        Mock(text="Response", function_calls=None, usage_metadata=None)
+        Mock(candidates=[mock_candidate], usage_metadata=None)
     ])
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
-    
+
     history = [
         Query(["First user message"]),
         Delta(content=DeltaText(data="First assistant response")),
         Query(["Second user message"])
     ]
-    
+
     async for _ in google_genai_llm.stream(
         model="gemini-1.5-pro",
         history=history,
         functions=[]
     ):
         pass
-    
+
     call_args = mock_genai_client.aio.models.generate_content_stream.call_args
     contents = call_args[1]["contents"]
-    
+
     # Should have processed the history into proper contents
     assert len(contents) >= 1
     assert all(isinstance(content, genai_types.Content) for content in contents)
@@ -417,11 +470,11 @@ def test_google_genai_llm_initialization_no_client():
 async def test_google_genai_empty_response(google_genai_llm, mock_genai_client):
     # Test handling of empty/None responses
     mock_response = to_async_response([
-        Mock(text=None, function_calls=None, usage_metadata=None)
+        Mock(candidates=[], usage_metadata=None)
     ])
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
-    
+
     results = []
     async for delta in google_genai_llm.stream(
         model="gemini-1.5-pro",
@@ -429,7 +482,7 @@ async def test_google_genai_empty_response(google_genai_llm, mock_genai_client):
         functions=[]
     ):
         results.append(delta)
-    
+
     # Should handle empty responses gracefully
     assert len(results) == 0
 
@@ -438,20 +491,28 @@ async def test_google_genai_empty_response(google_genai_llm, mock_genai_client):
 async def test_google_genai_function_call_without_id(google_genai_llm, mock_genai_client):
     # Test function call that doesn't have an ID (uses name as fallback)
     mock_function_call = Mock()
-    mock_function_call.id = None
+    mock_function_call.id = None  # Explicitly set to None to test fallback
     mock_function_call.name = "test_function"
     mock_function_call.args = {"param": "value"}
-    
+
+    mock_part = Mock()
+    mock_part.text = None
+    mock_part.function_call = mock_function_call
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
     mock_response = to_async_response([
         Mock(
-            text=None,
-            function_calls=[mock_function_call],
+            candidates=[mock_candidate],
             usage_metadata=None
         )
     ])
-    
+
     mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
-    
+
     results = []
     async for delta in google_genai_llm.stream(
         model="gemini-1.5-pro",
@@ -459,7 +520,7 @@ async def test_google_genai_function_call_without_id(google_genai_llm, mock_gena
         functions=[]
     ):
         results.append(delta)
-    
+
     assert len(results) == 2
     assert isinstance(results[0].content, DeltaToolInputUpdate)
     assert results[0].content.name == "test_function"
@@ -467,3 +528,93 @@ async def test_google_genai_function_call_without_id(google_genai_llm, mock_gena
     tool_use = results[1].content.data
     assert tool_use.id == "test_function"  # Should use name as fallback
     assert tool_use.name == "test_function"
+
+
+@pytest.mark.asyncio
+async def test_google_genai_thought_signatures(google_genai_llm, mock_genai_client):
+    # Test that thought signatures are preserved in metadata
+    mock_part1 = Mock()
+    mock_part1.text = "Thinking about the problem..."
+    mock_part1.function_call = None
+    mock_part1.thought_signature = "thinking"
+
+    mock_candidate1 = Mock()
+    mock_candidate1.content = Mock()
+    mock_candidate1.content.parts = [mock_part1]
+
+    mock_part2 = Mock()
+    mock_part2.text = "Here's my response"
+    mock_part2.function_call = None
+    mock_part2.thought_signature = None
+
+    mock_candidate2 = Mock()
+    mock_candidate2.content = Mock()
+    mock_candidate2.content.parts = [mock_part2]
+
+    mock_response = to_async_response([
+        Mock(candidates=[mock_candidate1], usage_metadata=None),
+        Mock(candidates=[mock_candidate2], usage_metadata=None)
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        model="gemini-1.5-pro",
+        history=[],
+        functions=[]
+    ):
+        results.append(delta)
+
+    assert len(results) == 2
+
+    # First delta should have thought signature in metadata
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.data == "Thinking about the problem..."
+    assert results[0].metadata.get("thought_signature") == "thinking"
+
+    # Second delta should not have thought signature
+    assert isinstance(results[1].content, DeltaText)
+    assert results[1].content.data == "Here's my response"
+    assert "thought_signature" not in results[1].metadata or results[1].metadata.get("thought_signature") is None
+
+
+@pytest.mark.asyncio
+async def test_google_genai_thought_signatures_with_tools(google_genai_llm, mock_genai_client):
+    # Test that thought signatures are preserved with tool calls
+    mock_function_call = Mock()
+    mock_function_call.id = "call_456"
+    mock_function_call.name = "analyze_data"
+    mock_function_call.args = {"data": "test"}
+
+    mock_part = Mock()
+    mock_part.text = None
+    mock_part.function_call = mock_function_call
+    mock_part.thought_signature = "tool_use"
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = to_async_response([
+        Mock(candidates=[mock_candidate], usage_metadata=None)
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        model="gemini-1.5-pro",
+        history=[],
+        functions=[]
+    ):
+        results.append(delta)
+
+    assert len(results) == 2
+
+    # Both tool-related deltas should have thought signature
+    assert isinstance(results[0].content, DeltaToolInputUpdate)
+    assert results[0].metadata.get("thought_signature") == "tool_use"
+
+    assert isinstance(results[1].content, DeltaToolUse)
+    assert results[1].metadata.get("thought_signature") == "tool_use"
