@@ -1,3 +1,9 @@
+## v0.26.2 (2025-12-08)
+
+### Fix
+
+- handle thought signatures from google
+
 ## v0.26.1 (2025-12-08)
 
 ### Fix
