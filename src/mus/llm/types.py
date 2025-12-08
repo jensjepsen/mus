@@ -186,6 +186,10 @@ class Delta:
             return f"\nRunning tool: {self.content.data.name}\n"
         elif isinstance(self.content, DeltaToolResult):
             return f"\nTool result: {self.content.data}\n"
+        elif isinstance(self.content, DeltaHistory):
+            return ""
+        elif isinstance(self.content, DeltaToolInputUpdate):
+            return ""
         else:
             raise ValueError(f"Invalid delta type: {type(self.content)}")
 

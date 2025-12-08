@@ -17,7 +17,7 @@ from mus.llm.google import (
     tool_result_to_parts,
     deltas_to_contents,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate
 from mus.functions import to_schema
 
 
@@ -290,9 +290,14 @@ async def test_google_genai_stream_with_tools(google_genai_llm, mock_genai_clien
     ):
         results.append(delta)
     
-    assert len(results) == 1
-    assert isinstance(results[0].content, DeltaToolUse)
-    tool_use = results[0].content.data
+    assert len(results) == 2
+    assert isinstance(results[0].content, DeltaToolInputUpdate)
+    assert results[0].content.name == "search_tool"
+    assert results[0].content.id == "call_123"
+    assert results[0].content.data == '{"query": "test"}'
+
+    assert isinstance(results[1].content, DeltaToolUse)
+    tool_use = results[1].content.data
     assert tool_use.id == "call_123"
     assert tool_use.name == "search_tool"
     assert tool_use.input == {"query": "test"}
@@ -455,7 +460,10 @@ async def test_google_genai_function_call_without_id(google_genai_llm, mock_gena
     ):
         results.append(delta)
     
-    assert len(results) == 1
-    tool_use = results[0].content.data
+    assert len(results) == 2
+    assert isinstance(results[0].content, DeltaToolInputUpdate)
+    assert results[0].content.name == "test_function"
+    assert results[0].content.id == "test_function"
+    tool_use = results[1].content.data
     assert tool_use.id == "test_function"  # Should use name as fallback
     assert tool_use.name == "test_function"
