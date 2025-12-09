@@ -9,6 +9,7 @@ from mus.functions import parse_tools
 from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage, ToolValue
 
 from mus import ToolNotFoundError
+import typing as t
 
 @dataclass
 class TestStructure:
@@ -108,13 +109,15 @@ async def test_llm_with_fallback_tool_use(mock_model):
         return "Tool result"
 
     fallback_called = False
-    async def fallback_tool(**kwargs):
+    async def fallback_tool(original_tool_name: str, original_input: t.Mapping[str, t.Any]):
         """Fallback tool function"""
         nonlocal fallback_called
         fallback_called = True
+        assert original_tool_name == "a_tool_that_does_not_exist"
+        assert original_input == {"param1": "test", "param2": 123}
         return "Fallback tool result"
 
-    result = [msg async for msg in llm("Test query", functions=[test_tool, fallback_tool], fallback_function="fallback_tool")]
+    result = [msg async for msg in llm("Test query", functions=[test_tool], fallback_function=fallback_tool)]
     assert not test_called, "Tool function was not called"
     assert fallback_called, "Fallback tool function was not called"
     assert len(result) == 3

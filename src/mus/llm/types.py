@@ -116,6 +116,12 @@ class ToolCallableType(t.Protocol):
     async def __call__(self, *args: t.Any, **kwds: t.Any) -> ToolReturnValue | ToolValue:
         ...
 
+@t.runtime_checkable
+class FallbackToolCallableType(t.Protocol):
+    __name__: str
+    async def __call__(self, original_tool_name: str, original_input: t.Mapping[str, t.Any]) -> ToolReturnValue | ToolValue:
+        ...
+
 def is_tool_return_value(val: t.Any) -> t.TypeGuard[ToolReturnValue]:
     return isinstance(val, str) or isinstance(val, File) or (isinstance(val, list) and all(is_tool_return_value(v) for v in val))
 

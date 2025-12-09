@@ -4,7 +4,7 @@ import typing as t
 from textwrap import dedent
 import sys
 
-from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value
+from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value, FallbackToolCallableType
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
@@ -68,7 +68,7 @@ class IterableResult:
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
-    fallback_function: t.Optional[str] 
+    fallback_function: t.Optional[FallbackToolCallableType]
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
 
@@ -198,7 +198,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     func_result = ensure_tool_value(await invoke_function(msg.content.data.name, msg.content.data.input, func_map))
                 except ToolNotFoundError as e:
                     if fallback_function := kwargs.get("fallback_function", None):
-                        func_result = ensure_tool_value(await invoke_function(fallback_function, {**msg.content.data.input, "original_tool_name": msg.content.data.name}, func_map))
+                        func_result = ensure_tool_value(await fallback_function(original_tool_name=msg.content.data.name, original_input=msg.content.data.input))
                     else:
                         raise e from e
                 fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
