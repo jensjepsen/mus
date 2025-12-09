@@ -1,3 +1,11 @@
+## v0.26.4 (2025-12-09)
+
+### Fix
+
+- Merge pull request #51 from jensjepsen/fix/tool-not-found-error
+- fallback function as function
+- fallback function as function
+
 ## v0.26.3 (2025-12-09)
 
 ### Fix
