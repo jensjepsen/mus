@@ -8,6 +8,8 @@ from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
 from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage, ToolValue
 
+from mus import ToolNotFoundError
+
 @dataclass
 class TestStructure:
     field1: str
@@ -70,6 +72,58 @@ async def test_llm_with_tool_use(mock_model):
     assert isinstance(result[3].content, DeltaText)
     assert result[3].content.data == "Tool used"
 
+@pytest.mark.asyncio
+async def test_llm_with_tool_use_nonexistent_function(mock_model):
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Hello")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="nonexistent_function", input={"param1": "test", "param2": 123}, id="test_tool"))),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        return "Tool result"
+
+    with pytest.raises(ToolNotFoundError) as exc_info:
+        _ = [msg async for msg in llm("Test query", functions=[test_tool])]
+    assert "nonexistent_function" in str(exc_info.value)
+    
+
+@pytest.mark.asyncio
+async def test_llm_with_fallback_tool_use(mock_model):
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Hello")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="a_tool_that_does_not_exist", input={"param1": "test", "param2": 123}, id="test_tool"))),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    test_called = False
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        nonlocal test_called
+        test_called = True
+        return "Tool result"
+
+    fallback_called = False
+    async def fallback_tool(**kwargs):
+        """Fallback tool function"""
+        nonlocal fallback_called
+        fallback_called = True
+        return "Fallback tool result"
+
+    result = [msg async for msg in llm("Test query", functions=[test_tool, fallback_tool], fallback_function="fallback_tool")]
+    assert not test_called, "Tool function was not called"
+    assert fallback_called, "Fallback tool function was not called"
+    assert len(result) == 3
+    assert isinstance(result[0].content, DeltaText)
+    assert isinstance(result[1].content, DeltaToolUse)
+    assert isinstance(result[1].content.data, ToolUse)
+
+    assert isinstance(result[2].content.data, ToolResult)
+    assert result[2].content.data.content.val == "Fallback tool result"
 
 @pytest.mark.asyncio
 async def test_llm_call(mock_model):
@@ -538,10 +592,10 @@ async def test_invoke_function_nonexistent():
     }
 
     input_data = {"a": 3, "b": 5}
-    with pytest.raises(KeyError) as exc_info:
+    with pytest.raises(ToolNotFoundError) as exc_info:
         await invoke_function("nonexistent_function", input_data, func_map)
     
-    assert "'nonexistent_function'" in str(exc_info.value)
+    assert "nonexistent_function" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -583,6 +637,7 @@ async def test_invoke_function_internal_scope_wrong_args():
 
     with pytest.raises(TypeError) as exc_info:
         await invoke_function("sample_function", input_data, func_map)
+
 
 @pytest.mark.asyncio
 async def test_pass_cache_options():
