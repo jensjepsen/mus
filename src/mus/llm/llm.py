@@ -8,6 +8,8 @@ from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMD
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 from ..types import FillableType
 
+from ..exceptions import ToolNotFoundError
+
 logger = logging.getLogger(__name__)
 
 def merge_history(history: History) -> History:
@@ -66,6 +68,7 @@ class IterableResult:
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
+    fallback_function: t.Optional[str] 
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
 
@@ -89,7 +92,10 @@ def get_exception_depth():
 
 
 async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
-    tool_callable = func_map[func_name]
+    try:
+        tool_callable = func_map[func_name]
+    except KeyError:
+        raise ToolNotFoundError(f"Tool {func_name} not found (have {', '.join(list(func_map.keys()))})") from None
     print("invoke_function raw input", input, tool_callable.schema)
      # Validate input against schema
     try:
@@ -188,7 +194,13 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             history = history + [msg]
             if isinstance(msg.content, DeltaToolUse):
                 print("Invoking tool:", msg.content.data.name, "with input:", msg.content.data.input)
-                func_result = ensure_tool_value(await invoke_function(msg.content.data.name, msg.content.data.input, func_map))
+                try:
+                    func_result = ensure_tool_value(await invoke_function(msg.content.data.name, msg.content.data.input, func_map))
+                except ToolNotFoundError as e:
+                    if fallback_function := kwargs.get("fallback_function", None):
+                        func_result = ensure_tool_value(await invoke_function(fallback_function, {**msg.content.data.input, "original_tool_name": msg.content.data.name}, func_map))
+                    else:
+                        raise e from e
                 fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
                 yield fd
                 history.append(fd)
