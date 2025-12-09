@@ -1,3 +1,12 @@
+## v0.26.3 (2025-12-09)
+
+### Fix
+
+- Merge pull request #50 from jensjepsen/fix/tool-not-found-error
+- toolnotfounderror
+- toolnotfounderror
+- toolnotfounderror
+
 ## v0.26.2 (2025-12-08)
 
 ### Fix
