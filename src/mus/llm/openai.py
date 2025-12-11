@@ -174,17 +174,24 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                         arguments=""
                                     ))
                                 last_call = partial_calls.pop()
-                                
-                                # TODO: yield tool call updates here
 
                                 if not last_call:
                                     raise ValueError("Received tool call chunk without a starting id")
-                                
+
                                 if tool_call.function.arguments:
                                     last_call.arguments += tool_call.function.arguments
-                                
+
                                 if tool_call.function.name:
                                     last_call.name += tool_call.function.name
+
+                                # yield function call update
+                                if last_call.id and last_call.name and tool_call.function.arguments:
+                                    yield Delta(content=DeltaToolInputUpdate(
+                                        name=last_call.name,
+                                        id=last_call.id,
+                                        data=tool_call.function.arguments
+                                    ))
+
                                 partial_calls.append(last_call)
 
                     if first_choice.finish_reason == "tool_calls":
