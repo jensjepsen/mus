@@ -1,3 +1,9 @@
+## v0.26.5 (2025-12-11)
+
+### Fix
+
+- openai streaming tool inputs
+
 ## v0.26.4 (2025-12-09)
 
 ### Fix
