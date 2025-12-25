@@ -17,7 +17,7 @@ from mus.llm.google import (
     tool_result_to_parts,
     deltas_to_contents,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate, ToolValue
 from mus.functions import to_schema
 
 
@@ -52,7 +52,9 @@ def test_func_schema_to_tool():
     assert isinstance(tool, genai_types.FunctionDeclaration)
     assert tool.name == schema["name"]
     assert tool.description == schema["description"]
+    assert tool.parameters is not None
     assert tool.parameters.type == genai_types.Type.OBJECT
+    assert tool.parameters.properties is not None
     assert "param1" in tool.parameters.properties
     assert "param2" in tool.parameters.properties
 
@@ -71,12 +73,12 @@ def test_functions_for_llm():
     
     assert len(tools) == 2
     assert all(isinstance(tool, genai_types.Tool) for tool in tools)
-    assert all(len(tool.function_declarations) == 1 for tool in tools)
+    assert all(len(tool.function_declarations or []) == 1 for tool in tools)
 
 
 def test_functions_for_llm_empty():
     assert functions_for_llm([]) == []
-    assert functions_for_llm(None) == []
+    assert functions_for_llm(None) == [] # type: ignore # intentionally passing None
 
 
 def test_file_to_part_image():
@@ -136,7 +138,7 @@ def test_parse_content_file():
 
 def test_parse_content_invalid():
     with pytest.raises(ValueError, match="Invalid query type"):
-        parse_content(123)
+        parse_content(123) # type: ignore # intentionally wrong type
 
 
 def test_query_to_contents():
@@ -166,11 +168,12 @@ def test_query_to_contents_empty():
 
 
 def test_tool_result_to_parts_string():
-    tool_result = ToolResult(id="1", content="Simple string result")
+    tool_result = ToolResult(id="1", content=ToolValue("Simple string result"))
     parts = tool_result_to_parts(tool_result)
     
     assert len(parts) == 1
     assert isinstance(parts[0], genai_types.Part)
+    assert parts[0].text == "Simple string result"
 
 
 def test_tool_result_to_parts_file():
@@ -178,19 +181,22 @@ def test_tool_result_to_parts_file():
         b64type="image/png", 
         content=base64.b64encode(b"fake_image").decode()
     )
-    tool_result = ToolResult(id="2", content=file)
+    tool_result = ToolResult(id="2", content=ToolValue(file))
     parts = tool_result_to_parts(tool_result)
     
     assert len(parts) == 1
     assert isinstance(parts[0], genai_types.Part)
+    assert parts[0].as_image() is not None
 
 
 def test_tool_result_to_parts_list():
-    tool_result = ToolResult(id="3", content=["text1", "text2"])
+    tool_result = ToolResult(id="3", content=ToolValue(["text1", "text2"]))
     parts = tool_result_to_parts(tool_result)
     
     assert len(parts) == 2
     assert all(isinstance(part, genai_types.Part) for part in parts)
+    assert parts[0].text == "text1"
+    assert parts[1].text == "text2"
 
 
 def test_tool_result_to_parts_mixed_list():
@@ -198,19 +204,34 @@ def test_tool_result_to_parts_mixed_list():
         b64type="image/jpeg", 
         content=base64.b64encode(b"fake_image").decode()
     )
-    tool_result = ToolResult(id="4", content=["text", file, 123])
+    tool_result = ToolResult(id="4", content=ToolValue(["text", file, "123"]))
     parts = tool_result_to_parts(tool_result)
     
     assert len(parts) == 3
     assert all(isinstance(part, genai_types.Part) for part in parts)
+    assert parts[0].text == "text"
+    assert parts[1].as_image() is not None
+    assert parts[2].text == "123"
 
+def test_tool_result_to_parts_with_metadata():
+    """Test that metadata in ToolValue is not serialized as text in parts."""
+    tool_result = ToolResult(
+        id="5", 
+        content=ToolValue("Result with metadata", metadata={"key": "value"}), 
+    )
+    parts = tool_result_to_parts(tool_result)
+    
+    assert len(parts) == 1
+    assert isinstance(parts[0], genai_types.Part)
+    assert parts[0].text == "Result with metadata"
+    
 
 def test_deltas_to_contents():
     deltas = [
         Query(["User question"]),
         Delta(content=DeltaText(data="Assistant response")),
         Delta(content=DeltaToolUse(data=ToolUse(name="search", input={"query": "test"}, id="tool1"))),
-        Delta(content=DeltaToolResult(data=ToolResult(id="tool1", content="Searchresults"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="tool1", content=ToolValue("Searchresults")))),
     ]
     
     contents = deltas_to_contents(deltas)
