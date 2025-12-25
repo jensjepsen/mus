@@ -1,3 +1,12 @@
+## v0.26.6 (2025-12-25)
+
+### Fix
+
+- tool-results-in-google
+- don't serialize metadata and pass to llm
+- don't serialize metadata and pass to llm
+- don't serialize metadata and pass to llm
+
 ## v0.26.5 (2025-12-11)
 
 ### Fix
