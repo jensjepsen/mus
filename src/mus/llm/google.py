@@ -140,7 +140,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
                 function_response_part = genai_types.Part.from_function_response(
                     name=tool_name,
-                    response={"result": tool_result.content}
+                    response={"result": tool_result.content.val}
                 )
                 contents.append(genai_types.Content(
                     role="tool",
