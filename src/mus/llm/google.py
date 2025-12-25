@@ -93,7 +93,7 @@ def tool_result_to_parts(tool_result: ToolResult):
         elif isinstance(tool_result.content.val, File):
             return [file_to_part(tool_result.content.val)]
         else:
-            return [genai_types.Part.from_text(text=str(tool_result.content.val))]
+            raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
     elif isinstance(tool_result.content.val, list):
         parts = []
         for c in tool_result.content.val:
@@ -102,7 +102,7 @@ def tool_result_to_parts(tool_result: ToolResult):
             elif isinstance(c, File):
                 parts.append(file_to_part(c))
             else:
-                parts.append(genai_types.Part.from_text(text=str(c)))
+                raise ValueError(f"Invalid tool result type in list: {type(c)}")
         return parts
     else:
         raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")

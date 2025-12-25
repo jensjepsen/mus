@@ -176,6 +176,16 @@ def test_tool_result_to_parts_string():
     assert parts[0].text == "Simple string result"
 
 
+def test_tool_result_to_parts_invalid():
+    tool_result = ToolResult(id="invalid", content=ToolValue(123))  # type: ignore # intentionally wrong type
+    
+    with pytest.raises(ValueError, match="Invalid tool result type"):
+        tool_result_to_parts(tool_result)
+    
+    tool_result = ToolResult(id="invalid", content=ToolValue([123, "hello"]))  # type: ignore # intentionally wrong type
+    with pytest.raises(ValueError, match="Invalid tool result type"):
+        tool_result_to_parts(tool_result)
+
 def test_tool_result_to_parts_file():
     file = File(
         b64type="image/png", 
