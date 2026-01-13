@@ -3,6 +3,7 @@ import logging
 import typing as t
 from textwrap import dedent
 import sys
+from dataclasses import replace
 
 from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value, FallbackToolCallableType
 from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
@@ -17,13 +18,21 @@ def merge_history(history: History) -> History:
     for msg in history:
         if merged and isinstance(msg, Delta) and isinstance(msg.content, DeltaText) and msg.content.subtype == "text":
             if isinstance(merged[-1], Delta) and isinstance(merged[-1].content, DeltaText) and merged[-1].content.subtype == "text":
-                merged[-1].content.data += msg.content.data
+                # Create new Delta and DeltaText instead of mutating in place
+                # Using replace() ensures all fields are properly copied
+                merged[-1] = replace(
+                    merged[-1],
+                    content=replace(
+                        merged[-1].content,
+                        data=merged[-1].content.data + msg.content.data
+                    )
+                )
             else:
                 merged.append(msg)
-                
+
         else:
             merged.append(msg)
-    
+
     # prune empty text
     merged = [m for m in merged if not (isinstance(m, Delta) and isinstance(m.content, DeltaText) and not m.content.data.strip())]
 
@@ -65,12 +74,17 @@ class IterableResult:
                 pass
         return self.total
 
+class TransformDeltaHook(t.Protocol):
+    async def __call__(self, delta: Delta) -> Delta:
+        ...
+
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
     fallback_function: t.Optional[FallbackToolCallableType]
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
+    transform_delta_hook: t.Optional[TransformDeltaHook]
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
@@ -89,6 +103,7 @@ def get_exception_depth():
         depth += 1
         tb = tb.tb_next
     return depth
+
 
 
 async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
@@ -119,7 +134,6 @@ async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map
     
     return result
 
-
 class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     def __init__(self, 
         prompt: t.Optional[str]=None,
@@ -138,6 +152,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         tools = parse_tools(functions)
+        transform_delta_hook = kwargs.get("transform_delta_hook", None)
             
         function_schemas = [
             FunctionSchemaNoAnnotations({
@@ -189,6 +204,8 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             temperature=kwargs.get("temperature", None),
             cache=kwargs.get("cache", None),
         ):
+            if transform_delta_hook:
+                msg = await transform_delta_hook(msg)
             yield msg
             
             history = history + [msg]
@@ -202,13 +219,15 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     else:
                         raise e from e
                 fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
+                if transform_delta_hook:
+                    fd = await transform_delta_hook(fd)
                 yield fd
                 history.append(fd)
                 async for msg in self.query(history=history, **kwargs):
                     if isinstance(msg.content, DeltaHistory):
                         history.extend(msg.content.data[len(history):])
                     else:
-                        yield msg
+                        yield msg # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
 
 
         yield Delta(content=DeltaHistory(data=history))
