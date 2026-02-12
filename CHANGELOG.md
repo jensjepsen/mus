@@ -1,3 +1,11 @@
+## v0.27.1 (2026-02-12)
+
+### Fix
+
+- Merge pull request #56 from jensjepsen/fix/bump-pillow
+- bump pillow
+- bump pillow
+
 ## v0.27.0 (2026-01-13)
 
 ### Feat
