@@ -1,3 +1,9 @@
+## v0.27.2 (2026-02-19)
+
+### Fix
+
+- relax python constraints
+
 ## v0.27.1 (2026-02-12)
 
 ### Fix
