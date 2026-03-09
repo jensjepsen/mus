@@ -358,12 +358,13 @@ HistoryItem = t.Union[Delta, Query]
 History = t.List[HistoryItem]
 
 LLMDecoratedFunctionReturnType = t.TypeVar(
-    "LLMDecoratedFunctionReturnType", covariant=True
+    "LLMDecoratedFunctionReturnType", covariant=True, bound=ToolReturnValue | ToolValue
 )
 
 
 @t.runtime_checkable
 class LLMDecoratedFunctionType(t.Protocol, t.Generic[LLMDecoratedFunctionReturnType]):
+    __name__: str
     async def __call__(
         self, *args: t.Any, **kwargs: t.Any
     ) -> LLMDecoratedFunctionReturnType: ...

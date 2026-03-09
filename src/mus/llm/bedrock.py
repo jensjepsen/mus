@@ -240,14 +240,14 @@ def join_content(
                         {
                             "reasoningText": bt.ReasoningTextBlockTypeDef(
                                 {
-                                    "text": a[-1]["reasoningContent"]["reasoningText"][
+                                    "text": a[-1]["reasoningContent"]["reasoningText"][ # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
                                         "text"
                                     ]
                                     + b[0]["reasoningContent"]["reasoningText"]["text"],  # type: ignore
-                                    "signature": a[-1]["reasoningContent"][
+                                    "signature": a[-1]["reasoningContent"][ # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
                                         "reasoningText"
                                     ]["signature"]
-                                    or b[0]["reasoningContent"]["reasoningText"][
+                                    or b[0]["reasoningContent"]["reasoningText"][ # type: ignore # reasoningContent is guaranteed to be in b[0] by has_reasoning_text
                                         "signature"
                                     ],  # type: ignore
                                 }
