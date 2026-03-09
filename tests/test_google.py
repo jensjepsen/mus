@@ -9,6 +9,7 @@ from google.genai import types as genai_types
 
 from mus.llm.google import (
     GoogleGenAILLM,
+    _map_google_exception,
     func_schema_to_tool,
     functions_for_llm,
     file_to_part,
@@ -649,3 +650,206 @@ async def test_google_genai_thought_signatures_with_tools(google_genai_llm, mock
 
     assert isinstance(results[1].content, DeltaToolUse)
     assert results[1].metadata.get("thought_signature") == "tool_use"
+
+
+# --- Exception handling tests ---
+
+from google.genai import errors as genai_errors
+from mus.llm.exceptions import (
+    LLMAuthenticationException,
+    LLMRateLimitException,
+    LLMServerException,
+    LLMBadRequestException,
+    LLMNotFoundException,
+    LLMModelException,
+    LLMException,
+)
+
+
+def _make_google_api_error(cls, code, status=None):
+    """Helper to create a Google genai APIError (or subclass)."""
+    response_json = {"error": {"message": "test error", "status": status or "UNKNOWN"}}
+    err = cls(code, response_json, response=None)
+    return err
+
+
+# --- Direct mapping function tests ---
+
+def test_map_google_auth_error_401():
+    exc = _make_google_api_error(genai_errors.ClientError, 401)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 401
+
+
+def test_map_google_auth_error_403():
+    exc = _make_google_api_error(genai_errors.ClientError, 403)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 403
+
+
+def test_map_google_rate_limit():
+    exc = _make_google_api_error(genai_errors.ClientError, 429)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMRateLimitException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 429
+
+
+def test_map_google_bad_request():
+    exc = _make_google_api_error(genai_errors.ClientError, 400)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 400
+
+
+def test_map_google_not_found():
+    exc = _make_google_api_error(genai_errors.ClientError, 404)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMNotFoundException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 404
+
+
+def test_map_google_model_unavailable():
+    exc = _make_google_api_error(genai_errors.ServerError, 503, status="UNAVAILABLE")
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMModelException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 503
+
+
+def test_map_google_server_error():
+    exc = _make_google_api_error(genai_errors.ServerError, 500)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMServerException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 500
+
+
+def test_map_google_client_error_fallback():
+    """ClientError with unrecognized status code falls through to LLMBadRequestException."""
+    exc = _make_google_api_error(genai_errors.ClientError, 418)
+    mapped = _map_google_exception(exc)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "google"
+    assert mapped.status_code == 418
+
+
+@pytest.mark.asyncio
+async def test_google_auth_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ClientError, 401)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_google_rate_limit_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ClientError, 429)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_google_server_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ServerError, 500)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMServerException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_google_not_found_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ClientError, 404)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMNotFoundException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_google_bad_request_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ClientError, 400)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMBadRequestException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_google_model_unavailable_error(google_genai_llm, mock_genai_client):
+    exc = _make_google_api_error(genai_errors.ServerError, 503, status="UNAVAILABLE")
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMModelException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_google_stream_iteration_error(google_genai_llm, mock_genai_client):
+    """SDK exception during stream iteration is mapped correctly."""
+    exc = _make_google_api_error(genai_errors.ServerError, 500)
+
+    async def failing_stream():
+        yield Mock(candidates=[], usage_metadata=None)
+        raise exc
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=failing_stream())
+
+    with pytest.raises(LLMServerException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_google_exception_chaining(google_genai_llm, mock_genai_client):
+    """Verify __cause__ is the original SDK exception."""
+    exc = _make_google_api_error(genai_errors.ClientError, 401)
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_google_no_stream_error(google_genai_llm, mock_genai_client):
+    """Exception during non-streaming call is mapped correctly."""
+    exc = _make_google_api_error(genai_errors.ClientError, 429)
+    mock_genai_client.aio.models.generate_content = AsyncMock(side_effect=exc)
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in google_genai_llm.stream(prompt="p", history=[], model="m", no_stream=True):
+            pass
+    assert exc_info.value.provider == "google"
+    assert exc_info.value.__cause__ is exc

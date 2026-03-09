@@ -3,9 +3,11 @@ from .types import (
     LLM, Delta, DeltaHistory, DeltaText, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
     DeltaToolUse, DeltaToolResult
 )
+from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException, LLMToolParseException
 import json
 
 from mistralai import Mistral
+from mistralai.models import MistralError
 from mistralai.models import (
     ChatCompletionRequest,
     SystemMessage,
@@ -26,6 +28,35 @@ import mistralai.models as mt
 
 P = t.ParamSpec("P")
 T = t.TypeVar("T")
+
+PROVIDER = "mistral"
+
+def _map_mistral_exception(e: MistralError) -> LLMException:
+    msg = str(e)
+    status_code = e.status_code
+    raw_response = e.raw_response
+    request_id = e.headers.get("x-request-id") if e.headers else None
+
+    if status_code == 401 or status_code == 403:
+        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif status_code == 429:
+        retry_after: t.Optional[float] = None
+        if e.headers:
+            raw = e.headers.get("retry-after")
+            if raw:
+                try:
+                    retry_after = float(raw)
+                except ValueError:
+                    pass
+        return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response, retry_after=retry_after)
+    elif status_code == 400 or status_code == 422:
+        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif status_code == 404:
+        return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif status_code is not None and status_code >= 500:
+        return LLMServerException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    else:
+        return LLMException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
 
 
 def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations) -> Tool:
@@ -201,11 +232,17 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
 
-def convert_tool_arguments(args: Arguments):
+def convert_tool_arguments(args: Arguments, tool_name: str = "unknown"):
     if isinstance(args, dict):
         return args
     elif isinstance(args, str):
-        return json.loads(args)
+        try:
+            return json.loads(args)
+        except json.JSONDecodeError as e:
+            raise LLMToolParseException(
+                f"Model returned malformed tool JSON for {tool_name}: {args}",
+                provider=PROVIDER,
+            ) from e
     else:
         raise ValueError(f"Invalid arguments type: {type(args)}")
 
@@ -262,60 +299,69 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
         )
         
         if not kwargs.get("no_stream", False):
-            response = await self.client.chat.stream_async(**request.model_dump(exclude_none=True))
-            
-            async for chunk in response:
-                if chunk.data and chunk.data.choices:
-                    choice = chunk.data.choices[0]
-                    
-                    if choice.delta.content:
-                        async for content_chunk in choice_content_to_chunks(choice.delta.content):
-                            yield content_chunk
-                        
-                    if choice.delta.tool_calls:
-                        for tool_call in choice.delta.tool_calls:
-                            if tool_call.function:
-                                tool_use = ToolUse(
-                                    id=tool_call.id or tool_call.function.name,
-                                    name=tool_call.function.name,
-                                    input=convert_tool_arguments(tool_call.function.arguments) if tool_call.function.arguments else {}
+            try:
+                response = await self.client.chat.stream_async(**request.model_dump(exclude_none=True))
+            except MistralError as e:
+                raise _map_mistral_exception(e) from e
+
+            try:
+                async for chunk in response:
+                    if chunk.data and chunk.data.choices:
+                        choice = chunk.data.choices[0]
+
+                        if choice.delta.content:
+                            async for content_chunk in choice_content_to_chunks(choice.delta.content):
+                                yield content_chunk
+
+                        if choice.delta.tool_calls:
+                            for tool_call in choice.delta.tool_calls:
+                                if tool_call.function:
+                                    tool_use = ToolUse(
+                                        id=tool_call.id or tool_call.function.name,
+                                        name=tool_call.function.name,
+                                        input=convert_tool_arguments(tool_call.function.arguments, tool_call.function.name) if tool_call.function.arguments else {}
+                                    )
+                                    yield Delta(content=DeltaToolUse(data=tool_use))
+
+
+                        if choice.finish_reason:
+                            # Handle usage information if available
+                            if chunk.data and chunk.data.usage:
+                                usage = Usage(
+                                    input_tokens=chunk.data.usage.prompt_tokens or 0,
+                                    output_tokens=chunk.data.usage.completion_tokens or 0,
+                                    cache_read_input_tokens=0,  # Mistral doesn't provide cache info
+                                    cache_written_input_tokens=0
                                 )
-                                yield Delta(content=DeltaToolUse(data=tool_use))
-                                    
-                    
-                    if choice.finish_reason:
-                        # Handle usage information if available
-                        if chunk.data and chunk.data.usage:
-                            usage = Usage(
-                                input_tokens=chunk.data.usage.prompt_tokens or 0,
-                                output_tokens=chunk.data.usage.completion_tokens or 0,
-                                cache_read_input_tokens=0,  # Mistral doesn't provide cache info
-                                cache_written_input_tokens=0
-                            )
-                            yield Delta(
-                                content=DeltaText(data=""),
-                                usage=usage
-                            )
+                                yield Delta(
+                                    content=DeltaText(data=""),
+                                    usage=usage
+                                )
+            except MistralError as e:
+                raise _map_mistral_exception(e) from e
         else:
-            response = await self.client.chat.complete_async(**request.model_dump(exclude_none=True))
-            
+            try:
+                response = await self.client.chat.complete_async(**request.model_dump(exclude_none=True))
+            except MistralError as e:
+                raise _map_mistral_exception(e) from e
+
             if response.choices:
                 choice = response.choices[0]
-                
+
                 if choice.message.content:
                     async for delta in choice_content_to_chunks(choice.message.content):
                         yield delta
-                
+
                 if choice.message.tool_calls:
                     for tool_call in choice.message.tool_calls:
                         if tool_call.function:
                             tool_use = ToolUse(
                                 id=tool_call.id or tool_call.function.name,
                                 name=tool_call.function.name,
-                                input=convert_tool_arguments(tool_call.function.arguments) if tool_call.function.arguments else {}
+                                input=convert_tool_arguments(tool_call.function.arguments, tool_call.function.name) if tool_call.function.arguments else {}
                             )
                             yield Delta(content=DeltaToolUse(data=tool_use))
-                
+
                 # Handle usage information
                 if response.usage:
                     usage = Usage(

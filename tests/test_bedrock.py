@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock
 from mus.llm.bedrock import (
     BedrockLLM,
+    _map_bedrock_exception,
     functions_for_llm,
     file_to_image,
     str_to_text_block,
@@ -16,6 +17,7 @@ from mus.llm.types import DeltaToolInputUpdate, File, Query, Delta, ToolUse, Too
 from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
+import json
 
 @pytest.fixture
 def mock_bedrock_client():
@@ -370,3 +372,273 @@ async def test_bedrock_llm_cache_options(bedrock_llm):
 
     assert len(call_args_no_cache["toolConfig"]["tools"]) == 1, "Tool config should not include cache info when cache is None"
     assert call_args_no_cache["toolConfig"]["tools"][0]["toolSpec"]["name"] == "dummy_tool"
+
+
+# --- Exception handling tests ---
+
+import botocore.exceptions
+from mus.llm.exceptions import (
+    LLMAuthenticationException,
+    LLMRateLimitException,
+    LLMConnectionException,
+    LLMTimeoutException,
+    LLMBadRequestException,
+    LLMServerException,
+    LLMNotFoundException,
+    LLMModelException,
+    LLMToolParseException,
+    LLMException,
+)
+
+
+def _make_client_error(code, message="error", status_code=400, request_id="req-123"):
+    """Helper to create a botocore ClientError."""
+    return botocore.exceptions.ClientError(
+        error_response={
+            "Error": {"Code": code, "Message": message},
+            "ResponseMetadata": {
+                "RequestId": request_id,
+                "HTTPStatusCode": status_code,
+            },
+        },
+        operation_name="ConverseStream",
+    )
+
+
+# --- Direct mapping function tests ---
+
+def test_map_bedrock_throttling_exception():
+    err = _make_client_error("ThrottlingException", status_code=429, request_id="req-map-1")
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMRateLimitException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 429
+    assert mapped.request_id == "req-map-1"
+
+
+def test_map_bedrock_access_denied():
+    err = _make_client_error("AccessDeniedException", status_code=403)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 403
+
+
+def test_map_bedrock_validation_exception():
+    err = _make_client_error("ValidationException", status_code=400)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 400
+
+
+def test_map_bedrock_resource_not_found():
+    err = _make_client_error("ResourceNotFoundException", status_code=404)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMNotFoundException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 404
+
+
+def test_map_bedrock_internal_server_exception():
+    err = _make_client_error("InternalServerException", status_code=500)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMServerException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 500
+
+
+def test_map_bedrock_model_error_exception():
+    err = _make_client_error("ModelErrorException", status_code=424)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMModelException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_no_credentials():
+    err = botocore.exceptions.NoCredentialsError()
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_endpoint_connection_error():
+    err = botocore.exceptions.EndpointConnectionError(endpoint_url="https://example.com")
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMConnectionException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_connect_timeout():
+    err = botocore.exceptions.ConnectTimeoutError(endpoint_url="https://example.com")
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMTimeoutException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_read_timeout():
+    err = botocore.exceptions.ReadTimeoutError(endpoint_url="https://example.com")
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMTimeoutException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_service_quota_exceeded():
+    err = _make_client_error("ServiceQuotaExceededException", status_code=429)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMRateLimitException)
+    assert mapped.provider == "bedrock"
+
+
+def test_map_bedrock_unknown_client_error():
+    err = _make_client_error("SomeUnknownException", status_code=418)
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMException)
+    assert not isinstance(mapped, LLMRateLimitException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 418
+
+
+# --- stream() integration tests ---
+
+@pytest.mark.asyncio
+async def test_bedrock_auth_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("AccessDeniedException", status_code=403)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.request_id == "req-123"
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_bedrock_rate_limit_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("ThrottlingException", status_code=429)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_bedrock_connection_error(bedrock_llm, mock_bedrock_client):
+    exc = botocore.exceptions.EndpointConnectionError(endpoint_url="https://example.com")
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMConnectionException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_bedrock_timeout_error(bedrock_llm, mock_bedrock_client):
+    exc = botocore.exceptions.ConnectTimeoutError(endpoint_url="https://example.com")
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMTimeoutException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_bedrock_server_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("InternalServerException", status_code=500)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMServerException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_bedrock_not_found_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("ResourceNotFoundException", status_code=404)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMNotFoundException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bedrock_no_credentials_error(bedrock_llm, mock_bedrock_client):
+    exc = botocore.exceptions.NoCredentialsError()
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_bedrock_stream_iteration_error(bedrock_llm, mock_bedrock_client):
+    """SDK exception during stream iteration is mapped correctly."""
+    exc = _make_client_error("ThrottlingException", status_code=429)
+
+    async def failing_stream():
+        yield {"contentBlockDelta": {"delta": {"text": "partial"}}}
+        raise exc
+
+    mock_bedrock_client.converse_stream.return_value = {"stream": failing_stream()}
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_bedrock_tool_parse_error(bedrock_llm, mock_bedrock_client):
+    """Malformed tool JSON raises LLMToolParseException."""
+    async def stream_with_bad_tool():
+        yield {"contentBlockStart": {"start": {"toolUse": {"name": "my_tool", "toolUseId": "t1"}}}}
+        yield {"contentBlockDelta": {"delta": {"toolUse": {"input": "{invalid json"}}}}
+        yield {"contentBlockStop": {}}
+
+    mock_bedrock_client.converse_stream.return_value = {"stream": stream_with_bad_tool()}
+
+    with pytest.raises(LLMToolParseException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+
+
+@pytest.mark.asyncio
+async def test_bedrock_model_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("ModelErrorException", status_code=424)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMModelException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+
+
+@pytest.mark.asyncio
+async def test_bedrock_bad_request_error(bedrock_llm, mock_bedrock_client):
+    exc = _make_client_error("ValidationException", status_code=400)
+    mock_bedrock_client.converse_stream.side_effect = exc
+
+    with pytest.raises(LLMBadRequestException) as exc_info:
+        async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "bedrock"
+    assert exc_info.value.status_code == 400

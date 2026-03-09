@@ -1,10 +1,36 @@
 import typing as t
 from .types import LLM, Delta, DeltaHistory, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult
+from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException
 import base64
 import json
 
 from google import genai
 from google.genai import types as genai_types
+from google.genai import errors as genai_errors
+
+PROVIDER = "google"
+
+def _map_google_exception(e: genai_errors.APIError) -> LLMException:
+    msg = str(e)
+    status_code = e.code
+    raw_response = e.response
+
+    if status_code == 401 or status_code == 403:
+        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif status_code == 429:
+        return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif status_code == 400 or status_code == 422:
+        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif status_code == 404:
+        return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif status_code == 503 and e.status == "UNAVAILABLE":
+        return LLMModelException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif isinstance(e, genai_errors.ServerError):
+        return LLMServerException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    elif isinstance(e, genai_errors.ClientError):
+        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
+    else:
+        return LLMException(msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response)
 
 def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations):
     return genai_types.FunctionDeclaration(
@@ -243,20 +269,28 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
             return deltas
 
         if not kwargs.get("no_stream", False):
-            # Streaming response using native async API
-            async for chunk in await self.client.aio.models.generate_content_stream(
-                model=str(self.model),
-                contents=contents,
-                config=config
-            ):
-                for delta in handle_response(chunk):
-                    yield delta
+            try:
+                response_stream = await self.client.aio.models.generate_content_stream(
+                    model=str(self.model),
+                    contents=contents,
+                    config=config
+                )
+            except genai_errors.APIError as e:
+                raise _map_google_exception(e) from e
+            try:
+                async for chunk in response_stream:
+                    for delta in handle_response(chunk):
+                        yield delta
+            except genai_errors.APIError as e:
+                raise _map_google_exception(e) from e
         else:
-            # Non-streaming response using blocking API
-            response = await self.client.aio.models.generate_content(
-                model=str(self.model),
-                contents=contents,
-                config=config
-            )
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=str(self.model),
+                    contents=contents,
+                    config=config
+                )
+            except genai_errors.APIError as e:
+                raise _map_google_exception(e) from e
             for delta in handle_response(response):
                 yield delta

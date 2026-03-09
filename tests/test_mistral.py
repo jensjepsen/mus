@@ -21,6 +21,7 @@ from mistralai.models import (
 
 from mus.llm.mistral import (
     MistralLLM,
+    _map_mistral_exception,
     func_schema_to_tool,
     functions_for_llm,
     file_to_image_chunk,
@@ -322,7 +323,8 @@ def test_convert_tool_arguments():
     assert convert_tool_arguments(str_args) == dict_args
     
     # Invalid JSON string
-    with pytest.raises(json.JSONDecodeError):
+    from mus.llm.exceptions import LLMToolParseException
+    with pytest.raises(LLMToolParseException):
         convert_tool_arguments('{invalid json}')
     
     # Invalid arguments
@@ -623,3 +625,248 @@ def test_mistral_llm_initialization_without_client():
         mock_mistral_class.assert_called_once_with(api_key="test-key")
         assert llm.client is mock_client
         assert llm.model == "mistral-medium"
+
+
+# --- Exception handling tests ---
+
+import httpx
+from mistralai.models import MistralError
+from mus.llm.exceptions import (
+    LLMAuthenticationException,
+    LLMRateLimitException,
+    LLMConnectionException,
+    LLMServerException,
+    LLMBadRequestException,
+    LLMNotFoundException,
+    LLMToolParseException,
+    LLMException,
+)
+
+
+def _make_httpx_response(status_code, headers=None):
+    """Helper to create a mock httpx.Response for MistralError."""
+    resp = Mock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.headers = httpx.Headers(headers or {})
+    resp.text = "error body"
+    return resp
+
+
+def _make_mistral_error(status_code, headers=None, message="error"):
+    """Helper to create a MistralError."""
+    resp = _make_httpx_response(status_code, headers)
+    return MistralError(message, resp)
+
+
+# --- Direct mapping function tests ---
+
+def test_map_mistral_auth_error_401():
+    exc = _make_mistral_error(401)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 401
+
+
+def test_map_mistral_auth_error_403():
+    exc = _make_mistral_error(403)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 403
+
+
+def test_map_mistral_rate_limit_with_retry_after():
+    exc = _make_mistral_error(429, headers={"retry-after": "60", "x-request-id": "req-mr1"})
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMRateLimitException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 429
+    assert mapped.retry_after == 60.0
+    assert mapped.request_id == "req-mr1"
+
+
+def test_map_mistral_rate_limit_no_retry_after():
+    exc = _make_mistral_error(429)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMRateLimitException)
+    assert mapped.retry_after is None
+
+
+def test_map_mistral_bad_request_400():
+    exc = _make_mistral_error(400)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 400
+
+
+def test_map_mistral_bad_request_422():
+    exc = _make_mistral_error(422)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 422
+
+
+def test_map_mistral_not_found():
+    exc = _make_mistral_error(404)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMNotFoundException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 404
+
+
+def test_map_mistral_server_error():
+    exc = _make_mistral_error(500)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMServerException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 500
+
+
+def test_map_mistral_server_error_503():
+    exc = _make_mistral_error(503)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMServerException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 503
+
+
+def test_map_mistral_unknown_status():
+    exc = _make_mistral_error(418)
+    mapped = _map_mistral_exception(exc)
+    assert isinstance(mapped, LLMException)
+    assert not isinstance(mapped, LLMServerException)
+    assert mapped.provider == "mistral"
+    assert mapped.status_code == 418
+
+
+@pytest.mark.asyncio
+async def test_mistral_auth_error(mistral_llm, mock_mistral_client):
+    exc = _make_mistral_error(401)
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_mistral_rate_limit_error_with_retry_after(mistral_llm, mock_mistral_client):
+    exc = _make_mistral_error(429, headers={"retry-after": "60"})
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after == 60.0
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_mistral_server_error(mistral_llm, mock_mistral_client):
+    exc = _make_mistral_error(500)
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMServerException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_mistral_not_found_error(mistral_llm, mock_mistral_client):
+    exc = _make_mistral_error(404)
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMNotFoundException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mistral_bad_request_error(mistral_llm, mock_mistral_client):
+    exc = _make_mistral_error(400)
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMBadRequestException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_mistral_stream_iteration_error(mistral_llm, mock_mistral_client):
+    """SDK exception during stream iteration is mapped correctly."""
+    exc = _make_mistral_error(500)
+
+    async def failing_stream():
+        raise exc
+        yield  # make it a generator
+
+    mock_mistral_client.chat.stream_async.return_value = failing_stream()
+
+    with pytest.raises(LLMServerException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_mistral_tool_parse_error_in_stream(mistral_llm, mock_mistral_client):
+    """Malformed tool JSON during streaming raises LLMToolParseException."""
+    mock_chunk = Mock()
+    mock_chunk.data = Mock()
+    mock_chunk.data.choices = [Mock()]
+    mock_chunk.data.choices[0].delta = Mock()
+    mock_chunk.data.choices[0].delta.content = None
+    mock_function = Mock()
+    mock_function.name = "test_tool"
+    mock_function.arguments = "{invalid json"
+    mock_chunk.data.choices[0].delta.tool_calls = [
+        Mock(id="t1", function=mock_function)
+    ]
+    mock_chunk.data.choices[0].finish_reason = None
+
+    mock_mistral_client.chat.stream_async.return_value = to_async_response([mock_chunk])
+
+    with pytest.raises(LLMToolParseException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m", functions=[]):
+            pass
+    assert exc_info.value.provider == "mistral"
+    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+
+
+@pytest.mark.asyncio
+async def test_mistral_exception_chaining(mistral_llm, mock_mistral_client):
+    """Verify __cause__ is the original SDK exception."""
+    exc = _make_mistral_error(401)
+    mock_mistral_client.chat.stream_async.side_effect = exc
+
+    with pytest.raises(LLMAuthenticationException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m"):
+            pass
+    assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+async def test_mistral_no_stream_error(mistral_llm, mock_mistral_client):
+    """Exception during non-streaming call is mapped correctly."""
+    exc = _make_mistral_error(429, headers={"retry-after": "10"})
+    mock_mistral_client.chat.complete_async.side_effect = exc
+
+    with pytest.raises(LLMRateLimitException) as exc_info:
+        async for _ in mistral_llm.stream(prompt="p", history=[], model="m", no_stream=True):
+            pass
+    assert exc_info.value.retry_after == 10.0
+    assert exc_info.value.__cause__ is exc

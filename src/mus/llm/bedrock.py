@@ -1,12 +1,60 @@
 import typing as t
 from .types import LLM, Delta, DeltaText, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaToolUse, DeltaToolResult, DeltaToolInputUpdate, DeltaHistory
+from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException, LLMToolParseException
 import base64
 
 from types_aiobotocore_bedrock_runtime.client import BedrockRuntimeClient
 from types_aiobotocore_bedrock_runtime import type_defs as bt
 import json
 import aiobotocore.session
+import botocore.exceptions
 import contextlib
+
+PROVIDER = "bedrock"
+
+def _map_bedrock_exception(e: Exception) -> LLMException:
+    msg = str(e)
+    request_id: t.Optional[str] = None
+    status_code: t.Optional[int] = None
+    raw_response: t.Optional[object] = None
+
+    if isinstance(e, botocore.exceptions.ClientError):
+        raw_response = e.response
+        error_code = e.response.get("Error", {}).get("Code", "")
+        request_id = e.response.get("ResponseMetadata", {}).get("RequestId")
+        status_code = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+        if error_code == "AccessDeniedException":
+            return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        elif error_code in ("ThrottlingException", "ServiceQuotaExceededException"):
+            return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        elif error_code == "ValidationException":
+            return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        elif error_code == "ResourceNotFoundException":
+            return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        elif error_code in ("InternalServerException", "ServiceUnavailableException"):
+            return LLMServerException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        elif error_code in ("ModelErrorException", "ModelNotReadyException", "ModelStreamErrorException", "ModelTimeoutException"):
+            return LLMModelException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        else:
+            return LLMException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+
+    if isinstance(e, botocore.exceptions.NoCredentialsError):
+        return LLMAuthenticationException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.PartialCredentialsError):
+        return LLMAuthenticationException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.CredentialRetrievalError):
+        return LLMAuthenticationException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.EndpointConnectionError):
+        return LLMConnectionException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.ConnectionClosedError):
+        return LLMConnectionException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.ConnectTimeoutError):
+        return LLMTimeoutException(msg, provider=PROVIDER)
+    elif isinstance(e, botocore.exceptions.ReadTimeoutError):
+        return LLMTimeoutException(msg, provider=PROVIDER)
+    else:
+        return LLMException(msg, provider=PROVIDER)
 
 def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations):
     return bt.ToolTypeDef(
@@ -292,73 +340,89 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
 
         async with get_client() as client:
             if not kwargs.get("no_stream", False):
-                response = await client.converse_stream(**args)
+                try:
+                    response = await client.converse_stream(**args)
+                except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
+                    raise _map_bedrock_exception(e) from e
                 function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
                 current_function = None
-                async for event in response.get("stream"):
-                    if "contentBlockStart" in event:
-                        start = event["contentBlockStart"]["start"]
-                        if "toolUse" in start:
-                            current_function = {**start["toolUse"]}
-                    if "contentBlockDelta" in event:
-                        delta = event["contentBlockDelta"]["delta"]
-                        if "text" in delta:
-                            yield Delta(content=DeltaText(data=delta["text"]))
-                        if "reasoningContent" in delta:
-                            reasoning = delta["reasoningContent"]
+                try:
+                    async for event in response.get("stream"):
+                        if "contentBlockStart" in event:
+                            start = event["contentBlockStart"]["start"]
+                            if "toolUse" in start:
+                                current_function = {**start["toolUse"]}
+                        if "contentBlockDelta" in event:
+                            delta = event["contentBlockDelta"]["delta"]
+                            if "text" in delta:
+                                yield Delta(content=DeltaText(data=delta["text"]))
+                            if "reasoningContent" in delta:
+                                reasoning = delta["reasoningContent"]
 
-                            yield Delta(content=DeltaText(
-                                data=reasoning.get("text", "")
-                                , subtype="reasoning",
-                                metadata={
-                                    "signature": reasoning.get("signature", None),
-                                    "redactedContent": reasoning.get("redactedContent", None)
-                                }
-                            ))
-                        if "toolUse" in delta:
-                            tu = delta["toolUse"]
-                            if current_function:
-                                yield Delta(content=DeltaToolInputUpdate(
-                                    name=current_function["name"],
-                                    id=current_function["toolUseId"],
-                                    data=tu["input"]
-                                ))
-                                current_function["input"] = current_function.get("input", "") + tu["input"]
-                    if "contentBlockStop" in event:
-                        if current_function and current_function.get("input", None):
-                            function_blocks.append(
-                                bt.ToolUseBlockTypeDef(
-                                    **{
-                                        **current_function,
-                                        **dict(input=json.loads(current_function["input"]))
+                                yield Delta(content=DeltaText(
+                                    data=reasoning.get("text", "")
+                                    , subtype="reasoning",
+                                    metadata={
+                                        "signature": reasoning.get("signature", None),
+                                        "redactedContent": reasoning.get("redactedContent", None)
                                     }
+                                ))
+                            if "toolUse" in delta:
+                                tu = delta["toolUse"]
+                                if current_function:
+                                    yield Delta(content=DeltaToolInputUpdate(
+                                        name=current_function["name"],
+                                        id=current_function["toolUseId"],
+                                        data=tu["input"]
+                                    ))
+                                    current_function["input"] = current_function.get("input", "") + tu["input"]
+                        if "contentBlockStop" in event:
+                            if current_function and current_function.get("input", None):
+                                try:
+                                    parsed_input = json.loads(current_function["input"])
+                                except json.JSONDecodeError as e:
+                                    raise LLMToolParseException(
+                                        f"Model returned malformed tool JSON for {current_function.get('name', 'unknown')}: {current_function['input']}",
+                                        provider=PROVIDER,
+                                    ) from e
+                                function_blocks.append(
+                                    bt.ToolUseBlockTypeDef(
+                                        **{
+                                            **current_function,
+                                            **dict(input=parsed_input)
+                                        }
+                                    )
                                 )
+                                current_function = None
+
+                        if "messageStop" in event:
+                            stop_reason = event["messageStop"]["stopReason"]
+                            if stop_reason == "tool_use":
+                                for block in function_blocks:
+                                    tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
+                                    yield Delta(content=DeltaToolUse(data=tool_use))
+
+                        if "metadata" in event:
+                            metadata = event["metadata"]
+                            usage = Usage(
+                                input_tokens=metadata["usage"]["inputTokens"],
+                                output_tokens=metadata["usage"]["outputTokens"],
+                                cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
+                                cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
                             )
-                            current_function = None
-
-                    if "messageStop" in event:
-                        stop_reason = event["messageStop"]["stopReason"]
-                        if stop_reason == "tool_use":
-                            for block in function_blocks:
-                                tool_use = ToolUse(id=block["toolUseId"], name=block["name"], input=block["input"])
-                                yield Delta(content=DeltaToolUse(data=tool_use))
-
-                    if "metadata" in event:
-                        metadata = event["metadata"]
-                        usage = Usage(
-                            input_tokens=metadata["usage"]["inputTokens"],
-                            output_tokens=metadata["usage"]["outputTokens"],
-                            cache_read_input_tokens=metadata["usage"].get("cacheReadInputTokens", 0),
-                            cache_written_input_tokens=metadata["usage"].get("cacheWriteInputTokens", 0)
-                        )
-                        yield Delta(
-                            content=DeltaText(
-                                data="",
-                            ),
-                            usage=usage
-                        )
+                            yield Delta(
+                                content=DeltaText(
+                                    data="",
+                                ),
+                                usage=usage
+                            )
+                except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
+                    raise _map_bedrock_exception(e) from e
             else:
-                response = await client.converse(**args)
+                try:
+                    response = await client.converse(**args)
+                except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
+                    raise _map_bedrock_exception(e) from e
 
                 output = response.get("output")
                 tools: t.List[Delta] = []

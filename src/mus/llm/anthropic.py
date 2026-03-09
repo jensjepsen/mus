@@ -1,9 +1,57 @@
 import typing as t
 from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, Omit
 from anthropic import types as at
+import anthropic
 from .types import LLM, Delta, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaToolInputUpdate, DeltaHistory
+from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException
 
 omit = Omit()
+
+PROVIDER = "anthropic"
+
+def _map_anthropic_exception(e: Exception) -> LLMException:
+    request_id: t.Optional[str] = None
+    status_code: t.Optional[int] = None
+    raw_response: t.Optional[object] = None
+
+    if isinstance(e, anthropic.APIStatusError):
+        status_code = e.status_code
+        request_id = e.request_id
+        raw_response = e.response
+
+    msg = str(e)
+
+    if isinstance(e, anthropic.AuthenticationError):
+        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.PermissionDeniedError):
+        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.RateLimitError):
+        retry_after: t.Optional[float] = None
+        if isinstance(e, anthropic.APIStatusError):
+            raw = e.response.headers.get("retry-after")
+            if raw:
+                try:
+                    retry_after = float(raw)
+                except ValueError:
+                    pass
+        return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response, retry_after=retry_after)
+    elif isinstance(e, anthropic.APITimeoutError):
+        return LLMTimeoutException(msg, provider=PROVIDER)
+    elif isinstance(e, anthropic.APIConnectionError):
+        return LLMConnectionException(msg, provider=PROVIDER)
+    elif isinstance(e, anthropic.NotFoundError):
+        return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.BadRequestError):
+        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.UnprocessableEntityError):
+        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.InternalServerError):
+        return LLMServerException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    elif isinstance(e, anthropic.APIStatusError) and status_code == 529:
+        # Anthropic overloaded error
+        return LLMModelException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+    else:
+        return LLMException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
 
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> at.ToolParam:
@@ -175,36 +223,39 @@ class AnthropicLLM(LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock
 
         
         messages = deltas_to_messages(kwargs.get("history"))
-        async with self.client.messages.stream(
-            max_tokens=kwargs.get("max_tokens", None) or 4096,
-            model=self.model,
-            messages=messages,
-            top_k=kwargs.get("top_k", None) or omit,
-            top_p=kwargs.get("top_p", None) or omit,
-            stop_sequences=kwargs.get("stop_sequences", None) or omit,
-            temperature=kwargs.get("temperature", None) or omit,
-            **extra_kwargs
-        ) as response:
-            function_blocks: t.List[at.ToolUseBlock] = []
-            async for event in response:
-                if event.type == "text":
-                    yield Delta(content=DeltaText(data=event.text))
-                # TODO: Add support for tool input updates here
-                elif event.type == "content_block_stop":
-                    if event.content_block.type == "tool_use":
-                        function_blocks.append(event.content_block)
-                
-                elif event.type == "message_stop":
-                    usage= Usage(
-                        input_tokens=event.message.usage.input_tokens, 
-                        output_tokens=event.message.usage.output_tokens,
-                        cache_read_input_tokens=event.message.usage.cache_read_input_tokens or 0,
-                        cache_written_input_tokens=event.message.usage.cache_creation_input_tokens or 0,
-                    )
-                    yield Delta(content=DeltaText(data=""),
-                        usage=usage
-                    )
-                    if event.message.stop_reason == "tool_use":
-                        for block in function_blocks:
-                            tool_use = ToolUse(id=block.id, name=block.name, input=block.input) # type: ignore
-                            yield Delta(content=DeltaToolUse(data=tool_use))
+        try:
+            async with self.client.messages.stream(
+                max_tokens=kwargs.get("max_tokens", None) or 4096,
+                model=self.model,
+                messages=messages,
+                top_k=kwargs.get("top_k", None) or omit,
+                top_p=kwargs.get("top_p", None) or omit,
+                stop_sequences=kwargs.get("stop_sequences", None) or omit,
+                temperature=kwargs.get("temperature", None) or omit,
+                **extra_kwargs
+            ) as response:
+                function_blocks: t.List[at.ToolUseBlock] = []
+                async for event in response:
+                    if event.type == "text":
+                        yield Delta(content=DeltaText(data=event.text))
+                    # TODO: Add support for tool input updates here
+                    elif event.type == "content_block_stop":
+                        if event.content_block.type == "tool_use":
+                            function_blocks.append(event.content_block)
+
+                    elif event.type == "message_stop":
+                        usage= Usage(
+                            input_tokens=event.message.usage.input_tokens,
+                            output_tokens=event.message.usage.output_tokens,
+                            cache_read_input_tokens=event.message.usage.cache_read_input_tokens or 0,
+                            cache_written_input_tokens=event.message.usage.cache_creation_input_tokens or 0,
+                        )
+                        yield Delta(content=DeltaText(data=""),
+                            usage=usage
+                        )
+                        if event.message.stop_reason == "tool_use":
+                            for block in function_blocks:
+                                tool_use = ToolUse(id=block.id, name=block.name, input=block.input) # type: ignore
+                                yield Delta(content=DeltaToolUse(data=tool_use))
+        except anthropic.APIError as e:
+            raise _map_anthropic_exception(e) from e
