@@ -5,27 +5,69 @@ from textwrap import dedent
 import sys
 from dataclasses import replace
 
-from .types import Delta, LLM, QueryType, System, LLMDecoratedFunctionType, LLMDecoratedFunctionReturnType, Query, LLMPromptFunctionArgs, ToolCallableType, ToolResult, STREAM_EXTRA_ARGS, MODEL_TYPE, History, QueryStreamArgs, Usage, CLIENT_TYPE, Assistant, CacheOptions, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, ensure_tool_value, FallbackToolCallableType
-from ..functions import to_schema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
+from .types import (
+    Delta,
+    LLM,
+    QueryType,
+    System,
+    LLMDecoratedFunctionType,
+    LLMDecoratedFunctionReturnType,
+    Query,
+    LLMPromptFunctionArgs,
+    ToolCallableType,
+    ToolResult,
+    STREAM_EXTRA_ARGS,
+    MODEL_TYPE,
+    History,
+    QueryStreamArgs,
+    Usage,
+    CLIENT_TYPE,
+    Assistant,
+    CacheOptions,
+    FunctionSchemaNoAnnotations,
+    DeltaText,
+    DeltaToolUse,
+    DeltaToolResult,
+    DeltaHistory,
+    ensure_tool_value,
+    FallbackToolCallableType,
+)
+from ..functions import (
+    to_schema,
+    schema_to_example,
+    parse_tools,
+    ToolCallable,
+    verify_schema_inputs,
+)
 from ..types import FillableType
 
 from ..exceptions import ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
+
 def merge_history(history: History) -> History:
     merged = []
     for msg in history:
-        if merged and isinstance(msg, Delta) and isinstance(msg.content, DeltaText) and msg.content.subtype == "text":
-            if isinstance(merged[-1], Delta) and isinstance(merged[-1].content, DeltaText) and merged[-1].content.subtype == "text":
+        if (
+            merged
+            and isinstance(msg, Delta)
+            and isinstance(msg.content, DeltaText)
+            and msg.content.subtype == "text"
+        ):
+            if (
+                isinstance(merged[-1], Delta)
+                and isinstance(merged[-1].content, DeltaText)
+                and merged[-1].content.subtype == "text"
+            ):
                 # Create new Delta and DeltaText instead of mutating in place
                 # Using replace() ensures all fields are properly copied
                 merged[-1] = replace(
                     merged[-1],
                     content=replace(
                         merged[-1].content,
-                        data=merged[-1].content.data + msg.content.data
-                    )
+                        data=merged[-1].content.data + msg.content.data,
+                    ),
                 )
             else:
                 merged.append(msg)
@@ -34,9 +76,18 @@ def merge_history(history: History) -> History:
             merged.append(msg)
 
     # prune empty text
-    merged = [m for m in merged if not (isinstance(m, Delta) and isinstance(m.content, DeltaText) and not m.content.data.strip())]
+    merged = [
+        m
+        for m in merged
+        if not (
+            isinstance(m, Delta)
+            and isinstance(m.content, DeltaText)
+            and not m.content.data.strip()
+        )
+    ]
 
     return merged
+
 
 class IterableResult:
     def __init__(self, iterable: t.AsyncIterable[Delta]):
@@ -44,8 +95,13 @@ class IterableResult:
         self.history: History = []
         self.has_iterated = False
         self.total = ""
-        self.usage = Usage(input_tokens=0, output_tokens=0, cache_read_input_tokens=0, cache_written_input_tokens=0)
-    
+        self.usage = Usage(
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_input_tokens=0,
+            cache_written_input_tokens=0,
+        )
+
     async def __aiter__(self):
         async for msg in self.iterable:
             if isinstance(msg.content, DeltaText) and msg.content.subtype == "text":
@@ -58,8 +114,10 @@ class IterableResult:
                 self.usage = Usage(
                     input_tokens=self.usage.input_tokens + msg.usage.input_tokens,
                     output_tokens=self.usage.output_tokens + msg.usage.output_tokens,
-                    cache_read_input_tokens=self.usage.cache_read_input_tokens + msg.usage.cache_read_input_tokens,
-                    cache_written_input_tokens=self.usage.cache_written_input_tokens + msg.usage.cache_written_input_tokens,
+                    cache_read_input_tokens=self.usage.cache_read_input_tokens
+                    + msg.usage.cache_read_input_tokens,
+                    cache_written_input_tokens=self.usage.cache_written_input_tokens
+                    + msg.usage.cache_written_input_tokens,
                 )
             if isinstance(msg.content, DeltaHistory):
                 # TODO: Merge deltas here
@@ -67,16 +125,17 @@ class IterableResult:
             else:
                 yield msg
         self.has_iterated = True
-    
+
     async def string(self):
         if not self.has_iterated:
             async for a in self:
                 pass
         return self.total
 
+
 class TransformDeltaHook(t.Protocol):
-    async def __call__(self, delta: Delta) -> Delta:
-        ...
+    async def __call__(self, delta: Delta) -> Delta: ...
+
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
@@ -86,17 +145,20 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     cache: t.Optional[CacheOptions]
     transform_delta_hook: t.Optional[TransformDeltaHook]
 
+
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
     previous: t.Optional[IterableResult]
 
+
 QueryOrSystem = t.Union[QueryType, System]
+
 
 def get_exception_depth():
     """Get the depth of the current exception's traceback"""
     _, _, exc_traceback = sys.exc_info()
     if exc_traceback is None:
         return 0
-    
+
     depth = 0
     tb = exc_traceback
     while tb is not None:
@@ -105,66 +167,82 @@ def get_exception_depth():
     return depth
 
 
-
-async def invoke_function(func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]):
+async def invoke_function(
+    func_name: str, input: t.Mapping[str, t.Any], func_map: dict[str, ToolCallable]
+):
     try:
         tool_callable = func_map[func_name]
     except KeyError:
-        raise ToolNotFoundError(f"Tool {func_name} not found (have {', '.join(list(func_map.keys()))})") from None
+        raise ToolNotFoundError(
+            f"Tool {func_name} not found (have {', '.join(list(func_map.keys()))})"
+        ) from None
     print("invoke_function raw input", input, tool_callable.schema)
-     # Validate input against schema
+    # Validate input against schema
     try:
         input = verify_schema_inputs(tool_callable.schema, input)
     except ValueError as e:
-        return json.dumps({
-            "error": f"{str(e)}",
-        })
-    
+        return json.dumps(
+            {
+                "error": f"{str(e)}",
+            }
+        )
+
     try:
         print("invoke_function", input)
         result = await tool_callable.function(**input)
     except TypeError as e:
         depth = get_exception_depth()
         if depth == 1 and type(e).__name__ == "TypeError":
-            return json.dumps({
-                "error": f"Tool {func_name} was called with incorrect arguments: {input}. Please check the function signature and the input provided.",
-            })
+            return json.dumps(
+                {
+                    "error": f"Tool {func_name} was called with incorrect arguments: {input}. Please check the function signature and the input provided.",
+                }
+            )
         else:
             raise e from e
-    
+
     return result
 
+
 class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
-    def __init__(self, 
-        prompt: t.Optional[str]=None,
+    def __init__(
+        self,
+        prompt: t.Optional[str] = None,
         *,
         model: LLM[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE],
         client_kwargs: t.Optional[STREAM_EXTRA_ARGS] = None,
-        **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]
+        **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs],
     ) -> None:
         self.client = model
         self.prompt = prompt
         self.client_kwargs = client_kwargs
         self.default_args = kwargs
 
-    
-    async def query(self, query: t.Optional[QueryOrSystem]=None, /, *, history: History = [], **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs]) -> t.AsyncGenerator[Delta, None]:
+    async def query(
+        self,
+        query: t.Optional[QueryOrSystem] = None,
+        /,
+        *,
+        history: History = [],
+        **kwargs: t.Unpack[_LLMInitAndQuerySharedKwargs],
+    ) -> t.AsyncGenerator[Delta, None]:
         kwargs = {**self.default_args, **kwargs}
         functions = kwargs.get("functions") or []
         tools = parse_tools(functions)
         transform_delta_hook = kwargs.get("transform_delta_hook", None)
-            
-        function_schemas = [
-            FunctionSchemaNoAnnotations({
-                "description": tool.schema["description"],
-                "name": tool.schema["name"],
-                "schema": tool.schema["schema"],
-            }) for tool in tools]
 
-        func_map = {
-            tool.schema["name"]: tool
+        function_schemas = [
+            FunctionSchemaNoAnnotations(
+                {
+                    "description": tool.schema["description"],
+                    "name": tool.schema["name"],
+                    "schema": tool.schema["schema"],
+                }
+            )
             for tool in tools
-        }
+        ]
+
+        func_map = {tool.schema["name"]: tool for tool in tools}
 
         parsed_query: t.Optional[Query] = None
         prompt = self.prompt
@@ -174,13 +252,12 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 query = query.query
 
             parsed_query = Query.parse(query) if query else None
-            
-        
+
         dedented_prompt = dedent(prompt) if prompt else None
-        
+
         if parsed_query:
             history = history + parsed_query.to_deltas()
-        
+
         if parsed_query:
             if isinstance(last := parsed_query.val[-1], Assistant):
                 # if the last part of the query is a prefill
@@ -207,62 +284,93 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             if transform_delta_hook:
                 msg = await transform_delta_hook(msg)
             yield msg
-            
+
             history = history + [msg]
             if isinstance(msg.content, DeltaToolUse):
-                print("Invoking tool:", msg.content.data.name, "with input:", msg.content.data.input)
+                print(
+                    "Invoking tool:",
+                    msg.content.data.name,
+                    "with input:",
+                    msg.content.data.input,
+                )
                 try:
-                    func_result = ensure_tool_value(await invoke_function(msg.content.data.name, msg.content.data.input, func_map))
+                    func_result = ensure_tool_value(
+                        await invoke_function(
+                            msg.content.data.name, msg.content.data.input, func_map
+                        )
+                    )
                 except ToolNotFoundError as e:
                     if fallback_function := kwargs.get("fallback_function", None):
-                        func_result = ensure_tool_value(await fallback_function(original_tool_name=msg.content.data.name, original_input=msg.content.data.input))
+                        func_result = ensure_tool_value(
+                            await fallback_function(
+                                original_tool_name=msg.content.data.name,
+                                original_input=msg.content.data.input,
+                            )
+                        )
                     else:
                         raise e from e
-                fd = Delta(content=DeltaToolResult(ToolResult(id=msg.content.data.id, content=func_result)))
+                fd = Delta(
+                    content=DeltaToolResult(
+                        ToolResult(id=msg.content.data.id, content=func_result)
+                    )
+                )
                 if transform_delta_hook:
                     fd = await transform_delta_hook(fd)
                 yield fd
                 history.append(fd)
                 async for msg in self.query(history=history, **kwargs):
                     if isinstance(msg.content, DeltaHistory):
-                        history.extend(msg.content.data[len(history):])
+                        history.extend(msg.content.data[len(history) :])
                     else:
-                        yield msg # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
-
+                        yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
 
         yield Delta(content=DeltaHistory(data=history))
 
     @t.overload
-    def __call__(self, query: QueryOrSystem, /, **kwargs: t.Unpack[_LLMCallArgs]) -> IterableResult:
-        ...
+    def __call__(
+        self, query: QueryOrSystem, /, **kwargs: t.Unpack[_LLMCallArgs]
+    ) -> IterableResult: ...
 
     @t.overload
-    def __call__(self, query: t.Callable[LLMPromptFunctionArgs, QueryOrSystem], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
-        ...
+    def __call__(
+        self,
+        query: t.Callable[LLMPromptFunctionArgs, QueryOrSystem],
+        /,
+        **kwargs: t.Unpack[_LLMCallArgs],
+    ) -> t.Callable[LLMPromptFunctionArgs, IterableResult]: ...
 
-    def __call__(self, query: t.Union[QueryOrSystem, t.Callable[LLMPromptFunctionArgs, QueryOrSystem]], /, **kwargs: t.Unpack[_LLMCallArgs]) -> t.Union[IterableResult, t.Callable[LLMPromptFunctionArgs, IterableResult]]:
+    def __call__(
+        self,
+        query: t.Union[QueryOrSystem, t.Callable[LLMPromptFunctionArgs, QueryOrSystem]],
+        /,
+        **kwargs: t.Unpack[_LLMCallArgs],
+    ) -> t.Union[IterableResult, t.Callable[LLMPromptFunctionArgs, IterableResult]]:
         if callable(query):
             a = self.bot(query)
-            return a 
+            return a
         else:
             previous = kwargs.pop("previous", None)
-            _q = self.query(query, history=previous.history if previous is not None else [], **kwargs)
+            _q = self.query(
+                query,
+                history=previous.history if previous is not None else [],
+                **kwargs,
+            )
             return IterableResult(_q)
-        
-        
-    
+
     async def fill(
-            self,
-            query: QueryType,
-            structure: t.Type[FillableType],
-            strategy: t.Literal["tool_use", "prefill"] = "tool_use",
-        ) -> FillableType:
+        self,
+        query: QueryType,
+        structure: t.Type[FillableType],
+        strategy: t.Literal["tool_use", "prefill"] = "tool_use",
+    ) -> FillableType:
         if strategy == "tool_use":
             as_tool = ToolCallable(
                 function=structure,  # type: ignore
-                schema=to_schema(structure)
+                schema=to_schema(structure),
             )
-            async for msg in self.query(query, functions=[as_tool], function_choice="any", no_stream=True):
+            async for msg in self.query(
+                query, functions=[as_tool], function_choice="any", no_stream=True
+            ):
                 if isinstance(msg.content, DeltaToolUse):
                     input = msg.content.data.input
                     input = verify_schema_inputs(as_tool.schema, input)
@@ -281,13 +389,19 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     {schema_to_example(schema)}
                 </example>
                 """
-                + Assistant("""\
+                + Assistant(
+                    """\
                     ```
                     {
-                        \"""" + first_prop + '": ', 
-                    echo=True)
+                        \""""
+                    + first_prop
+                    + '": ',
+                    echo=True,
+                )
             )
-            result = (await self(agumented_query, stop_sequences=["```"]).string()).strip()
+            result = (
+                await self(agumented_query, stop_sequences=["```"]).string()
+            ).strip()
             if result.startswith("```"):
                 result = result[3:]
             if result.endswith("```"):
@@ -299,19 +413,27 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             except json.JSONDecodeError as e:
                 raise ValueError(f"Failed to decode JSON: {result}") from e
 
-        
-    
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
-        async def decorated_function(query: QueryType) -> LLMDecoratedFunctionReturnType:
-            async for msg in self.query(query, functions=[function], function_choice="any", no_stream=True): # type: ignore
+        async def decorated_function(
+            query: QueryType,
+        ) -> LLMDecoratedFunctionReturnType:
+            async for msg in self.query(
+                query, functions=[function], function_choice="any", no_stream=True
+            ):  # type: ignore
                 if isinstance(msg.content, DeltaToolUse):
                     return await function(**(msg.content.data.input))
             else:
                 raise ValueError("LLM did not invoke the function")
+
         return decorated_function
 
-    def bot(self, function: t.Callable[LLMPromptFunctionArgs, QueryOrSystem]) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
-        def decorated(*args: LLMPromptFunctionArgs.args, **kwargs: LLMPromptFunctionArgs.kwargs):
+    def bot(
+        self, function: t.Callable[LLMPromptFunctionArgs, QueryOrSystem]
+    ) -> t.Callable[LLMPromptFunctionArgs, IterableResult]:
+        def decorated(
+            *args: LLMPromptFunctionArgs.args, **kwargs: LLMPromptFunctionArgs.kwargs
+        ):
             prompt = function(*args, **kwargs)
             return self(prompt)
+
         return decorated

@@ -1,10 +1,20 @@
 import typing as t
 from .llm import LLM
-from .types import Delta, ToolUse, ToolResult, Query, DeltaText, DeltaToolUse, DeltaToolResult
+from .types import (
+    Delta,
+    ToolUse,
+    ToolResult,
+    Query,
+    DeltaText,
+    DeltaToolUse,
+    DeltaToolResult,
+)
 from collections import defaultdict
+
 
 class StreamArgs(t.TypedDict, total=False):
     pass
+
 
 class StubLLM(LLM[StreamArgs, str, None]):
     def __init__(self, *args, **kwargs):
@@ -12,10 +22,10 @@ class StubLLM(LLM[StreamArgs, str, None]):
 
     def put_response(self, q: str, response: Delta):
         self.responses[q].append(response)
-    
+
     def put_tool_use(self, q: str, tool_use: ToolUse):
         self.put_response(q, Delta(content=DeltaToolUse(data=tool_use)))
-    
+
     def put_tool_result(self, q: str, tool_result: ToolResult):
         self.put_response(q, Delta(content=DeltaToolResult(data=tool_result)))
 

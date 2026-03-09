@@ -1,9 +1,31 @@
 import typing as t
 from .types import (
-    LLM, Delta, DeltaHistory, DeltaText, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Usage, Assistant, LLMClientStreamArgs, is_tool_simple_return_value, FunctionSchemaNoAnnotations,
-    DeltaToolUse, DeltaToolResult
+    LLM,
+    Delta,
+    DeltaHistory,
+    DeltaText,
+    DeltaToolInputUpdate,
+    ToolUse,
+    ToolResult,
+    File,
+    Query,
+    Usage,
+    Assistant,
+    LLMClientStreamArgs,
+    is_tool_simple_return_value,
+    FunctionSchemaNoAnnotations,
+    DeltaToolUse,
+    DeltaToolResult,
 )
-from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException, LLMToolParseException
+from .exceptions import (
+    LLMException,
+    LLMAuthenticationException,
+    LLMRateLimitException,
+    LLMBadRequestException,
+    LLMServerException,
+    LLMNotFoundException,
+    LLMToolParseException,
+)
 import json
 
 from mistralai import Mistral
@@ -22,7 +44,7 @@ from mistralai.models import (
     ImageURL,
     Messages,
     Arguments,
-    Function
+    Function,
 )
 import mistralai.models as mt
 
@@ -31,6 +53,7 @@ T = t.TypeVar("T")
 
 PROVIDER = "mistral"
 
+
 def _map_mistral_exception(e: MistralError) -> LLMException:
     msg = str(e)
     status_code = e.status_code
@@ -38,7 +61,13 @@ def _map_mistral_exception(e: MistralError) -> LLMException:
     request_id = e.headers.get("x-request-id") if e.headers else None
 
     if status_code == 401 or status_code == 403:
-        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMAuthenticationException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif status_code == 429:
         retry_after: t.Optional[float] = None
         if e.headers:
@@ -48,15 +77,46 @@ def _map_mistral_exception(e: MistralError) -> LLMException:
                     retry_after = float(raw)
                 except ValueError:
                     pass
-        return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response, retry_after=retry_after)
+        return LLMRateLimitException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+            retry_after=retry_after,
+        )
     elif status_code == 400 or status_code == 422:
-        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMBadRequestException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif status_code == 404:
-        return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMNotFoundException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif status_code is not None and status_code >= 500:
-        return LLMServerException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMServerException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     else:
-        return LLMException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
 
 
 def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations) -> Tool:
@@ -65,42 +125,37 @@ def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations) -> Tool:
         function=Function(
             name=func_schema["name"],
             description=func_schema["description"],
-            parameters=func_schema["schema"]
-        )
+            parameters=func_schema["schema"],
+        ),
     )
 
 
-def functions_for_llm(functions: t.Sequence[FunctionSchemaNoAnnotations]) -> t.List[Tool]:
-    return [
-        func_schema_to_tool(func)
-        for func in (functions or [])
-    ]
+def functions_for_llm(
+    functions: t.Sequence[FunctionSchemaNoAnnotations],
+) -> t.List[Tool]:
+    return [func_schema_to_tool(func) for func in (functions or [])]
 
 
 def file_to_image_chunk(file: File) -> ImageURLChunk:
     try:
         type_, subtype = file.b64type.split("/", 1)
     except ValueError:
-        raise ValueError(f"Invalid b64type: {file.b64type}, must be in format type/subtype")
+        raise ValueError(
+            f"Invalid b64type: {file.b64type}, must be in format type/subtype"
+        )
     if type_ != "image":
         raise ValueError(f"Only supports image/[type], not: {file.b64type}")
     elif subtype not in ["png", "jpeg", "jpg", "gif", "webp"]:
         raise ValueError(f"Unsupported image format: {file.b64type}")
-    
+
     # Create data URL from base64 content
     data_url = f"data:{file.b64type};base64,{file.content}"
-    
-    return ImageURLChunk(
-        type="image_url",
-        image_url=ImageURL(url=data_url)
-    )
+
+    return ImageURLChunk(type="image_url", image_url=ImageURL(url=data_url))
 
 
 def str_to_text_chunk(s: str) -> TextChunk:
-    return TextChunk(
-        type="text",
-        text=s
-    )
+    return TextChunk(type="text", text=s)
 
 
 def parse_content(query: t.Union[str, File]) -> t.Union[TextChunk, ImageURLChunk]:
@@ -116,23 +171,19 @@ def query_to_messages(query: Query) -> t.List[Messages]:
     messages = []
     for q in query.val:
         if isinstance(q, Assistant):
-            messages.append(AssistantMessage(
-                role="assistant",
-                content=q.val,
-            ))
+            messages.append(
+                AssistantMessage(
+                    role="assistant",
+                    content=q.val,
+                )
+            )
         else:
             content = parse_content(q)
             if isinstance(content, TextChunk):
-                messages.append(UserMessage(
-                    role="user",
-                    content=content.text
-                ))
+                messages.append(UserMessage(role="user", content=content.text))
             else:
                 # For images, we need to send as content array
-                messages.append(UserMessage(
-                    role="user",
-                    content=[content]
-                ))
+                messages.append(UserMessage(role="user", content=[content]))
     return messages
 
 
@@ -151,10 +202,7 @@ def tool_result_to_content(tool_result: ToolResult) -> str:
     if is_tool_simple_return_value(tool_result.content.val):
         return parse_tool_content(tool_result.content.val)
     elif isinstance(tool_result.content.val, list):
-        return "\n".join([
-            parse_tool_content(c)
-            for c in tool_result.content.val
-        ])
+        return "\n".join([parse_tool_content(c) for c in tool_result.content.val])
     else:
         raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
 
@@ -162,12 +210,14 @@ def tool_result_to_content(tool_result: ToolResult) -> str:
 def merge_messages(messages: t.List[Messages]) -> t.List[Messages]:
     merged: t.List[Messages] = []
     for message in messages:
-        if (merged and 
-            merged[-1].role == message.role and 
-            isinstance(merged[-1], (UserMessage, AssistantMessage)) and
-            isinstance(message, (UserMessage, AssistantMessage)) and
-            isinstance(merged[-1].content, str) and
-            isinstance(message.content, str)):
+        if (
+            merged
+            and merged[-1].role == message.role
+            and isinstance(merged[-1], (UserMessage, AssistantMessage))
+            and isinstance(message, (UserMessage, AssistantMessage))
+            and isinstance(merged[-1].content, str)
+            and isinstance(message.content, str)
+        ):
             # Merge consecutive messages from same role
             merged[-1].content = merged[-1].content + message.content
         else:
@@ -182,36 +232,39 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
         if isinstance(delta, Delta):
             if isinstance(delta.content, DeltaText):
                 if delta.content.data:
-                    messages.append(AssistantMessage(
-                        role="assistant",
-                        content=delta.content.data
-                    ))
+                    messages.append(
+                        AssistantMessage(role="assistant", content=delta.content.data)
+                    )
             elif isinstance(delta.content, DeltaToolUse):
                 tool_use = delta.content.data
                 tool_id_to_name[tool_use.id] = tool_use.name
-                messages.append(AssistantMessage(
-                    role="assistant",
-                    content="",
-                    tool_calls=[
-                        ToolCall(
-                            id=tool_use.id,
-                            type="function",
-                            function=FunctionCall(
-                                name=tool_use.name,
-                                arguments=json.dumps(tool_use.input)
+                messages.append(
+                    AssistantMessage(
+                        role="assistant",
+                        content="",
+                        tool_calls=[
+                            ToolCall(
+                                id=tool_use.id,
+                                type="function",
+                                function=FunctionCall(
+                                    name=tool_use.name,
+                                    arguments=json.dumps(tool_use.input),
+                                ),
                             )
-                        )
-                    ]
-                ))
+                        ],
+                    )
+                )
             elif isinstance(delta.content, DeltaToolResult):
                 tool_result = delta.content.data
                 tool_name = tool_id_to_name.get(tool_result.id, "unknown_tool")
-                messages.append(ToolMessage(
-                    role="tool",
-                    tool_call_id=tool_result.id, 
-                    name=tool_name,
-                    content=tool_result_to_content(tool_result)
-                ))
+                messages.append(
+                    ToolMessage(
+                        role="tool",
+                        tool_call_id=tool_result.id,
+                        name=tool_name,
+                        content=tool_result_to_content(tool_result),
+                    )
+                )
             elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
                 pass
             else:
@@ -246,6 +299,7 @@ def convert_tool_arguments(args: Arguments, tool_name: str = "unknown"):
     else:
         raise ValueError(f"Invalid arguments type: {type(args)}")
 
+
 async def choice_content_to_chunks(content: mt.Content):
     if isinstance(content, str):
         yield Delta(content=DeltaText(data=content))
@@ -258,33 +312,36 @@ async def choice_content_to_chunks(content: mt.Content):
             else:
                 raise ValueError(f"Unsupported content type: {type(content_chunk)}")
 
+
 class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
-    def __init__(self, model: MODEL_TYPE, client: t.Optional[Mistral] = None, api_key: t.Optional[str] = None):
+    def __init__(
+        self,
+        model: MODEL_TYPE,
+        client: t.Optional[Mistral] = None,
+        api_key: t.Optional[str] = None,
+    ):
         if not client:
             client = Mistral(api_key=api_key)
         self.client = client
         self.model = model
 
-    async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
-        extra_kwargs: dict[str, t.Any] = {
-            **(kwargs.get("kwargs", None) or {})
-        }
-        
+    async def stream(
+        self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]
+    ):
+        extra_kwargs: dict[str, t.Any] = {**(kwargs.get("kwargs", None) or {})}
+
         messages = deltas_to_messages(kwargs.get("history", []))
-        
+
         # Add system message if prompt is provided
         if prompt := kwargs.get("prompt", None):
-            messages.insert(0, SystemMessage(
-                role="system",
-                content=prompt
-            ))
-        
+            messages.insert(0, SystemMessage(role="system", content=prompt))
+
         # Prepare tools
         tools = None
-        #tool_choice = None
+        # tool_choice = None
         if functions := kwargs.get("functions", None):
             tools = functions_for_llm(functions)
-        
+
         request = ChatCompletionRequest(
             model=str(self.model),
             messages=messages,
@@ -295,12 +352,14 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
             tools=tools,
             stream=not kwargs.get("no_stream", False),
             safe_prompt=extra_kwargs.get("safe_prompt"),
-            **{k: v for k, v in extra_kwargs.items() if k != "safe_prompt"}
+            **{k: v for k, v in extra_kwargs.items() if k != "safe_prompt"},
         )
-        
+
         if not kwargs.get("no_stream", False):
             try:
-                response = await self.client.chat.stream_async(**request.model_dump(exclude_none=True))
+                response = await self.client.chat.stream_async(
+                    **request.model_dump(exclude_none=True)
+                )
             except MistralError as e:
                 raise _map_mistral_exception(e) from e
 
@@ -310,7 +369,9 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                         choice = chunk.data.choices[0]
 
                         if choice.delta.content:
-                            async for content_chunk in choice_content_to_chunks(choice.delta.content):
+                            async for content_chunk in choice_content_to_chunks(
+                                choice.delta.content
+                            ):
                                 yield content_chunk
 
                         if choice.delta.tool_calls:
@@ -319,29 +380,33 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                                     tool_use = ToolUse(
                                         id=tool_call.id or tool_call.function.name,
                                         name=tool_call.function.name,
-                                        input=convert_tool_arguments(tool_call.function.arguments, tool_call.function.name) if tool_call.function.arguments else {}
+                                        input=convert_tool_arguments(
+                                            tool_call.function.arguments,
+                                            tool_call.function.name,
+                                        )
+                                        if tool_call.function.arguments
+                                        else {},
                                     )
                                     yield Delta(content=DeltaToolUse(data=tool_use))
-
 
                         if choice.finish_reason:
                             # Handle usage information if available
                             if chunk.data and chunk.data.usage:
                                 usage = Usage(
                                     input_tokens=chunk.data.usage.prompt_tokens or 0,
-                                    output_tokens=chunk.data.usage.completion_tokens or 0,
+                                    output_tokens=chunk.data.usage.completion_tokens
+                                    or 0,
                                     cache_read_input_tokens=0,  # Mistral doesn't provide cache info
-                                    cache_written_input_tokens=0
+                                    cache_written_input_tokens=0,
                                 )
-                                yield Delta(
-                                    content=DeltaText(data=""),
-                                    usage=usage
-                                )
+                                yield Delta(content=DeltaText(data=""), usage=usage)
             except MistralError as e:
                 raise _map_mistral_exception(e) from e
         else:
             try:
-                response = await self.client.chat.complete_async(**request.model_dump(exclude_none=True))
+                response = await self.client.chat.complete_async(
+                    **request.model_dump(exclude_none=True)
+                )
             except MistralError as e:
                 raise _map_mistral_exception(e) from e
 
@@ -358,7 +423,12 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                             tool_use = ToolUse(
                                 id=tool_call.id or tool_call.function.name,
                                 name=tool_call.function.name,
-                                input=convert_tool_arguments(tool_call.function.arguments, tool_call.function.name) if tool_call.function.arguments else {}
+                                input=convert_tool_arguments(
+                                    tool_call.function.arguments,
+                                    tool_call.function.name,
+                                )
+                                if tool_call.function.arguments
+                                else {},
                             )
                             yield Delta(content=DeltaToolUse(data=tool_use))
 
@@ -368,9 +438,6 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                         input_tokens=response.usage.prompt_tokens or 0,
                         output_tokens=response.usage.completion_tokens or 0,
                         cache_read_input_tokens=0,  # Mistral doesn't provide cache info
-                        cache_written_input_tokens=0
+                        cache_written_input_tokens=0,
                     )
-                    yield Delta(
-                        content=DeltaText(data=""),
-                        usage=usage
-                    )
+                    yield Delta(content=DeltaText(data=""), usage=usage)

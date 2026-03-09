@@ -1,5 +1,3 @@
-
-
 def patch_anthropic():
     from anthropic.lib.bedrock._auth import _get_session
     from unittest import mock
@@ -47,18 +45,24 @@ def patch_anthropic():
 
         prepped = request.prepare()
 
-        return {key: value for key, value in dict(prepped.headers).items() if value is not None}
+        return {
+            key: value
+            for key, value in dict(prepped.headers).items()
+            if value is not None
+        }
 
     from partial_json_parser import loads as _loads
 
     def loads(data: bytes, *args, **kwargs):
         kwargs.pop("partial_mode", None)
         return _loads(data.decode("utf-8"), *args, **kwargs)
+
     import sys
+
     sys.modules["jiter"] = mock.Mock()
     import jiter
-    setattr(jiter, "from_json", loads)
 
+    setattr(jiter, "from_json", loads)
 
     p = mock.patch("anthropic.lib.bedrock._auth.get_auth_headers", get_auth_headers)
     p.__enter__()

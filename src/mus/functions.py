@@ -6,8 +6,9 @@ import attrs
 import fastjsonschema
 import collections.abc
 
+
 @attrs.define
-class ToolCallable():
+class ToolCallable:
     function: ToolCallableType
     schema: FunctionSchema
 
@@ -16,29 +17,36 @@ def is_tool_callable(obj: t.Any) -> t.TypeGuard[ToolCallable]:
     """Check if an object is a ToolCallable."""
     return isinstance(obj, ToolCallable)
 
+
 def tool(**metadata: t.Dict[str, t.Any]):
     def decorator(func: ToolCallableType):
-        func.__metadata__ = metadata # type: ignore
+        func.__metadata__ = metadata  # type: ignore
         return func
+
     return decorator
 
 
-def parse_tools(tools: t.Sequence[ToolCallableType | ToolCallable]) -> t.Sequence[ToolCallable]:
+def parse_tools(
+    tools: t.Sequence[ToolCallableType | ToolCallable],
+) -> t.Sequence[ToolCallable]:
     """Parse a list of tool callables into a list of ToolCallable."""
     result = [
         func
         if is_tool_callable(func)
         else ToolCallable(
-            function=func, # type: ignore # will be a ToolCallableType
-            schema=to_schema(func)
+            function=func,  # type: ignore # will be a ToolCallableType
+            schema=to_schema(func),
         )
         for func in (tools or [])
     ]
     return result
 
-def func_to_schema(func: ToolCallableType, ensure_docstring: bool=True) -> FunctionSchema:
-    if hasattr(func, '__metadata__'):
-        if definition := func.__metadata__.get("definition"): # type: ignore
+
+def func_to_schema(
+    func: ToolCallableType, ensure_docstring: bool = True
+) -> FunctionSchema:
+    if hasattr(func, "__metadata__"):
+        if definition := func.__metadata__.get("definition"):  # type: ignore
             return definition
     if not func.__doc__ and ensure_docstring:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
@@ -49,9 +57,10 @@ def func_to_schema(func: ToolCallableType, ensure_docstring: bool=True) -> Funct
         name=func.__name__,
         description=func.__doc__ or "",
         schema=get_schema(func.__name__, annotations),
-        annotations=annotations
+        annotations=annotations,
     )
     return p
+
 
 def schema_to_example(schema: t.Union[FunctionSchema, t.Dict[str, t.Any]]):
     if "schema" in schema:
@@ -72,31 +81,40 @@ def schema_to_example(schema: t.Union[FunctionSchema, t.Dict[str, t.Any]]):
     else:
         raise ValueError(f"Couldn't parse schema: {json.dumps(schema, indent=2)}")
 
+
 def dataclass_to_schema(dataclass) -> FunctionSchema:
     annotations = list(t.get_type_hints(dataclass).items())
     p = FunctionSchema(
         name=dataclass.__name__,
         description=dataclass.__doc__,
         schema=get_schema(dataclass.__name__, annotations),
-        annotations=annotations
+        annotations=annotations,
     )
-    return p    
+    return p
+
 
 def typedict_to_schema(typed_dict: t.Type[dict]) -> FunctionSchema:
     if not typed_dict.__doc__:
         raise ValueError(f"TypedDict {typed_dict.__name__} is missing a docstring")
-    if not hasattr(typed_dict, '__annotations__'):
-        raise ValueError(f"TypedDict {typed_dict.__name__} is missing annotations - did you use a dict instead of a TypedDict?")
-    
+    if not hasattr(typed_dict, "__annotations__"):
+        raise ValueError(
+            f"TypedDict {typed_dict.__name__} is missing annotations - did you use a dict instead of a TypedDict?"
+        )
+
     p = FunctionSchema(
         name=typed_dict.__name__,
         description=typed_dict.__doc__,
-        schema=get_schema(typed_dict.__name__, list(typed_dict.__annotations__.items())),
-        annotations=list(typed_dict.__annotations__.items())
+        schema=get_schema(
+            typed_dict.__name__, list(typed_dict.__annotations__.items())
+        ),
+        annotations=list(typed_dict.__annotations__.items()),
     )
     return p
 
-def to_schema(obj: t.Union[dict, object, ToolCallableType, t.Callable]) -> FunctionSchema:
+
+def to_schema(
+    obj: t.Union[dict, object, ToolCallableType, t.Callable],
+) -> FunctionSchema:
     if is_dataclass(obj):
         return dataclass_to_schema(obj)
     elif isinstance(obj, type) and t.is_typeddict(obj):
@@ -110,23 +128,22 @@ def to_schema(obj: t.Union[dict, object, ToolCallableType, t.Callable]) -> Funct
 def remove_keys(obj: t.Union[t.Dict[str, t.Any], t.Any], keys: set):
     if isinstance(obj, dict):
         return {
-            key: remove_keys(val, keys)
-            for key, val
-            in obj.items()
-            if key not in keys
+            key: remove_keys(val, keys) for key, val in obj.items() if key not in keys
         }
     else:
         return obj
 
+
 def get_pydantic_schema(py_type: t.Type) -> t.Optional[t.Dict[str, t.Any]]:
-    if hasattr(py_type, 'model_json_schema') and callable(py_type.model_json_schema):
-        return py_type.model_json_schema() # type: ignore
+    if hasattr(py_type, "model_json_schema") and callable(py_type.model_json_schema):
+        return py_type.model_json_schema()  # type: ignore
     else:
         return None
 
+
 def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     """Convert Python type annotations to JSON Schema format."""
-    
+
     # Handle basic types
     if py_type is str:
         return {"type": "string"}
@@ -144,22 +161,23 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
     elif t.is_typeddict(py_type):
         # Handle TypedDicts
         return get_schema(py_type.__name__, list(py_type.__annotations__.items()))
-    elif (pd_schema := get_pydantic_schema(py_type)):
+    elif pd_schema := get_pydantic_schema(py_type):
         # Handle Pydantic models
         return pd_schema
     elif py_type is t.Any:
         return {}
-    
+
     # Handle generic types
     origin = t.get_origin(py_type)
     args = t.get_args(py_type)
-    
-    if origin in [list, t.List, t.Sequence] or (origin and isinstance(origin, type) and issubclass(origin, collections.abc.Sequence)):
+
+    if origin in [list, t.List, t.Sequence] or (
+        origin
+        and isinstance(origin, type)
+        and issubclass(origin, collections.abc.Sequence)
+    ):
         if args:
-            return {
-                "type": "array",
-                "items": python_type_to_json_schema(args[0])
-            }
+            return {"type": "array", "items": python_type_to_json_schema(args[0])}
         else:
             return {"type": "array"}
     elif origin is t.Annotated:
@@ -173,7 +191,11 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
             return schema
         else:
             raise ValueError("Annotated type must have at least one argument")
-    elif origin in [dict, t.Dict, t.Mapping] or (origin and isinstance(origin, type) and issubclass(origin, collections.abc.Mapping)):
+    elif origin in [dict, t.Dict, t.Mapping] or (
+        origin
+        and isinstance(origin, type)
+        and issubclass(origin, collections.abc.Mapping)
+    ):
         schema: dict[str, t.Any] = {"type": "object"}
         if len(args) >= 2:
             schema["additionalProperties"] = python_type_to_json_schema(args[1])
@@ -199,67 +221,68 @@ def python_type_to_json_schema(py_type: t.Type) -> t.Dict[str, t.Any]:
         elif all(isinstance(arg, bool) for arg in args):
             _type = "boolean"
         else:
-            raise ValueError(f"Unsupported Literal type with mixed or unsupported types: {args}")
-        return {
-            "type": _type,
-            "enum": list(args)
-        }
-    
+            raise ValueError(
+                f"Unsupported Literal type with mixed or unsupported types: {args}"
+            )
+        return {"type": _type, "enum": list(args)}
+
     # raise error for unsupported types
     raise ValueError(f"Unsupported type when converting to schema: {py_type}")
 
+
 def get_schema(name: str, fields: t.List[t.Tuple[str, t.Type]]) -> t.Dict[str, object]:
     """Generate a JSON schema from field definitions."""
-    
+
     properties = {}
     required = []
-    
+
     for field_name, field_type in fields:
         # Try to get description from type metadata
-        
+
         # Convert type to JSON schema
         field_schema = python_type_to_json_schema(field_type)
-        if "anyOf" in field_schema and len(field_schema["anyOf"]) == 2 and field_schema["anyOf"][1].get("type") == "null":
+        if (
+            "anyOf" in field_schema
+            and len(field_schema["anyOf"]) == 2
+            and field_schema["anyOf"][1].get("type") == "null"
+        ):
             # This is an Optional type, we can remove the null option
             field_schema = field_schema["anyOf"][0]
         else:
             required.append(field_name)
         properties[field_name] = field_schema
-        
-    
+
     # Build the complete schema
     schema = {
         "type": "object",
         "title": name,
         "properties": properties,
-        "required": required
+        "required": required,
     }
-        
+
     return schema
+
 
 def schema_to_attrs(schema: FunctionSchema) -> t.Type:
     """Convert a FunctionSchema to an attrs class."""
-    attrs_fields = {
-        key: type_to_attr(value)
-        for key, value in schema["annotations"]
-    }
-    
+    attrs_fields = {key: type_to_attr(value) for key, value in schema["annotations"]}
+
     return attrs.make_class(
         schema["name"],
         attrs_fields,
         auto_attribs=True,
     )
 
+
 def type_to_attr(value: t.Type) -> attrs.Attribute:
     """Convert a key-value pair to an attrs attribute."""
     if t.is_typeddict(value) or is_dataclass(value):
-        return attrs.field(
-            type=schema_to_attrs(to_schema(value))
-        )
+        return attrs.field(type=schema_to_attrs(to_schema(value)))
     else:
         return attrs.field(
             type=value,
         )
+
 
 def verify_schema_inputs(
     schema: FunctionSchema,
@@ -267,14 +290,16 @@ def verify_schema_inputs(
 ) -> t.Dict[str, t.Any]:
     """Verify that the inputs match the function's schema."""
     if not schema["schema"] and inputs:
-        raise ValueError(f"Invalid inputs for {schema['name']}: Schema is empty and inputs are non-empty")
+        raise ValueError(
+            f"Invalid inputs for {schema['name']}: Schema is empty and inputs are non-empty"
+        )
     try:
         fastjsonschema.validate(schema["schema"], inputs)
     except fastjsonschema.JsonSchemaException as e:
         raise ValueError(f"Invalid inputs for {schema['name']}: {e}") from e
-    
-    
+
     return dict(inputs)
+
 
 def verify_function_inputs(
     func: t.Callable,
@@ -287,12 +312,13 @@ def verify_function_inputs(
 
 def remove_annotations(schema: FunctionSchema) -> FunctionSchemaNoAnnotations:
     """Remove the annotations from a FunctionSchema."""
-    
+
     return FunctionSchemaNoAnnotations(
         name=schema["name"],
         description=schema["description"],
         schema=schema["schema"],
     )
+
 
 if __name__ == "__main__":
     # Example usage
@@ -300,33 +326,32 @@ if __name__ == "__main__":
 
     class ExampleNested(t.TypedDict):
         """An example nested TypedDict."""
+
         nested_field: str
         another_field: int
-    
+
     @dataclasses.dataclass
     class ExampleDataclass:
         """An example dataclass."""
+
         x: int
         y: str
         nest: ExampleNested
-    
+
     async def example_tool(a: int, b: str, double_nest: ExampleDataclass) -> str:
         """An example tool that takes an integer and a string."""
         return f"Received {a} and {b}"
-    
+
     schema = func_to_schema(example_tool)
-    
+
     example_inputs = {
         "a": 42,
         "b": "Hello",
         "double_nest": {
             "x": 1,
             "y": "Nested",
-            "nest": {
-                "nested_field": "Inner",
-                "another_field": 100
-            }
-        }
+            "nest": {"nested_field": "Inner", "another_field": 100},
+        },
     }
     verified_inputs = verify_schema_inputs(schema, example_inputs)
     print("Verified inputs:", verified_inputs)

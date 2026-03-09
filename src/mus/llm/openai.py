@@ -1,9 +1,43 @@
 import typing as t
-from .types import LLM, Delta, DeltaToolInputUpdate, ToolUse, ToolResult, File, Query, Assistant, LLMClientStreamArgs, ToolSimpleReturnValue, is_tool_simple_return_value, FunctionSchemaNoAnnotations, DeltaText, DeltaToolUse, DeltaToolResult, Usage, DeltaHistory
-from .exceptions import LLMException, LLMAuthenticationException, LLMRateLimitException, LLMConnectionException, LLMTimeoutException, LLMBadRequestException, LLMServerException, LLMNotFoundException, LLMModelException, LLMToolParseException
+from .types import (
+    LLM,
+    Delta,
+    DeltaToolInputUpdate,
+    ToolUse,
+    ToolResult,
+    File,
+    Query,
+    Assistant,
+    LLMClientStreamArgs,
+    ToolSimpleReturnValue,
+    is_tool_simple_return_value,
+    FunctionSchemaNoAnnotations,
+    DeltaText,
+    DeltaToolUse,
+    DeltaToolResult,
+    Usage,
+    DeltaHistory,
+)
+from .exceptions import (
+    LLMException,
+    LLMAuthenticationException,
+    LLMRateLimitException,
+    LLMConnectionException,
+    LLMTimeoutException,
+    LLMBadRequestException,
+    LLMServerException,
+    LLMNotFoundException,
+    LLMToolParseException,
+)
 
 import openai
-from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam, ChatCompletionMessageToolCallParam, ChatCompletionChunk, ChatCompletion
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionToolParam,
+    ChatCompletionMessageToolCallParam,
+    ChatCompletionChunk,
+    ChatCompletion,
+)
 from openai._types import Omit
 import json
 import dataclasses
@@ -12,6 +46,7 @@ import dataclasses
 OMIT = NOT_GIVEN = Omit()
 
 PROVIDER = "openai"
+
 
 def _map_openai_exception(e: Exception) -> LLMException:
     request_id: t.Optional[str] = None
@@ -26,7 +61,13 @@ def _map_openai_exception(e: Exception) -> LLMException:
     msg = str(e)
 
     if isinstance(e, openai.AuthenticationError):
-        return LLMAuthenticationException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMAuthenticationException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif isinstance(e, openai.RateLimitError):
         retry_after: t.Optional[float] = None
         if isinstance(e, openai.APIStatusError):
@@ -36,21 +77,59 @@ def _map_openai_exception(e: Exception) -> LLMException:
                     retry_after = float(raw)
                 except ValueError:
                     pass
-        return LLMRateLimitException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response, retry_after=retry_after)
+        return LLMRateLimitException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+            retry_after=retry_after,
+        )
     elif isinstance(e, openai.APITimeoutError):
         return LLMTimeoutException(msg, provider=PROVIDER)
     elif isinstance(e, openai.APIConnectionError):
         return LLMConnectionException(msg, provider=PROVIDER)
     elif isinstance(e, openai.NotFoundError):
-        return LLMNotFoundException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMNotFoundException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif isinstance(e, openai.BadRequestError):
-        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMBadRequestException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif isinstance(e, openai.UnprocessableEntityError):
-        return LLMBadRequestException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMBadRequestException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     elif isinstance(e, openai.InternalServerError):
-        return LLMServerException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMServerException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
     else:
-        return LLMException(msg, provider=PROVIDER, status_code=status_code, request_id=request_id, raw_response=raw_response)
+        return LLMException(
+            msg,
+            provider=PROVIDER,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
+
 
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> ChatCompletionToolParam:
     return {
@@ -58,26 +137,34 @@ def func_to_tool(func: FunctionSchemaNoAnnotations) -> ChatCompletionToolParam:
         "function": {
             "name": func["name"],
             "description": func["description"],
-            "parameters": func["schema"]
-        }
+            "parameters": func["schema"],
+        },
     }
-def functions_for_llm(functions: t.Sequence[FunctionSchemaNoAnnotations]) -> t.List[ChatCompletionToolParam]:
-    return [
-        func_to_tool(func)
-        for func in (functions or [])
-    ]
 
-def is_valid_image_mime_type(mime_type: str) -> t.TypeGuard[t.Literal["image/png", "image/jpeg", "image/gif", "image/webp"]]:
+
+def functions_for_llm(
+    functions: t.Sequence[FunctionSchemaNoAnnotations],
+) -> t.List[ChatCompletionToolParam]:
+    return [func_to_tool(func) for func in (functions or [])]
+
+
+def is_valid_image_mime_type(
+    mime_type: str,
+) -> t.TypeGuard[t.Literal["image/png", "image/jpeg", "image/gif", "image/webp"]]:
     """
     Check if the mime type is a valid image type.
     """
     return mime_type in ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
+
 def file_to_image(file: File) -> str:
     if not is_valid_image_mime_type(file.b64type):
-        raise ValueError(f"Only supports image/png, image/jpeg image/gif and image/webp, not: {file.b64type}")
-    
+        raise ValueError(
+            f"Only supports image/png, image/jpeg image/gif and image/webp, not: {file.b64type}"
+        )
+
     return f"data:{file.b64type};base64,{file.content}"
+
 
 def parse_content(query: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
     if isinstance(query, str):
@@ -86,6 +173,7 @@ def parse_content(query: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
         return {"image": file_to_image(query)}
     else:
         raise ValueError(f"Invalid query type: {type(query)}")
+
 
 def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
     messages = []
@@ -97,6 +185,7 @@ def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
             messages.append({"role": "user", "content": content})
     return messages
 
+
 def parse_tool_content(c: ToolSimpleReturnValue) -> t.Union[str, t.Dict[str, str]]:
     if isinstance(c, str):
         return c
@@ -105,37 +194,53 @@ def parse_tool_content(c: ToolSimpleReturnValue) -> t.Union[str, t.Dict[str, str
     else:
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
-def tool_result_to_content(tool_result: ToolResult) -> t.Union[str, t.List[t.Union[str, t.Dict[str, str]]]]:
+
+def tool_result_to_content(
+    tool_result: ToolResult,
+) -> t.Union[str, t.List[t.Union[str, t.Dict[str, str]]]]:
     if is_tool_simple_return_value(tool_result.content.val):
         return [parse_tool_content(tool_result.content.val)]
     elif isinstance(tool_result.content.val, list):
         return [parse_tool_content(c) for c in tool_result.content.val]
     else:
-        raise ValueError(f"Invalid tool result content type: {type(tool_result.content.val)}")
+        raise ValueError(
+            f"Invalid tool result content type: {type(tool_result.content.val)}"
+        )
 
-def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[ChatCompletionMessageParam]:
+
+def deltas_to_messages(
+    deltas: t.Iterable[t.Union[Query, Delta]],
+) -> t.List[ChatCompletionMessageParam]:
     messages = []
     for delta in deltas:
         if isinstance(delta, Delta):
             if isinstance(delta.content, DeltaText):
                 if delta.content.data:
-                    messages.append({"role": "assistant", "content": delta.content.data})
+                    messages.append(
+                        {"role": "assistant", "content": delta.content.data}
+                    )
             elif isinstance(delta.content, DeltaToolUse):
                 tool_call: ChatCompletionMessageToolCallParam = {
                     "id": delta.content.data.id,
                     "type": "function",
                     "function": {
                         "name": delta.content.data.name,
-                        "arguments": json.dumps(delta.content.data.input)
-                    }
+                        "arguments": json.dumps(delta.content.data.input),
+                    },
                 }
-                messages.append({"role": "assistant", "content": None, "tool_calls": [tool_call]})
+                messages.append(
+                    {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+                )
             elif isinstance(delta.content, DeltaToolResult):
-                messages.append({
-                    "role": "tool",
-                    "content": json.dumps(tool_result_to_content(delta.content.data)),
-                    "tool_call_id": delta.content.data.id
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(
+                            tool_result_to_content(delta.content.data)
+                        ),
+                        "tool_call_id": delta.content.data.id,
+                    }
+                )
             elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
                 pass
             else:
@@ -144,11 +249,14 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Chat
             messages.extend(query_to_messages(delta))
     return messages
 
+
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
 
+
 STREAM_ARGS = StreamArgs
 MODEL_TYPE = str
+
 
 @dataclasses.dataclass
 class PartialToolCall:
@@ -156,14 +264,19 @@ class PartialToolCall:
     name: str
     arguments: str
 
+
 class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
-    def __init__(self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient]=None):
+    def __init__(
+        self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient] = None
+    ):
         if not client:
             client = openai.AsyncClient()
         self.client = client
         self.model = model
 
-    async def stream(self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]):
+    async def stream(
+        self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]
+    ):
         messages = deltas_to_messages(kwargs.get("history", []))
         if prompt := kwargs.get("prompt", None):
             messages.insert(0, {"role": "system", "content": prompt})
@@ -172,7 +285,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             tools = functions_for_llm(functions)
         else:
             tools = Omit()
-        
+
         stream = not kwargs.get("no_stream", False)
         extra_kwargs = kwargs.get("kwargs", None) or {}
         try:
@@ -180,7 +293,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                 model=self.model,
                 messages=messages,
                 tools=tools,
-                tool_choice="auto" if kwargs.get("function_choice", None) == "auto" else OMIT,
+                tool_choice="auto"
+                if kwargs.get("function_choice", None) == "auto"
+                else OMIT,
                 max_completion_tokens=kwargs.get("max_tokens", None) or OMIT,
                 temperature=kwargs.get("temperature", None) or OMIT,
                 top_p=kwargs.get("top_p", None) or OMIT,
@@ -210,33 +325,51 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         if delta.tool_calls:
                             for tool_call in delta.tool_calls:
                                 if not tool_call.function:
-                                    raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
+                                    raise ValueError(
+                                        f"Only function tool calls are supported, not: {tool_call.type}"
+                                    )
 
                                 if tool_call.function:
-                                    if not partial_calls or (tool_call.id and partial_calls[-1].id and tool_call.id != partial_calls[-1].id):
-                                        partial_calls.append(PartialToolCall(
-                                            id=tool_call.id if tool_call.id else "",
-                                            name="",
-                                            arguments=""
-                                        ))
+                                    if not partial_calls or (
+                                        tool_call.id
+                                        and partial_calls[-1].id
+                                        and tool_call.id != partial_calls[-1].id
+                                    ):
+                                        partial_calls.append(
+                                            PartialToolCall(
+                                                id=tool_call.id if tool_call.id else "",
+                                                name="",
+                                                arguments="",
+                                            )
+                                        )
                                     last_call = partial_calls.pop()
 
                                     if not last_call:
-                                        raise ValueError("Received tool call chunk without a starting id")
+                                        raise ValueError(
+                                            "Received tool call chunk without a starting id"
+                                        )
 
                                     if tool_call.function.arguments:
-                                        last_call.arguments += tool_call.function.arguments
+                                        last_call.arguments += (
+                                            tool_call.function.arguments
+                                        )
 
                                     if tool_call.function.name:
                                         last_call.name += tool_call.function.name
 
                                     # yield function call update
-                                    if last_call.id and last_call.name and tool_call.function.arguments:
-                                        yield Delta(content=DeltaToolInputUpdate(
-                                            name=last_call.name,
-                                            id=last_call.id,
-                                            data=tool_call.function.arguments
-                                        ))
+                                    if (
+                                        last_call.id
+                                        and last_call.name
+                                        and tool_call.function.arguments
+                                    ):
+                                        yield Delta(
+                                            content=DeltaToolInputUpdate(
+                                                name=last_call.name,
+                                                id=last_call.id,
+                                                data=tool_call.function.arguments,
+                                            )
+                                        )
 
                                     partial_calls.append(last_call)
 
@@ -250,20 +383,21 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                         provider=PROVIDER,
                                     ) from e
                                 tool_use = ToolUse(
-                                    id=call.id,
-                                    name=call.name,
-                                    input=parsed_input
+                                    id=call.id, name=call.name, input=parsed_input
                                 )
                                 yield Delta(content=DeltaToolUse(data=tool_use))
                             partial_calls = []
 
                     if chunk.usage:
-                        yield Delta(content=DeltaText(data=""), usage=Usage(
-                            input_tokens=chunk.usage.prompt_tokens,
-                            output_tokens=chunk.usage.completion_tokens,
-                            cache_read_input_tokens=0,
-                            cache_written_input_tokens=0
-                        ))
+                        yield Delta(
+                            content=DeltaText(data=""),
+                            usage=Usage(
+                                input_tokens=chunk.usage.prompt_tokens,
+                                output_tokens=chunk.usage.completion_tokens,
+                                cache_read_input_tokens=0,
+                                cache_written_input_tokens=0,
+                            ),
+                        )
             except openai.APIError as e:
                 raise _map_openai_exception(e) from e
 
@@ -275,7 +409,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             if response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
                     if tool_call.type != "function":
-                            raise ValueError(f"Only function tool calls are supported, not: {tool_call.type}")
+                        raise ValueError(
+                            f"Only function tool calls are supported, not: {tool_call.type}"
+                        )
 
                     try:
                         parsed_input = json.loads(tool_call.function.arguments)
@@ -287,14 +423,17 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                     tool_use = ToolUse(
                         id=tool_call.id,
                         name=tool_call.function.name,
-                        input=parsed_input
+                        input=parsed_input,
                     )
                     yield Delta(content=DeltaToolUse(data=tool_use))
 
             if response.usage:
-                yield Delta(content=DeltaText(data=""), usage=Usage(
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens,
-                    cache_read_input_tokens=0,
-                    cache_written_input_tokens=0
-                ))
+                yield Delta(
+                    content=DeltaText(data=""),
+                    usage=Usage(
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
+                        cache_read_input_tokens=0,
+                        cache_written_input_tokens=0,
+                    ),
+                )

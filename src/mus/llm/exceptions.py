@@ -22,6 +22,7 @@ class LLMException(Exception):
 
 class LLMAuthenticationException(LLMException):
     """Raised when authentication fails (bad credentials, missing API key, etc.)."""
+
     pass
 
 
@@ -50,34 +51,41 @@ class LLMRateLimitException(LLMException):
 
 class LLMConnectionException(LLMException):
     """Raised when the provider cannot be reached."""
+
     pass
 
 
 class LLMTimeoutException(LLMException):
     """Raised when the request times out."""
+
     pass
 
 
 class LLMBadRequestException(LLMException):
     """Raised when the request is invalid (bad params, validation errors)."""
+
     pass
 
 
 class LLMServerException(LLMException):
     """Raised on provider-side 5xx / internal errors."""
+
     pass
 
 
 class LLMNotFoundException(LLMException):
     """Raised when the model or resource is not found."""
+
     pass
 
 
 class LLMModelException(LLMException):
     """Raised on model-specific failures (overloaded, not ready, etc.)."""
+
     pass
 
 
 class LLMToolParseException(LLMException):
     """Raised when the model returns malformed JSON for a tool call."""
+
     pass

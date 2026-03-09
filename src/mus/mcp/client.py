@@ -13,6 +13,7 @@ from ..functions import ToolCallable
 from ..llm.types import ToolReturnValue, FunctionSchema, File
 from ..mcp import server
 
+
 @asynccontextmanager
 async def make_client(server: server.MCPServer):
     """Create and return an MCP client instance, given a server instance."""
@@ -22,31 +23,36 @@ async def make_client(server: server.MCPServer):
 
     async def send(line: str) -> None:
         """Send data to the MCP server."""
-        await  read_stream_writer.send(SessionMessage(message=JSONRPCMessage(**json.loads(line))))
-    
+        await read_stream_writer.send(
+            SessionMessage(message=JSONRPCMessage(**json.loads(line)))
+        )
+
     async def receive() -> str:
         """Receive data from the MCP server."""
         line = await write_stream_reader.receive()
         line = line.message.model_dump_json()
-        
+
         return line
-    
+
     server.set_stdio(receive, send)
 
     async def run_server():
         """Run the MCP server."""
-        try: 
+        try:
             return await server.run()
         except anyio.EndOfStream as e:
             print(f"Server stopped due to end of stream: {e}")
             return None
 
-    
     # Start the server in a background task
     async with anyio.create_task_group() as tg:
         tg.start_soon(run_server)
         try:
-            async with ClientSession(read_stream, write_stream, read_timeout_seconds=datetime.timedelta(seconds=10)) as session:
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                read_timeout_seconds=datetime.timedelta(seconds=10),
+            ) as session:
                 await session.initialize()
                 try:
                     yield session
@@ -63,6 +69,7 @@ async def make_client(server: server.MCPServer):
             read_stream.close()
             write_stream.close()
 
+
 async def tool_to_function(tool: Tool, session: ClientSession):
     async def call_tool(**kwargs):
         result = await session.call_tool(tool.name, arguments=kwargs)
@@ -71,46 +78,44 @@ async def tool_to_function(tool: Tool, session: ClientSession):
             if item.type == "text":
                 output.append(item.text)
             elif item.type == "image":
-                output.append(
-                    File(
-                        b64type=item.mimeType,
-                        content=item.data
-                    )
-                )
+                output.append(File(b64type=item.mimeType, content=item.data))
             elif item.type == "resource":
                 if isinstance(item.resource, TextResourceContents):
                     output.append(
                         File(
                             b64type=item.resource.mimeType or "text/plain",
-                            content=item.resource.text
+                            content=item.resource.text,
                         )
                     )
                 elif isinstance(item.resource, BlobResourceContents):
                     output.append(
                         File(
-                            b64type=item.resource.mimeType or "application/octet-stream",
-                            content=item.resource.blob
+                            b64type=item.resource.mimeType
+                            or "application/octet-stream",
+                            content=item.resource.blob,
                         )
                     )
                 else:
                     raise ValueError(f"Unknown resource type: {item.type}")
-        if len(output) == 1: 
+        if len(output) == 1:
             output = output[0]
         return output
-                
+
     return ToolCallable(
         function=call_tool,
         schema=FunctionSchema(
             name=tool.name,
             description=tool.description or "",
             schema=tool.inputSchema,
-            annotations=[(k, v) for k, v in call_tool.__annotations__.items() if not k =="return"]
-        )
-    )    
+            annotations=[
+                (k, v)
+                for k, v in call_tool.__annotations__.items()
+                if not k == "return"
+            ],
+        ),
+    )
+
 
 async def get_tools(session: ClientSession):
     tools = await session.list_tools()
-    return [
-        await tool_to_function(tool, session)
-        for tool in tools.tools
-    ]
+    return [await tool_to_function(tool, session) for tool in tools.tools]
