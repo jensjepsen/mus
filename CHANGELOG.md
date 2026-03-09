@@ -1,3 +1,12 @@
+## v0.27.3 (2026-03-09)
+
+### Fix
+
+- add llm exception handling
+- add llm exception handling
+- add llm exception handling
+- add llm exception handling
+
 ## v0.27.2 (2026-02-19)
 
 ### Fix
