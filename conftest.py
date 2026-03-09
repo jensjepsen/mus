@@ -14,10 +14,12 @@ from sybil.parsers.markdown import PythonCodeBlockParser
 def mock_clients():
     import sys
     import mus
+    original = sys.modules["mus"]
     m = mock.Mock(wraps=mus)
     m.AnthropicLLM = StubLLM
     sys.modules["mus"] = m
     yield m
+    sys.modules["mus"] = original
 
 
 pytest_collect_file = Sybil(
