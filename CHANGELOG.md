@@ -1,3 +1,12 @@
+## v0.27.4 (2026-03-10)
+
+### Fix
+
+- stub random in sandbox and bump sandbox related deps
+- stub random in sandbox and bump sandbox related deps
+- add retries
+- add retries
+
 ## v0.27.3 (2026-03-09)
 
 ### Fix
