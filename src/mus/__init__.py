@@ -16,6 +16,8 @@ from .llm.types import (
     ensure_tool_value as ensure_tool_value,
     ToolValue as ToolValue,
     DeltaToolInputUpdate as DeltaToolInputUpdate,
+    DeltaStreamReset as DeltaStreamReset,
+    RetryPolicy as RetryPolicy,
 )
 from .llm.llm import IterableResult as IterableResult, Bot as Bot, LLM as LLM
 from .llm.mock_client import StubLLM as StubLLM
