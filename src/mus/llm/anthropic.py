@@ -18,6 +18,7 @@ from .types import (
     DeltaToolResult,
     DeltaToolInputUpdate,
     DeltaHistory,
+    DeltaStreamReset
 )
 from .exceptions import (
     LLMException,
@@ -282,7 +283,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                         ],
                     )
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
                 pass
             else:
                 raise t.assert_never(delta.content)

@@ -200,8 +200,27 @@ class DeltaHistory:
     _type: t.Literal["history"] = "history"
 
 
+@dataclass
+class DeltaStreamReset:
+    """Signals that a stream is being retried.
+
+    All deltas previously yielded with matching ``stream_id`` are
+    invalidated and should be discarded by the consumer.
+    """
+
+    stream_id: str
+    reason: str
+    attempt: int
+    _type: t.Literal["stream-reset"] = "stream-reset"
+
+
 DeltaContent = t.Union[
-    DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate
+    DeltaText,
+    DeltaToolUse,
+    DeltaToolResult,
+    DeltaHistory,
+    DeltaToolInputUpdate,
+    DeltaStreamReset,
 ]
 
 
@@ -214,12 +233,24 @@ class Usage:
 
 
 @dataclass
+class RetryPolicy:
+    """Configuration for retry behavior on transient errors."""
+
+    max_transport_retries: int = 3
+    initial_backoff: float = 1.0
+    max_backoff: float = 60.0
+    backoff_multiplier: float = 2.0
+    jitter: float = 0.5
+
+
+@dataclass
 class Delta:
     content: DeltaContent
     usage: t.Optional[Usage] = None
     metadata: t.Optional[t.Dict[str, t.Any]] = (
         None  # useful for preserving library specific data, s.a. thought signatures
     )
+    stream_id: t.Optional[str] = None
 
     def __str__(self) -> str:
         if isinstance(self.content, DeltaText):
@@ -231,6 +262,8 @@ class Delta:
         elif isinstance(self.content, DeltaHistory):
             return ""
         elif isinstance(self.content, DeltaToolInputUpdate):
+            return ""
+        elif isinstance(self.content, DeltaStreamReset):
             return ""
         else:
             raise ValueError(f"Invalid delta type: {type(self.content)}")

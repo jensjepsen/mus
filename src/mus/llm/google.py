@@ -16,6 +16,7 @@ from .types import (
     DeltaText,
     DeltaToolUse,
     DeltaToolResult,
+    DeltaStreamReset
 )
 from .exceptions import (
     LLMException,
@@ -240,7 +241,7 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 contents.append(
                     genai_types.Content(role="tool", parts=[function_response_part])
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
                 pass
             else:
                 t.assert_never(delta.content)

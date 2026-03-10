@@ -16,6 +16,7 @@ from .types import (
     FunctionSchemaNoAnnotations,
     DeltaToolUse,
     DeltaToolResult,
+    DeltaStreamReset
 )
 from .exceptions import (
     LLMException,
@@ -265,7 +266,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
                         content=tool_result_to_content(tool_result),
                     )
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
                 pass
             else:
                 t.assert_never(delta.content)
