@@ -1,3 +1,10 @@
+import os
+import random as _random
+
+# Stub os.urandom so that code using uuid.uuid4() etc. works inside the
+# WASI sandbox where the real random_get syscall is stubbed out.
+os.urandom = _random.randbytes  # type: ignore[assignment]
+
 import wit_world  # type: ignore
 import mus
 import mus.llm

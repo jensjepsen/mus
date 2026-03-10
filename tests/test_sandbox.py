@@ -50,6 +50,19 @@ async def test_sandbox_inputs(capsys):
     assert captured.out == "This should also run without a model\n"
 
 @pytest.mark.asyncio
+async def test_sandbox_uuid():
+    code = """\
+            import uuid
+            result = {"uuid": str(uuid.uuid4())}
+            return result
+            """
+    sb = sandbox()
+    res = await sb(code)
+    import uuid as _uuid
+    parsed = _uuid.UUID(res["uuid"])
+    assert parsed.version == 4
+
+@pytest.mark.asyncio
 async def test_sandbox_no_model(capsys):
     code = """\
             print("This should run without a model")

@@ -7,7 +7,7 @@ echo "Building guest wasm module"
 cp -r src/mus wasm_deps/mus
 
 echo "Componentizing guest"
-uvx componentize-py -d ./src/mus/guest -w muswasm componentize guest.main -o src/mus/guest.wasm --stub-wasi -p wasm_deps -p src/mus
+uvx --from componentize-py==0.21.0 componentize-py -d ./src/mus/guest -w muswasm componentize guest.main -o src/mus/guest.wasm --stub-wasi -p wasm_deps -p src/mus
 echo "Done componentizing guest"
 
-uvx --from wasmtime==34.0.0 python -m wasmtime.bindgen src/mus/guest.wasm --out-dir src/mus/guest/bindings
+uvx --from wasmtime==38.0.0 python -m wasmtime.bindgen src/mus/guest.wasm --out-dir src/mus/guest/bindings
