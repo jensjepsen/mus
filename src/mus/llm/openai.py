@@ -17,6 +17,7 @@ from .types import (
     DeltaToolResult,
     Usage,
     DeltaHistory,
+    DeltaStreamReset
 )
 from .exceptions import (
     LLMException,
@@ -241,7 +242,7 @@ def deltas_to_messages(
                         "tool_call_id": delta.content.data.id,
                     }
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory)):
+            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
                 pass
             else:
                 t.assert_never(delta.content)
