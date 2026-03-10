@@ -1,3 +1,4 @@
+# ruff: noqa: E402 # needed because of the monkey-patching of random below
 import os
 import random as _random
 
