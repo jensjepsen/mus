@@ -26,7 +26,7 @@ path = "scripts/build_guest.py"
 [project.optional-dependencies]
 bedrock = [
     "aioboto3>=15.5.0,<16.0.0",
-    "types-aiobotocore[bedrock-runtime]>=2.26.0,<3.0.0",
+    "types-aiobotocore[bedrock-runtime]>=2.26.0,<4.0.0",
     "anyio>=4.9.0",
 ]
 anthropic  = ["anthropic[bedrock](>=0.42.0,<1.0.0)"]
@@ -54,7 +54,7 @@ dev = [
 ]
 all = [
     "aioboto3>=15.5.0,<16.0.0",
-    "types-aiobotocore[bedrock-runtime]>=2.26.0,<3.0.0",
+    "types-aiobotocore[bedrock-runtime]>=2.26.0,<4.0.0",
     "anthropic[bedrock](>=0.42.0,<1.0.0)",
     "openai(>=1.61.1,<2.0.0)",
     "pillow(>=11.0.0,<12.0.0)",
