@@ -42,6 +42,7 @@ from openai.types.chat import (
 from openai._types import Omit
 import json
 import dataclasses
+from json_repair import repair_json
 
 
 OMIT = NOT_GIVEN = Omit()
@@ -376,13 +377,12 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
 
                         if first_choice.finish_reason == "tool_calls":
                             for call in partial_calls:
-                                try:
-                                    parsed_input = json.loads(call.arguments)
-                                except json.JSONDecodeError as e:
+                                parsed_input = repair_json(call.arguments, return_objects=True)
+                                if not isinstance(parsed_input, dict):
                                     raise LLMToolParseException(
                                         f"Model returned malformed tool JSON for {call.name}: {call.arguments}",
                                         provider=PROVIDER,
-                                    ) from e
+                                    )
                                 tool_use = ToolUse(
                                     id=call.id, name=call.name, input=parsed_input
                                 )
@@ -414,13 +414,12 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                             f"Only function tool calls are supported, not: {tool_call.type}"
                         )
 
-                    try:
-                        parsed_input = json.loads(tool_call.function.arguments)
-                    except json.JSONDecodeError as e:
+                    parsed_input = repair_json(tool_call.function.arguments, return_objects=True)
+                    if not isinstance(parsed_input, dict):
                         raise LLMToolParseException(
                             f"Model returned malformed tool JSON for {tool_call.function.name}: {tool_call.function.arguments}",
                             provider=PROVIDER,
-                        ) from e
+                        )
                     tool_use = ToolUse(
                         id=tool_call.id,
                         name=tool_call.function.name,

@@ -28,6 +28,7 @@ from .exceptions import (
     LLMToolParseException,
 )
 import json
+from json_repair import repair_json
 
 from mistralai.client.sdk import Mistral
 from mistralai.client.errors.mistralerror import MistralError
@@ -291,13 +292,13 @@ def convert_tool_arguments(args: Arguments, tool_name: str = "unknown"):
     if isinstance(args, dict):
         return args
     elif isinstance(args, str):
-        try:
-            return json.loads(args)
-        except json.JSONDecodeError as e:
+        parsed = repair_json(args, return_objects=True)
+        if not isinstance(parsed, dict):
             raise LLMToolParseException(
                 f"Model returned malformed tool JSON for {tool_name}: {args}",
                 provider=PROVIDER,
-            ) from e
+            )
+        return parsed
     else:
         raise ValueError(f"Invalid arguments type: {type(args)}")
 

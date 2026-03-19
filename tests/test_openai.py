@@ -330,7 +330,6 @@ async def test_openai_tool_parse_error_streaming(openai_llm, mock_openai_client)
         async for _ in openai_llm.stream(prompt="p", history=[], model="m"):
             pass
     assert exc_info.value.provider == "openai"
-    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.asyncio
@@ -355,7 +354,6 @@ async def test_openai_tool_parse_error_non_streaming(openai_llm, mock_openai_cli
         async for _ in openai_llm.stream(prompt="p", history=[], model="m", no_stream=True):
             pass
     assert exc_info.value.provider == "openai"
-    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.asyncio
@@ -380,3 +378,77 @@ async def test_openai_rate_limit_without_retry_after(openai_llm, mock_openai_cli
         async for _ in openai_llm.stream(prompt="p", history=[], model="m"):
             pass
     assert exc_info.value.retry_after is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_json,expected_args", [
+    ('{"name": "test", "value": 42,}', {"name": "test", "value": 42}),
+    ("{'name': 'test', 'value': 42}", {"name": "test", "value": 42}),
+    ('{"name": "test", "value": 42', {"name": "test", "value": 42}),
+    ('{name: "test", value: 42}', {"name": "test", "value": 42}),
+])
+async def test_openai_json_repair_streaming(openai_llm, mock_openai_client, malformed_json, expected_args):
+    """Malformed but repairable tool JSON is repaired during streaming."""
+    chunk1 = Mock()
+    chunk1.choices = [Mock()]
+    chunk1.choices[0].delta = Mock()
+    chunk1.choices[0].delta.content = None
+    tc = Mock()
+    tc.id = "call_1"
+    tc.function = Mock()
+    tc.function.name = "my_tool"
+    tc.function.arguments = malformed_json
+    chunk1.choices[0].delta.tool_calls = [tc]
+    chunk1.choices[0].finish_reason = None
+    chunk1.usage = None
+
+    chunk2 = Mock()
+    chunk2.choices = [Mock()]
+    chunk2.choices[0].delta = Mock()
+    chunk2.choices[0].delta.content = None
+    chunk2.choices[0].delta.tool_calls = None
+    chunk2.choices[0].finish_reason = "tool_calls"
+    chunk2.usage = None
+
+    mock_openai_client.chat.completions.create.return_value = to_async_response([chunk1, chunk2])
+
+    deltas = []
+    async for d in openai_llm.stream(prompt="p", history=[], model="m"):
+        deltas.append(d)
+
+    tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
+    assert len(tool_uses) == 1
+    assert tool_uses[0].content.data.input == expected_args
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_json,expected_args", [
+    ('{"name": "test", "value": 42,}', {"name": "test", "value": 42}),
+    ("{'name': 'test', 'value': 42}", {"name": "test", "value": 42}),
+    ('{"name": "test", "value": 42', {"name": "test", "value": 42}),
+    ('{name: "test", value: 42}', {"name": "test", "value": 42}),
+])
+async def test_openai_json_repair_non_streaming(openai_llm, mock_openai_client, malformed_json, expected_args):
+    """Malformed but repairable tool JSON is repaired in non-streaming mode."""
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message = Mock()
+    mock_response.choices[0].message.content = None
+    mock_tc = Mock()
+    mock_tc.id = "call_1"
+    mock_tc.type = "function"
+    mock_tc.function = Mock()
+    mock_tc.function.name = "my_tool"
+    mock_tc.function.arguments = malformed_json
+    mock_response.choices[0].message.tool_calls = [mock_tc]
+    mock_response.usage = None
+
+    mock_openai_client.chat.completions.create.return_value = mock_response
+
+    deltas = []
+    async for d in openai_llm.stream(prompt="p", history=[], model="m", no_stream=True):
+        deltas.append(d)
+
+    tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
+    assert len(tool_uses) == 1
+    assert tool_uses[0].content.data.input == expected_args

@@ -13,6 +13,7 @@ dependencies  = [
     "anyio>=4.10.0",
     "cattrs>=24.1.0",
     "fastjsonschema>=2.21.2",
+    "json-repair>=0.30.0",
     "requests(>=2.32.3,<3.0.0)",
 ]
 

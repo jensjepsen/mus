@@ -618,7 +618,6 @@ async def test_bedrock_tool_parse_error(bedrock_llm, mock_bedrock_client):
         async for _ in bedrock_llm.stream(prompt="p", history=[], model="m"):
             pass
     assert exc_info.value.provider == "bedrock"
-    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.asyncio
@@ -642,3 +641,30 @@ async def test_bedrock_bad_request_error(bedrock_llm, mock_bedrock_client):
             pass
     assert exc_info.value.provider == "bedrock"
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_json,expected_args", [
+    ('{"name": "test", "value": 42,}', {"name": "test", "value": 42}),
+    ("{'name': 'test', 'value': 42}", {"name": "test", "value": 42}),
+    ('{"name": "test", "value": 42', {"name": "test", "value": 42}),
+    ('{name: "test", value: 42}', {"name": "test", "value": 42}),
+])
+async def test_bedrock_json_repair(bedrock_llm, mock_bedrock_client, malformed_json, expected_args):
+    """Malformed but repairable tool JSON is repaired during streaming."""
+    async def stream_with_repairable_tool():
+        yield {"contentBlockStart": {"start": {"toolUse": {"name": "my_tool", "toolUseId": "t1"}}}}
+        yield {"contentBlockDelta": {"delta": {"toolUse": {"input": malformed_json}}}}
+        yield {"contentBlockStop": {}}
+        yield {"messageStop": {"stopReason": "tool_use"}}
+        yield {"metadata": {"usage": {"inputTokens": 10, "outputTokens": 5}}}
+
+    mock_bedrock_client.converse_stream.return_value = {"stream": stream_with_repairable_tool()}
+
+    deltas = []
+    async for d in bedrock_llm.stream(prompt="p", history=[], model="m"):
+        deltas.append(d)
+
+    tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
+    assert len(tool_uses) == 1
+    assert tool_uses[0].content.data.input == expected_args
