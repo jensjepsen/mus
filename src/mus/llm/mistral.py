@@ -29,13 +29,14 @@ from .exceptions import (
 )
 import json
 
-from mistralai import Mistral
-from mistralai.models import MistralError
-from mistralai.models import (
+from mistralai.client.sdk import Mistral
+from mistralai.client.errors.mistralerror import MistralError
+from mistralai.client.models import (
     ChatCompletionRequest,
     SystemMessage,
     UserMessage,
     AssistantMessage,
+    AssistantMessageContent,
     ToolMessage,
     ImageURLChunk,
     TextChunk,
@@ -43,11 +44,11 @@ from mistralai.models import (
     ToolCall,
     FunctionCall,
     ImageURL,
-    Messages,
     Arguments,
     Function,
 )
-import mistralai.models as mt
+
+Messages = t.Union[AssistantMessage, SystemMessage, ToolMessage, UserMessage]
 
 P = t.ParamSpec("P")
 T = t.TypeVar("T")
@@ -301,7 +302,7 @@ def convert_tool_arguments(args: Arguments, tool_name: str = "unknown"):
         raise ValueError(f"Invalid arguments type: {type(args)}")
 
 
-async def choice_content_to_chunks(content: mt.Content):
+async def choice_content_to_chunks(content: AssistantMessageContent):
     if isinstance(content, str):
         yield Delta(content=DeltaText(data=content))
     else:

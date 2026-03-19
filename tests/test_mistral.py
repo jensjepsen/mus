@@ -4,8 +4,8 @@ import base64
 import json
 import typing as t
 
-from mistralai import Mistral
-from mistralai.models import (
+from mistralai.client.sdk import Mistral
+from mistralai.client.models import (
     ChatCompletionRequest,
     SystemMessage,
     UserMessage,
@@ -260,7 +260,7 @@ def test_merge_messages_different_roles():
 
 def test_merge_messages_with_lists():
     # Messages with list content shouldn't be merged
-    from mistralai.models import TextChunk
+    from mistralai.client.models import TextChunk
     messages = [
         UserMessage(role="user", content=[TextChunk(type="text", text="Hello")]),
         UserMessage(role="user", content=[TextChunk(type="text", text="world")]),
@@ -584,7 +584,7 @@ async def test_choice_content_to_chunks_string():
 @pytest.mark.asyncio
 async def test_choice_content_to_chunks_text_chunk():
     from mus.llm.mistral import choice_content_to_chunks
-    from mistralai.models import TextChunk
+    from mistralai.client.models import TextChunk
     
     text_chunk = TextChunk(type="text", text="Hello world")
     
@@ -630,7 +630,7 @@ def test_mistral_llm_initialization_without_client():
 # --- Exception handling tests ---
 
 import httpx
-from mistralai.models import MistralError
+from mistralai.client.errors.mistralerror import MistralError
 from mus.llm.exceptions import (
     LLMAuthenticationException,
     LLMRateLimitException,
