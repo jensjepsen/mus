@@ -844,7 +844,6 @@ async def test_mistral_tool_parse_error_in_stream(mistral_llm, mock_mistral_clie
         async for _ in mistral_llm.stream(prompt="p", history=[], model="m", functions=[]):
             pass
     assert exc_info.value.provider == "mistral"
-    assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.asyncio
@@ -870,3 +869,36 @@ async def test_mistral_no_stream_error(mistral_llm, mock_mistral_client):
             pass
     assert exc_info.value.retry_after == 10.0
     assert exc_info.value.__cause__ is exc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_json,expected_args", [
+    ('{"name": "test", "value": 42,}', {"name": "test", "value": 42}),
+    ("{'name': 'test', 'value': 42}", {"name": "test", "value": 42}),
+    ('{"name": "test", "value": 42', {"name": "test", "value": 42}),
+    ('{name: "test", value: 42}', {"name": "test", "value": 42}),
+])
+async def test_mistral_json_repair_in_stream(mistral_llm, mock_mistral_client, malformed_json, expected_args):
+    """Malformed but repairable tool JSON is repaired during streaming."""
+    mock_chunk = Mock()
+    mock_chunk.data = Mock()
+    mock_chunk.data.choices = [Mock()]
+    mock_chunk.data.choices[0].delta = Mock()
+    mock_chunk.data.choices[0].delta.content = None
+    mock_function = Mock()
+    mock_function.name = "test_tool"
+    mock_function.arguments = malformed_json
+    mock_chunk.data.choices[0].delta.tool_calls = [
+        Mock(id="t1", function=mock_function)
+    ]
+    mock_chunk.data.choices[0].finish_reason = None
+
+    mock_mistral_client.chat.stream_async.return_value = to_async_response([mock_chunk])
+
+    deltas = []
+    async for d in mistral_llm.stream(prompt="p", history=[], model="m", functions=[]):
+        deltas.append(d)
+
+    tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
+    assert len(tool_uses) == 1
+    assert tool_uses[0].content.data.input == expected_args

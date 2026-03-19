@@ -1,5 +1,6 @@
 import asyncio
 import json
+from json_repair import repair_json
 import logging
 import random
 import typing as t
@@ -519,12 +520,11 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 result = result[3:]
             if result.endswith("```"):
                 result = result[:-3]
-            try:
-                input = json.loads(result)
-                input = verify_schema_inputs(schema, input)
-                return structure(**input)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Failed to decode JSON: {result}") from e
+            input = repair_json(result, return_objects=True)
+            if not isinstance(input, dict):
+                raise ValueError(f"Failed to decode JSON: {result}")
+            input = verify_schema_inputs(schema, input)
+            return structure(**input)
 
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(

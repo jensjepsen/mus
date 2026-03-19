@@ -35,6 +35,7 @@ import base64
 from types_aiobotocore_bedrock_runtime.client import BedrockRuntimeClient
 from types_aiobotocore_bedrock_runtime import type_defs as bt
 import json
+from json_repair import repair_json
 import aiobotocore.session
 import botocore.exceptions
 import contextlib
@@ -498,13 +499,12 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                                     )
                         if "contentBlockStop" in event:
                             if current_function and current_function.get("input", None):
-                                try:
-                                    parsed_input = json.loads(current_function["input"])
-                                except json.JSONDecodeError as e:
+                                parsed_input = repair_json(current_function["input"], return_objects=True)
+                                if not isinstance(parsed_input, dict):
                                     raise LLMToolParseException(
                                         f"Model returned malformed tool JSON for {current_function.get('name', 'unknown')}: {current_function['input']}",
                                         provider=PROVIDER,
-                                    ) from e
+                                    )
                                 function_blocks.append(
                                     bt.ToolUseBlockTypeDef(
                                         **{

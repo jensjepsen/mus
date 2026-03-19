@@ -1160,3 +1160,21 @@ async def test_transform_delta_hook_with_sequential_tool_calls(mock_model):
 
     assert isinstance(result[6].content, DeltaText)
     assert result[6].content.data == "Done"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_response,expected_field1,expected_field2", [
+    ('"test",\n"field2": 42,\n}', "test", 42),
+    ('"test",\n"field2": 42\n', "test", 42),
+    ("'test',\n'field2': 42\n}", "test", 42),
+])
+async def test_llm_fill_prefill_json_repair(mock_model, malformed_response, expected_field1, expected_field2):
+    """Malformed but repairable JSON from prefill strategy is repaired."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data=malformed_response)),
+    ])
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    result = await llm.fill("Test query", TestStructure, strategy="prefill")
+    assert isinstance(result, TestStructure)
+    assert result.field1 == expected_field1
+    assert result.field2 == expected_field2
