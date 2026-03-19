@@ -1,3 +1,13 @@
+## v0.28.0 (2026-03-19)
+
+### Feat
+
+- add JSON repair for malformed LLM tool arguments
+
+### Fix
+
+- unused import
+
 ## v0.27.5 (2026-03-19)
 
 ### Fix
