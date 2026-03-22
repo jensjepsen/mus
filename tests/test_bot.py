@@ -1162,6 +1162,192 @@ async def test_transform_delta_hook_with_sequential_tool_calls(mock_model):
     assert result[6].content.data == "Done"
 
 
+# Transform history hook tests
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_basic(mock_model):
+    """Test that transform_history_hook is called and can modify history."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Response")),
+    ])
+
+    hook_called = False
+    received_history = None
+
+    async def capture_hook(history):
+        nonlocal hook_called, received_history
+        hook_called = True
+        received_history = list(history)
+        return history
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=capture_hook)
+    result = [msg async for msg in llm("Test query")]
+
+    assert hook_called
+    assert received_history is not None
+    # History should contain the parsed query as deltas
+    assert len(received_history) > 0
+    assert isinstance(result[0].content, DeltaText)
+    assert result[0].content.data == "Response"
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_can_modify_history(mock_model):
+    """Test that modifications to history are passed to the LLM."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Response")),
+    ])
+
+    async def prepend_system_message(history):
+        # Add an extra user message to the front of history
+        extra = Query.parse("Always respond politely.")
+        return extra.to_deltas() + history
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=prepend_system_message)
+    result = [msg async for msg in llm("Hello")]
+
+    # Verify the stream was called with the modified history
+    stream_history = mock_model.stream.call_args.kwargs["history"]
+    # The history should have more items than just the original query
+    assert len(stream_history) >= 2
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_can_filter_history(mock_model):
+    """Test that the hook can remove items from history."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Response")),
+    ])
+
+    async def empty_history(history):
+        return []
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=empty_history)
+    result = [msg async for msg in llm("Test query")]
+
+    # Verify the stream was called with empty history
+    stream_history = mock_model.stream.call_args.kwargs["history"]
+    assert stream_history == []
+
+    # Should still get the response
+    assert isinstance(result[0].content, DeltaText)
+    assert result[0].content.data == "Response"
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_none(mock_model):
+    """Test that None hook (no transformation) works correctly."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Hello")),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=None)
+    result = [msg async for msg in llm("Test query")]
+
+    assert isinstance(result[0].content, DeltaText)
+    assert result[0].content.data == "Hello"
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_in_query_kwargs(mock_model):
+    """Test that transform_history_hook can be passed as query kwarg."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="test")),
+    ])
+
+    hook_called = False
+
+    async def test_hook(history):
+        nonlocal hook_called
+        hook_called = True
+        return history
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    result = [msg async for msg in llm("Test query", transform_history_hook=test_hook)]
+
+    assert hook_called
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_override(mock_model):
+    """Test that query-level hook overrides bot-level hook."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="hello")),
+    ])
+
+    bot_hook_called = False
+    query_hook_called = False
+
+    async def bot_hook(history):
+        nonlocal bot_hook_called
+        bot_hook_called = True
+        return history
+
+    async def query_hook(history):
+        nonlocal query_hook_called
+        query_hook_called = True
+        return history
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=bot_hook)
+    result = [msg async for msg in llm("Test query", transform_history_hook=query_hook)]
+
+    assert not bot_hook_called
+    assert query_hook_called
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_with_existing_history(mock_model):
+    """Test that the hook receives both existing history and the new query."""
+    mock_model.set_response([
+        Delta(content=DeltaText(data="Response")),
+    ])
+
+    received_history = None
+
+    async def capture_hook(history):
+        nonlocal received_history
+        received_history = list(history)
+        return history
+
+    previous = IterableResult(iter([]))
+    previous.history = [Delta(content=DeltaText(data="previous message"))]
+    previous.has_iterated = True
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=capture_hook)
+    result = [msg async for msg in llm("New query", previous=previous)]
+
+    assert received_history is not None
+    # Should contain both the existing history item and the new query deltas
+    assert len(received_history) >= 2
+
+@pytest.mark.asyncio
+async def test_transform_history_hook_with_tool_use(mock_model):
+    """Test that transform_history_hook is called for both initial and recursive queries."""
+    async def first_response():
+        yield Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"x": 1}, id="t1")))
+
+    async def second_response():
+        yield Delta(content=DeltaText(data="Done"))
+
+    mock_model.stream.side_effect = [first_response(), second_response()]
+
+    hook_call_count = 0
+
+    async def counting_hook(history):
+        nonlocal hook_call_count
+        hook_call_count += 1
+        return history
+
+    async def test_tool(x: int) -> str:
+        """Test tool."""
+        return f"Result: {x}"
+
+    llm = Bot(prompt="Test prompt", model=mock_model, transform_history_hook=counting_hook)
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+
+    # Hook should be called exactly twice: once for initial query, once for recursive query after tool use
+    assert hook_call_count == 2
+
+    # Result should contain tool use, tool result, and final text
+    assert any(isinstance(msg.content, DeltaToolUse) for msg in result)
+    assert any(isinstance(msg.content, DeltaToolResult) for msg in result)
+    assert any(isinstance(msg.content, DeltaText) and msg.content.data == "Done" for msg in result)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("malformed_response,expected_field1,expected_field2", [
     ('"test",\n"field2": 42,\n}', "test", 42),
