@@ -201,6 +201,8 @@ class IterableResult:
 class TransformDeltaHook(t.Protocol):
     async def __call__(self, delta: Delta) -> Delta: ...
 
+class TransformHistoryHook(t.Protocol):
+    async def __call__(self, history: History) -> History: ...
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
@@ -209,6 +211,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
     transform_delta_hook: t.Optional[TransformDeltaHook]
+    transform_history_hook: t.Optional[TransformHistoryHook]
 
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
@@ -295,6 +298,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         functions = kwargs.get("functions") or []
         tools = parse_tools(functions)
         transform_delta_hook = kwargs.get("transform_delta_hook", None)
+        transform_history_hook = kwargs.get("transform_history_hook", None)
         policy = self.retry_policy
 
         function_schemas = [
@@ -334,6 +338,10 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     yield Delta(content=DeltaText(data=last.val))
 
         pre_stream_history = list(history)
+
+        if transform_history_hook:
+            history = await transform_history_hook(history)
+
         stream_id = uuid.uuid4().hex
 
         stream_kwargs = LLMClientStreamArgs(
