@@ -349,8 +349,8 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                 usage = Usage(
                     input_tokens=resp.usage_metadata.prompt_token_count or 0,
                     output_tokens=resp.usage_metadata.candidates_token_count or 0,
-                    cache_read_input_tokens=0,  # TODO
-                    cache_written_input_tokens=0,  # TODO
+                    cache_read_input_tokens=resp.usage_metadata.cached_content_token_count or 0,
+                    cache_written_input_tokens=0,
                 )
                 deltas.append(Delta(content=DeltaText(data=""), usage=usage))
 

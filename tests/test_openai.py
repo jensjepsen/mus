@@ -452,3 +452,89 @@ async def test_openai_json_repair_non_streaming(openai_llm, mock_openai_client, 
     tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
     assert len(tool_uses) == 1
     assert tool_uses[0].content.data.input == expected_args
+
+
+# --- Cached token tests ---
+
+@pytest.mark.asyncio
+async def test_openai_stream_cached_tokens(openai_llm, mock_openai_client):
+    """Streaming: cached tokens from prompt_tokens_details are reported."""
+    mock_chunk = Mock()
+    mock_chunk.choices = [Mock()]
+    mock_chunk.choices[0].delta = Mock()
+    mock_chunk.choices[0].delta.content = "Hello"
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.choices[0].finish_reason = None
+    mock_chunk.usage = None
+
+    usage_chunk = Mock()
+    usage_chunk.choices = []
+    usage_chunk.usage = Mock()
+    usage_chunk.usage.prompt_tokens = 100
+    usage_chunk.usage.completion_tokens = 20
+    usage_chunk.usage.prompt_tokens_details = Mock()
+    usage_chunk.usage.prompt_tokens_details.cached_tokens = 80
+
+    mock_openai_client.chat.completions.create.return_value = to_async_response(
+        [mock_chunk, usage_chunk]
+    )
+
+    results = []
+    async for delta in openai_llm.stream(prompt="p", history=[], model="m"):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 100
+    assert usage_deltas[0].usage.output_tokens == 20
+    assert usage_deltas[0].usage.cache_read_input_tokens == 80
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_no_prompt_tokens_details(openai_llm, mock_openai_client):
+    """Streaming: missing prompt_tokens_details defaults to 0 cached tokens."""
+    usage_chunk = Mock()
+    usage_chunk.choices = []
+    usage_chunk.usage = Mock()
+    usage_chunk.usage.prompt_tokens = 50
+    usage_chunk.usage.completion_tokens = 10
+    usage_chunk.usage.prompt_tokens_details = None
+
+    mock_openai_client.chat.completions.create.return_value = to_async_response(
+        [usage_chunk]
+    )
+
+    results = []
+    async for delta in openai_llm.stream(prompt="p", history=[], model="m"):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.cache_read_input_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_openai_non_stream_cached_tokens(openai_llm, mock_openai_client):
+    """Non-streaming: cached tokens from prompt_tokens_details are reported."""
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message = Mock()
+    mock_response.choices[0].message.content = "Hello"
+    mock_response.choices[0].message.tool_calls = None
+    mock_response.usage = Mock()
+    mock_response.usage.prompt_tokens = 100
+    mock_response.usage.completion_tokens = 20
+    mock_response.usage.prompt_tokens_details = Mock()
+    mock_response.usage.prompt_tokens_details.cached_tokens = 60
+
+    mock_openai_client.chat.completions.create.return_value = mock_response
+
+    results = []
+    async for delta in openai_llm.stream(prompt="p", history=[], model="m", no_stream=True):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 100
+    assert usage_deltas[0].usage.output_tokens == 20
+    assert usage_deltas[0].usage.cache_read_input_tokens == 60
