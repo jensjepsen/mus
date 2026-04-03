@@ -1,3 +1,9 @@
+## v0.29.1 (2026-04-03)
+
+### Fix
+
+- cached tokens in usage for openai and google
+
 ## v0.29.0 (2026-03-22)
 
 ### Feat
