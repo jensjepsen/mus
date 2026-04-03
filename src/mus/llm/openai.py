@@ -395,7 +395,11 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                             usage=Usage(
                                 input_tokens=chunk.usage.prompt_tokens,
                                 output_tokens=chunk.usage.completion_tokens,
-                                cache_read_input_tokens=0,
+                                cache_read_input_tokens=(
+                                    chunk.usage.prompt_tokens_details.cached_tokens
+                                    if chunk.usage.prompt_tokens_details
+                                    else 0
+                                ) or 0,
                                 cache_written_input_tokens=0,
                             ),
                         )
@@ -433,7 +437,11 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                     usage=Usage(
                         input_tokens=response.usage.prompt_tokens,
                         output_tokens=response.usage.completion_tokens,
-                        cache_read_input_tokens=0,
+                        cache_read_input_tokens=(
+                            response.usage.prompt_tokens_details.cached_tokens
+                            if response.usage.prompt_tokens_details
+                            else 0
+                        ) or 0,
                         cache_written_input_tokens=0,
                     ),
                 )

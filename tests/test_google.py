@@ -853,3 +853,113 @@ async def test_google_no_stream_error(google_genai_llm, mock_genai_client):
             pass
     assert exc_info.value.provider == "google"
     assert exc_info.value.__cause__ is exc
+
+
+# --- Cached token tests ---
+
+@pytest.mark.asyncio
+async def test_google_genai_stream_cached_tokens(google_genai_llm, mock_genai_client):
+    """Streaming: cached_content_token_count is reported as cache_read_input_tokens."""
+    mock_part = Mock()
+    mock_part.text = "Hello"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = to_async_response([
+        Mock(
+            candidates=[mock_candidate],
+            usage_metadata=Mock(
+                prompt_token_count=100,
+                candidates_token_count=20,
+                cached_content_token_count=75,
+            ),
+        )
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        prompt="Test", model="gemini-1.5-pro", history=[], functions=[]
+    ):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 100
+    assert usage_deltas[0].usage.output_tokens == 20
+    assert usage_deltas[0].usage.cache_read_input_tokens == 75
+
+
+@pytest.mark.asyncio
+async def test_google_genai_no_stream_cached_tokens(google_genai_llm, mock_genai_client):
+    """Non-streaming: cached_content_token_count is reported as cache_read_input_tokens."""
+    mock_part = Mock()
+    mock_part.text = "Hello"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = Mock(
+        candidates=[mock_candidate],
+        usage_metadata=Mock(
+            prompt_token_count=100,
+            candidates_token_count=20,
+            cached_content_token_count=50,
+        ),
+    )
+
+    mock_genai_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        prompt="Test", model="gemini-1.5-pro", history=[], functions=[], no_stream=True
+    ):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.cache_read_input_tokens == 50
+
+
+@pytest.mark.asyncio
+async def test_google_genai_stream_no_cached_tokens(google_genai_llm, mock_genai_client):
+    """Streaming: missing cached_content_token_count defaults to 0."""
+    mock_part = Mock()
+    mock_part.text = "Hello"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = to_async_response([
+        Mock(
+            candidates=[mock_candidate],
+            usage_metadata=Mock(
+                prompt_token_count=50,
+                candidates_token_count=10,
+                cached_content_token_count=None,
+            ),
+        )
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        prompt="Test", model="gemini-1.5-pro", history=[], functions=[]
+    ):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.cache_read_input_tokens == 0
