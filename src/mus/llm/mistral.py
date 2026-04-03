@@ -34,6 +34,7 @@ from mistralai.client.sdk import Mistral
 from mistralai.client.errors.mistralerror import MistralError
 from mistralai.client.models import (
     ChatCompletionRequest,
+    ChatCompletionRequestTool,
     SystemMessage,
     UserMessage,
     AssistantMessage,
@@ -135,7 +136,7 @@ def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations) -> Tool:
 
 def functions_for_llm(
     functions: t.Sequence[FunctionSchemaNoAnnotations],
-) -> t.List[Tool]:
+) -> list[ChatCompletionRequestTool]:
     return [func_schema_to_tool(func) for func in (functions or [])]
 
 
@@ -340,8 +341,7 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
             messages.insert(0, SystemMessage(role="system", content=prompt))
 
         # Prepare tools
-        tools = None
-        # tool_choice = None
+        tools: list[ChatCompletionRequestTool] | None = None
         if functions := kwargs.get("functions", None):
             tools = functions_for_llm(functions)
 
