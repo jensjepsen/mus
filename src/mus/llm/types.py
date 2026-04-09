@@ -251,6 +251,7 @@ class Delta:
         None  # useful for preserving library specific data, s.a. thought signatures
     )
     stream_id: t.Optional[str] = None
+    tool_invocation_id: t.Optional[str] = None
 
     def __str__(self) -> str:
         if isinstance(self.content, DeltaText):

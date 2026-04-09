@@ -36,6 +36,7 @@ from .types import (
     DeltaToolResult,
     DeltaHistory,
     DeltaStreamReset,
+    DeltaToolInputUpdate,
     ensure_tool_value,
     FallbackToolCallableType,
 )
@@ -385,9 +386,23 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 stream_kwargs["history"] = history
                 stream_id = uuid.uuid4().hex
 
+            tool_id_to_uuid: dict[str, str] = {}
             try:
                 async for msg in self.client.stream(**stream_kwargs):
-                    msg = replace(msg, stream_id=stream_id)
+                    # Assign tool_invocation_id for tool-related deltas
+                    if isinstance(msg.content, DeltaToolInputUpdate):
+                        provider_id = msg.content.id
+                        if provider_id not in tool_id_to_uuid:
+                            tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                        msg = replace(msg, stream_id=stream_id, tool_invocation_id=tool_id_to_uuid[provider_id])
+                    elif isinstance(msg.content, DeltaToolUse):
+                        provider_id = msg.content.data.id
+                        if provider_id not in tool_id_to_uuid:
+                            tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                        msg = replace(msg, stream_id=stream_id, tool_invocation_id=tool_id_to_uuid[provider_id])
+                    else:
+                        msg = replace(msg, stream_id=stream_id)
+
                     if transform_delta_hook:
                         msg = await transform_delta_hook(msg)
                     yield msg
@@ -427,6 +442,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                                 )
                             ),
                             stream_id=stream_id,
+                            tool_invocation_id=tool_id_to_uuid[msg.content.data.id],
                         )
                         if transform_delta_hook:
                             fd = await transform_delta_hook(fd)
