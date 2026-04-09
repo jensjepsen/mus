@@ -1,3 +1,10 @@
+## v0.29.2 (2026-04-09)
+
+### Fix
+
+- add uuids across tool calls
+- add uuids across tool calls
+
 ## v0.29.1 (2026-04-03)
 
 ### Fix
