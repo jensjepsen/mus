@@ -16,7 +16,7 @@ from .types import (
     DeltaToolResult,
     DeltaToolInputUpdate,
     DeltaHistory,
-    DeltaStreamReset
+    DeltaStreamReset,
 )
 from .exceptions import (
     LLMException,
@@ -241,14 +241,14 @@ def join_content(
                         {
                             "reasoningText": bt.ReasoningTextBlockTypeDef(
                                 {
-                                    "text": a[-1]["reasoningContent"]["reasoningText"][ # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
+                                    "text": a[-1]["reasoningContent"]["reasoningText"][  # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
                                         "text"
                                     ]
                                     + b[0]["reasoningContent"]["reasoningText"]["text"],  # type: ignore
-                                    "signature": a[-1]["reasoningContent"][ # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
+                                    "signature": a[-1]["reasoningContent"][  # type: ignore # reasoningContent is guaranteed to be in a[-1] by has_reasoning_text
                                         "reasoningText"
                                     ]["signature"]
-                                    or b[0]["reasoningContent"]["reasoningText"][ # type: ignore # reasoningContent is guaranteed to be in b[0] by has_reasoning_text
+                                    or b[0]["reasoningContent"]["reasoningText"][  # type: ignore # reasoningContent is guaranteed to be in b[0] by has_reasoning_text
                                         "signature"
                                     ],  # type: ignore
                                 }
@@ -345,7 +345,9 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                         ],
                     )
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
+            elif isinstance(
+                delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
+            ):
                 pass
             else:
                 raise t.assert_never(delta.content)
@@ -498,7 +500,9 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                                     )
                         if "contentBlockStop" in event:
                             if current_function and current_function.get("input", None):
-                                parsed_input = repair_json(current_function["input"], return_objects=True)
+                                parsed_input = repair_json(
+                                    current_function["input"], return_objects=True
+                                )
                                 if not isinstance(parsed_input, dict):
                                     raise LLMToolParseException(
                                         f"Model returned malformed tool JSON for {current_function.get('name', 'unknown')}: {current_function['input']}",

@@ -17,7 +17,7 @@ from .types import (
     DeltaToolResult,
     Usage,
     DeltaHistory,
-    DeltaStreamReset
+    DeltaStreamReset,
 )
 from .exceptions import (
     LLMException,
@@ -243,7 +243,9 @@ def deltas_to_messages(
                         "tool_call_id": delta.content.data.id,
                     }
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
+            elif isinstance(
+                delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
+            ):
                 pass
             else:
                 t.assert_never(delta.content)
@@ -377,7 +379,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
 
                         if first_choice.finish_reason == "tool_calls":
                             for call in partial_calls:
-                                parsed_input = repair_json(call.arguments, return_objects=True)
+                                parsed_input = repair_json(
+                                    call.arguments, return_objects=True
+                                )
                                 if not isinstance(parsed_input, dict):
                                     raise LLMToolParseException(
                                         f"Model returned malformed tool JSON for {call.name}: {call.arguments}",
@@ -399,7 +403,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                     chunk.usage.prompt_tokens_details.cached_tokens
                                     if chunk.usage.prompt_tokens_details
                                     else 0
-                                ) or 0,
+                                )
+                                or 0,
                                 cache_written_input_tokens=0,
                             ),
                         )
@@ -418,7 +423,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                             f"Only function tool calls are supported, not: {tool_call.type}"
                         )
 
-                    parsed_input = repair_json(tool_call.function.arguments, return_objects=True)
+                    parsed_input = repair_json(
+                        tool_call.function.arguments, return_objects=True
+                    )
                     if not isinstance(parsed_input, dict):
                         raise LLMToolParseException(
                             f"Model returned malformed tool JSON for {tool_call.function.name}: {tool_call.function.arguments}",
@@ -441,7 +448,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                             response.usage.prompt_tokens_details.cached_tokens
                             if response.usage.prompt_tokens_details
                             else 0
-                        ) or 0,
+                        )
+                        or 0,
                         cache_written_input_tokens=0,
                     ),
                 )

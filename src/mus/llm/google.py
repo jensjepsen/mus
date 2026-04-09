@@ -16,7 +16,7 @@ from .types import (
     DeltaText,
     DeltaToolUse,
     DeltaToolResult,
-    DeltaStreamReset
+    DeltaStreamReset,
 )
 from .exceptions import (
     LLMException,
@@ -241,7 +241,9 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 contents.append(
                     genai_types.Content(role="tool", parts=[function_response_part])
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
+            elif isinstance(
+                delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
+            ):
                 pass
             else:
                 t.assert_never(delta.content)
@@ -349,7 +351,8 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                 usage = Usage(
                     input_tokens=resp.usage_metadata.prompt_token_count or 0,
                     output_tokens=resp.usage_metadata.candidates_token_count or 0,
-                    cache_read_input_tokens=resp.usage_metadata.cached_content_token_count or 0,
+                    cache_read_input_tokens=resp.usage_metadata.cached_content_token_count
+                    or 0,
                     cache_written_input_tokens=0,
                 )
                 deltas.append(Delta(content=DeltaText(data=""), usage=usage))

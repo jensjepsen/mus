@@ -16,7 +16,7 @@ from .types import (
     FunctionSchemaNoAnnotations,
     DeltaToolUse,
     DeltaToolResult,
-    DeltaStreamReset
+    DeltaStreamReset,
 )
 from .exceptions import (
     LLMException,
@@ -269,7 +269,9 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Mess
                         content=tool_result_to_content(tool_result),
                     )
                 )
-            elif isinstance(delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)):
+            elif isinstance(
+                delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
+            ):
                 pass
             else:
                 t.assert_never(delta.content)
@@ -416,11 +418,11 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
             if response.choices:
                 choice = response.choices[0]
 
-                if choice.message.content:
+                if choice.message and choice.message.content:
                     async for delta in choice_content_to_chunks(choice.message.content):
                         yield delta
 
-                if choice.message.tool_calls:
+                if choice.message and choice.message.tool_calls:
                     for tool_call in choice.message.tool_calls:
                         if tool_call.function:
                             tool_use = ToolUse(

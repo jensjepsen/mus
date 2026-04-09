@@ -251,6 +251,7 @@ class Delta:
         None  # useful for preserving library specific data, s.a. thought signatures
     )
     stream_id: t.Optional[str] = None
+    tool_invocation_id: t.Optional[str] = None
 
     def __str__(self) -> str:
         if isinstance(self.content, DeltaText):
@@ -398,6 +399,7 @@ LLMDecoratedFunctionReturnType = t.TypeVar(
 @t.runtime_checkable
 class LLMDecoratedFunctionType(t.Protocol, t.Generic[LLMDecoratedFunctionReturnType]):
     __name__: str
+
     async def __call__(
         self, *args: t.Any, **kwargs: t.Any
     ) -> LLMDecoratedFunctionReturnType: ...
