@@ -6,7 +6,7 @@ import json
 from mus import Bot
 from mus.llm.llm import IterableResult, merge_history, invoke_function
 from mus.functions import parse_tools
-from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, Usage, ToolValue
+from mus.llm.types import Delta, ToolUse, ToolResult, System, Query, Assistant, File, DeltaToolResult, DeltaText, DeltaToolUse, DeltaToolInputUpdate, Usage, ToolValue
 
 from mus import ToolNotFoundError
 import typing as t
@@ -1364,3 +1364,116 @@ async def test_llm_fill_prefill_json_repair(mock_model, malformed_response, expe
     assert isinstance(result, TestStructure)
     assert result.field1 == expected_field1
     assert result.field2 == expected_field2
+
+
+@pytest.mark.asyncio
+async def test_tool_invocation_id_shared_between_tool_use_and_result(mock_model):
+    """tool_invocation_id should be the same on DeltaToolUse and DeltaToolResult deltas."""
+    mock_model.set_response([
+        Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"param1": "test", "param2": 123}, id="provider_id_1"))),
+        Delta(content=DeltaText(data="Done")),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        return "Tool result"
+
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+
+    tool_use_delta = next(msg for msg in result if isinstance(msg.content, DeltaToolUse))
+    tool_result_delta = next(msg for msg in result if isinstance(msg.content, DeltaToolResult))
+
+    assert tool_use_delta.tool_invocation_id is not None
+    assert tool_result_delta.tool_invocation_id is not None
+    assert tool_use_delta.tool_invocation_id == tool_result_delta.tool_invocation_id
+
+
+@pytest.mark.asyncio
+async def test_tool_invocation_id_shared_with_input_updates(mock_model):
+    """tool_invocation_id should be the same on DeltaToolInputUpdate, DeltaToolUse, and DeltaToolResult."""
+    mock_model.set_response([
+        Delta(content=DeltaToolInputUpdate(id="provider_id_1", name="test_tool", data='{"param1":')),
+        Delta(content=DeltaToolInputUpdate(id="provider_id_1", name="test_tool", data=' "test"}')),
+        Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"param1": "test", "param2": 123}, id="provider_id_1"))),
+        Delta(content=DeltaText(data="Done")),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        return "Tool result"
+
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+
+    input_updates = [msg for msg in result if isinstance(msg.content, DeltaToolInputUpdate)]
+    tool_use_delta = next(msg for msg in result if isinstance(msg.content, DeltaToolUse))
+    tool_result_delta = next(msg for msg in result if isinstance(msg.content, DeltaToolResult))
+
+    shared_id = tool_use_delta.tool_invocation_id
+    assert shared_id is not None
+    assert all(msg.tool_invocation_id == shared_id for msg in input_updates)
+    assert tool_result_delta.tool_invocation_id == shared_id
+
+
+@pytest.mark.asyncio
+async def test_tool_invocation_id_unique_per_tool(mock_model):
+    """Different tool invocations should get different tool_invocation_ids."""
+    mock_model.set_response([
+        Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"param1": "a", "param2": 1}, id="provider_id_1"))),
+        Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"param1": "b", "param2": 2}, id="provider_id_2"))),
+        Delta(content=DeltaText(data="Done")),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        return "Tool result"
+
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+
+    tool_use_deltas = [msg for msg in result if isinstance(msg.content, DeltaToolUse)]
+    tool_result_deltas = [msg for msg in result if isinstance(msg.content, DeltaToolResult)]
+
+    assert len(tool_use_deltas) == 2
+    assert len(tool_result_deltas) == 2
+    assert tool_use_deltas[0].tool_invocation_id != tool_use_deltas[1].tool_invocation_id
+    assert tool_use_deltas[0].tool_invocation_id == tool_result_deltas[0].tool_invocation_id
+    assert tool_use_deltas[1].tool_invocation_id == tool_result_deltas[1].tool_invocation_id
+
+
+@pytest.mark.asyncio
+async def test_tool_invocation_id_differs_for_same_provider_id_across_streams(mock_model):
+    """Consecutive tool calls with the same provider ID should get different tool_invocation_ids."""
+    async def first_response():
+        yield Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"x": 1}, id="same_id")))
+
+    async def second_response():
+        yield Delta(content=DeltaToolUse(data=ToolUse(name="test_tool", input={"x": 2}, id="same_id")))
+
+    async def third_response():
+        yield Delta(content=DeltaText(data="Done"))
+
+    mock_model.stream.side_effect = [first_response(), second_response(), third_response()]
+
+    async def test_tool(**kwargs):
+        """Test tool function"""
+        return "result"
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    result = [msg async for msg in llm("Test query", functions=[test_tool])]
+
+    tool_use_deltas = [msg for msg in result if isinstance(msg.content, DeltaToolUse)]
+    tool_result_deltas = [msg for msg in result if isinstance(msg.content, DeltaToolResult)]
+
+    assert len(tool_use_deltas) == 2
+    assert len(tool_result_deltas) == 2
+
+    # Same provider ID but different invocations — must have different UUIDs
+    assert tool_use_deltas[0].tool_invocation_id != tool_use_deltas[1].tool_invocation_id
+    # Each pair still matches
+    assert tool_use_deltas[0].tool_invocation_id == tool_result_deltas[0].tool_invocation_id
+    assert tool_use_deltas[1].tool_invocation_id == tool_result_deltas[1].tool_invocation_id
