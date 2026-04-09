@@ -157,9 +157,7 @@ class IterableResult:
 
     def _track_text(self, stream_id: t.Optional[str], text: str) -> None:
         if stream_id is not None:
-            self._stream_text[stream_id] = (
-                self._stream_text.get(stream_id, "") + text
-            )
+            self._stream_text[stream_id] = self._stream_text.get(stream_id, "") + text
         self.total += text
 
     async def __aiter__(self):
@@ -202,8 +200,10 @@ class IterableResult:
 class TransformDeltaHook(t.Protocol):
     async def __call__(self, delta: Delta) -> Delta: ...
 
+
 class TransformHistoryHook(t.Protocol):
     async def __call__(self, history: History) -> History: ...
+
 
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
@@ -394,12 +394,20 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         provider_id = msg.content.id
                         if provider_id not in tool_id_to_uuid:
                             tool_id_to_uuid[provider_id] = uuid.uuid4().hex
-                        msg = replace(msg, stream_id=stream_id, tool_invocation_id=tool_id_to_uuid[provider_id])
+                        msg = replace(
+                            msg,
+                            stream_id=stream_id,
+                            tool_invocation_id=tool_id_to_uuid[provider_id],
+                        )
                     elif isinstance(msg.content, DeltaToolUse):
                         provider_id = msg.content.data.id
                         if provider_id not in tool_id_to_uuid:
                             tool_id_to_uuid[provider_id] = uuid.uuid4().hex
-                        msg = replace(msg, stream_id=stream_id, tool_invocation_id=tool_id_to_uuid[provider_id])
+                        msg = replace(
+                            msg,
+                            stream_id=stream_id,
+                            tool_invocation_id=tool_id_to_uuid[provider_id],
+                        )
                     else:
                         msg = replace(msg, stream_id=stream_id)
 
@@ -437,9 +445,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                                 raise e from e
                         fd = Delta(
                             content=DeltaToolResult(
-                                ToolResult(
-                                    id=msg.content.data.id, content=func_result
-                                )
+                                ToolResult(id=msg.content.data.id, content=func_result)
                             ),
                             stream_id=stream_id,
                             tool_invocation_id=tool_id_to_uuid[msg.content.data.id],
