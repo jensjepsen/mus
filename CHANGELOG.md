@@ -1,3 +1,11 @@
+## v0.29.3 (2026-05-29)
+
+### Fix
+
+- google token counting
+- token counting
+- token counting
+
 ## v0.29.2 (2026-04-09)
 
 ### Fix
