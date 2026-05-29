@@ -591,7 +591,7 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                         "cacheReadInputTokens", 0
                     ),
                     cache_written_input_tokens=response["usage"].get(
-                        "cacheWrittenInputTokens", 0
+                        "cacheWriteInputTokens", 0
                     ),
                 )
                 yield Delta(

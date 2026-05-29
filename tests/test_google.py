@@ -256,9 +256,12 @@ def test_deltas_to_contents():
 
 @pytest.mark.asyncio
 async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
-    # Mock streaming response
+    # Mock streaming response. Gemini reports usage_metadata as a cumulative
+    # snapshot on *every* chunk (prompt count repeated, output a running total),
+    # so both chunks carry usage here. We must report the final snapshot once,
+    # not the sum across chunks.
     async def resp():
-        # First chunk with text
+        # First chunk with text + cumulative usage so far
         mock_part1 = Mock()
         mock_part1.text = "Hello"
         mock_part1.function_call = None
@@ -270,10 +273,16 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
 
         yield Mock(
             candidates=[mock_candidate1],
-            usage_metadata=None
+            usage_metadata=Mock(
+                prompt_token_count=10,
+                candidates_token_count=2,
+                cached_content_token_count=None,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=None,
+            )
         )
 
-        # Second chunk with text and usage
+        # Second chunk with text and the final cumulative usage snapshot
         mock_part2 = Mock()
         mock_part2.text = " world!"
         mock_part2.function_call = None
@@ -287,7 +296,10 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
             candidates=[mock_candidate2],
             usage_metadata=Mock(
                 prompt_token_count=10,
-                candidates_token_count=5
+                candidates_token_count=5,
+                cached_content_token_count=None,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=None,
             )
         )
 
@@ -307,8 +319,13 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
     assert results[0].content.data == "Hello"
     assert isinstance(results[1].content, DeltaText)
     assert results[1].content.data == " world!"
-    assert results[2].usage.input_tokens == 10
-    assert results[2].usage.output_tokens == 5
+
+    # Usage must be emitted exactly once, as the final cumulative snapshot —
+    # not summed across the two chunks (which would give input=20, output=7).
+    usage_deltas = [d for d in results if d.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 10
+    assert usage_deltas[0].usage.output_tokens == 5
 
 
 @pytest.mark.asyncio
@@ -377,7 +394,10 @@ async def test_google_genai_no_stream(google_genai_llm, mock_genai_client):
         candidates=[mock_candidate],
         usage_metadata=Mock(
             prompt_token_count=15,
-            candidates_token_count=8
+            candidates_token_count=8,
+            cached_content_token_count=None,
+            thoughts_token_count=None,
+            tool_use_prompt_token_count=None,
         )
     )
 
@@ -876,6 +896,8 @@ async def test_google_genai_stream_cached_tokens(google_genai_llm, mock_genai_cl
                 prompt_token_count=100,
                 candidates_token_count=20,
                 cached_content_token_count=75,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=None,
             ),
         )
     ])
@@ -913,6 +935,8 @@ async def test_google_genai_no_stream_cached_tokens(google_genai_llm, mock_genai
             prompt_token_count=100,
             candidates_token_count=20,
             cached_content_token_count=50,
+            thoughts_token_count=None,
+            tool_use_prompt_token_count=None,
         ),
     )
 
@@ -948,6 +972,8 @@ async def test_google_genai_stream_no_cached_tokens(google_genai_llm, mock_genai
                 prompt_token_count=50,
                 candidates_token_count=10,
                 cached_content_token_count=None,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=None,
             ),
         )
     ])
@@ -963,3 +989,81 @@ async def test_google_genai_stream_no_cached_tokens(google_genai_llm, mock_genai
     usage_deltas = [r for r in results if r.usage is not None]
     assert len(usage_deltas) == 1
     assert usage_deltas[0].usage.cache_read_input_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_google_genai_stream_thoughts_tokens(google_genai_llm, mock_genai_client):
+    """Streaming: thoughts_token_count is folded into output_tokens (Gemini 2.5 thinking)."""
+    mock_part = Mock()
+    mock_part.text = "Hello"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = to_async_response([
+        Mock(
+            candidates=[mock_candidate],
+            usage_metadata=Mock(
+                prompt_token_count=30,
+                candidates_token_count=10,
+                cached_content_token_count=None,
+                thoughts_token_count=200,
+                tool_use_prompt_token_count=None,
+            ),
+        )
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        prompt="Test", model="gemini-2.5-pro", history=[], functions=[]
+    ):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 30
+    assert usage_deltas[0].usage.output_tokens == 210  # 10 candidates + 200 thoughts
+
+
+@pytest.mark.asyncio
+async def test_google_genai_stream_tool_use_prompt_tokens(google_genai_llm, mock_genai_client):
+    """Streaming: tool_use_prompt_token_count is folded into input_tokens."""
+    mock_part = Mock()
+    mock_part.text = "Hello"
+    mock_part.function_call = None
+    mock_part.thought_signature = None
+
+    mock_candidate = Mock()
+    mock_candidate.content = Mock()
+    mock_candidate.content.parts = [mock_part]
+
+    mock_response = to_async_response([
+        Mock(
+            candidates=[mock_candidate],
+            usage_metadata=Mock(
+                prompt_token_count=40,
+                candidates_token_count=15,
+                cached_content_token_count=None,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=25,
+            ),
+        )
+    ])
+
+    mock_genai_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_response)
+
+    results = []
+    async for delta in google_genai_llm.stream(
+        prompt="Test", model="gemini-2.5-pro", history=[], functions=[]
+    ):
+        results.append(delta)
+
+    usage_deltas = [r for r in results if r.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 65  # 40 prompt + 25 tool_use_prompt
+    assert usage_deltas[0].usage.output_tokens == 15

@@ -283,7 +283,7 @@ async def test_bedrock_llm_no_stream(bedrock_llm):
             }
         },
         'stopReason': 'tool_use',
-        'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 7, 'cacheWrittenInputTokens': 3},
+        'usage': {'inputTokens': 10, 'outputTokens': 20, 'cacheReadInputTokens': 7, 'cacheWriteInputTokens': 3},
     }
     bedrock_llm.client.converse.return_value = mock_response
 
