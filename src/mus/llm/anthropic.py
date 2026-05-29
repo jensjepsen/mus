@@ -1,5 +1,6 @@
 import typing as t
-from anthropic import AsyncAnthropicBedrock, AsyncAnthropic, Omit
+from anthropic import AsyncAnthropic, Omit
+from anthropic.lib.bedrock import AsyncAnthropicBedrock
 from anthropic import types as at
 import anthropic
 from .types import (
