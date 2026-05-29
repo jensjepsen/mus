@@ -349,8 +349,10 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
             # Handle usage information
             if resp.usage_metadata:
                 usage = Usage(
-                    input_tokens=resp.usage_metadata.prompt_token_count or 0,
-                    output_tokens=resp.usage_metadata.candidates_token_count or 0,
+                    input_tokens=(resp.usage_metadata.prompt_token_count or 0)
+                    + (resp.usage_metadata.tool_use_prompt_token_count or 0),
+                    output_tokens=(resp.usage_metadata.candidates_token_count or 0)
+                    + (resp.usage_metadata.thoughts_token_count or 0),
                     cache_read_input_tokens=resp.usage_metadata.cached_content_token_count
                     or 0,
                     cache_written_input_tokens=0,
