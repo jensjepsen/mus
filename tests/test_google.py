@@ -256,9 +256,12 @@ def test_deltas_to_contents():
 
 @pytest.mark.asyncio
 async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
-    # Mock streaming response
+    # Mock streaming response. Gemini reports usage_metadata as a cumulative
+    # snapshot on *every* chunk (prompt count repeated, output a running total),
+    # so both chunks carry usage here. We must report the final snapshot once,
+    # not the sum across chunks.
     async def resp():
-        # First chunk with text
+        # First chunk with text + cumulative usage so far
         mock_part1 = Mock()
         mock_part1.text = "Hello"
         mock_part1.function_call = None
@@ -270,10 +273,16 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
 
         yield Mock(
             candidates=[mock_candidate1],
-            usage_metadata=None
+            usage_metadata=Mock(
+                prompt_token_count=10,
+                candidates_token_count=2,
+                cached_content_token_count=None,
+                thoughts_token_count=None,
+                tool_use_prompt_token_count=None,
+            )
         )
 
-        # Second chunk with text and usage
+        # Second chunk with text and the final cumulative usage snapshot
         mock_part2 = Mock()
         mock_part2.text = " world!"
         mock_part2.function_call = None
@@ -310,8 +319,13 @@ async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
     assert results[0].content.data == "Hello"
     assert isinstance(results[1].content, DeltaText)
     assert results[1].content.data == " world!"
-    assert results[2].usage.input_tokens == 10
-    assert results[2].usage.output_tokens == 5
+
+    # Usage must be emitted exactly once, as the final cumulative snapshot —
+    # not summed across the two chunks (which would give input=20, output=7).
+    usage_deltas = [d for d in results if d.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 10
+    assert usage_deltas[0].usage.output_tokens == 5
 
 
 @pytest.mark.asyncio

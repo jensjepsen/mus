@@ -346,20 +346,26 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                                 content=DeltaToolUse(data=tool_use), metadata=metadata
                             )
                         )
-            # Handle usage information
-            if resp.usage_metadata:
-                usage = Usage(
-                    input_tokens=(resp.usage_metadata.prompt_token_count or 0)
-                    + (resp.usage_metadata.tool_use_prompt_token_count or 0),
-                    output_tokens=(resp.usage_metadata.candidates_token_count or 0)
-                    + (resp.usage_metadata.thoughts_token_count or 0),
-                    cache_read_input_tokens=resp.usage_metadata.cached_content_token_count
-                    or 0,
-                    cache_written_input_tokens=0,
-                )
-                deltas.append(Delta(content=DeltaText(data=""), usage=usage))
-
             return deltas
+
+        def extract_usage(
+            resp: genai_types.GenerateContentResponse,
+        ) -> t.Optional[Usage]:
+            # Gemini reports usage_metadata as a cumulative snapshot — on each
+            # streamed chunk it repeats the full prompt count and a running
+            # output total. We therefore take the latest snapshot once, rather
+            # than summing across chunks (which would multiply the counts).
+            if not resp.usage_metadata:
+                return None
+            return Usage(
+                input_tokens=(resp.usage_metadata.prompt_token_count or 0)
+                + (resp.usage_metadata.tool_use_prompt_token_count or 0),
+                output_tokens=(resp.usage_metadata.candidates_token_count or 0)
+                + (resp.usage_metadata.thoughts_token_count or 0),
+                cache_read_input_tokens=resp.usage_metadata.cached_content_token_count
+                or 0,
+                cache_written_input_tokens=0,
+            )
 
         if not kwargs.get("no_stream", False):
             try:
@@ -368,12 +374,17 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                 )
             except genai_errors.APIError as e:
                 raise _map_google_exception(e) from e
+            latest_usage: t.Optional[Usage] = None
             try:
                 async for chunk in response_stream:
                     for delta in handle_response(chunk):
                         yield delta
+                    if (usage := extract_usage(chunk)) is not None:
+                        latest_usage = usage
             except genai_errors.APIError as e:
                 raise _map_google_exception(e) from e
+            if latest_usage is not None:
+                yield Delta(content=DeltaText(data=""), usage=latest_usage)
         else:
             try:
                 response = await self.client.aio.models.generate_content(
@@ -383,3 +394,5 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                 raise _map_google_exception(e) from e
             for delta in handle_response(response):
                 yield delta
+            if (usage := extract_usage(response)) is not None:
+                yield Delta(content=DeltaText(data=""), usage=usage)
