@@ -1,3 +1,10 @@
+## v0.29.4 (2026-05-29)
+
+### Fix
+
+- frozen in release, not locked
+- frozen in release, not locked
+
 ## v0.29.3 (2026-05-29)
 
 ### Fix
