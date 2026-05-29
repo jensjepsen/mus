@@ -29,7 +29,11 @@ jobs:
             echo "$HOME/.local/bin" >> $GITHUB_PATH
               
       - name: Install Dependencies
-        run: uv sync --all-extras --locked
+        # --frozen (not --locked): commitizen bumps the version in pyproject.toml
+        # at release time without re-locking, so the lockfile's own `mus` version
+        # lags. --frozen installs the vetted, pinned deps as-is and tolerates that
+        # bump; dependency-freshness is still gated by --locked in the test job.
+        run: uv sync --all-extras --frozen
     
       - name: Configure Git
         run: |
