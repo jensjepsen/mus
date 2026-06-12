@@ -1,3 +1,9 @@
+# Newer uv refuses to run when the working directory is inside its cache dir.
+# During `uv build` this script runs from the extracted sdist under
+# ~/.cache/uv/sdists-*/, so point the nested uv/uvx calls at a cache outside
+# that tree to keep the working directory from being inside the active cache.
+export UV_CACHE_DIR="${TMPDIR:-/tmp}/mus-wasm-build-cache"
+
 rm -r wasm_deps
 mkdir wasm_deps
 uv pip compile pyproject.toml --output-file wasm_deps/requirements.txt

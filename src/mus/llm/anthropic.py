@@ -37,7 +37,6 @@ omit = Omit()
 
 PROVIDER = "anthropic"
 
-
 def _map_anthropic_exception(e: Exception) -> LLMException:
     request_id: t.Optional[str] = None
     status_code: t.Optional[int] = None
