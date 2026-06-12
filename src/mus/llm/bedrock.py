@@ -281,7 +281,7 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                 isinstance(delta.content, DeltaText)
                 and delta.content.subtype == "reasoning"
             ):
-                metadata = delta.content.metadata or {}
+                metadata = delta.metadata or {}
                 reasoning_content = bt.ReasoningContentBlockTypeDef()
                 if not metadata.get("redactedContent", False):
                     reasoning_content["reasoningText"] = bt.ReasoningTextBlockTypeDef(
@@ -475,15 +475,13 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                                     content=DeltaText(
                                         data=reasoning.get("text", ""),
                                         subtype="reasoning",
-                                        metadata={
-                                            "signature": reasoning.get(
-                                                "signature", None
-                                            ),
-                                            "redactedContent": reasoning.get(
-                                                "redactedContent", None
-                                            ),
-                                        },
-                                    )
+                                    ),
+                                    metadata={
+                                        "signature": reasoning.get("signature", None),
+                                        "redactedContent": reasoning.get(
+                                            "redactedContent", None
+                                        ),
+                                    },
                                 )
                             if "toolUse" in delta:
                                 tu = delta["toolUse"]

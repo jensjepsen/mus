@@ -170,7 +170,6 @@ class ToolResult:
 class DeltaText:
     data: str
     subtype: t.Literal["text", "reasoning"] = "text"
-    metadata: t.Optional[t.Dict[str, t.Any]] = None
     _type: t.Literal["text"] = "text"
 
 

@@ -183,6 +183,38 @@ def test_deltas_to_messages_with_reasoning():
     assert len(messages[1]['content']) == 2
     assert messages[1]['content'][0]['reasoningContent']['reasoningText']['text'] == "Let me think about this problem step by step. First, I need to understand the context."
     assert messages[1]['content'][1]['text'] == "Based on my analysis, the answer is..."
+
+
+def test_deltas_to_messages_reasoning_preserves_signature():
+    # Round-trip: signature stored in DeltaText.metadata must be written back
+    # into the reasoningContent block.
+    deltas = [
+        Delta(
+            content=DeltaText(subtype="reasoning", data="Step-by-step reasoning"),
+            metadata={"signature": "sig-abc"},
+        ),
+    ]
+    messages = deltas_to_messages(deltas)
+    assert len(messages) == 1
+    reasoning_text = messages[0]['content'][0]['reasoningContent']['reasoningText']
+    assert reasoning_text['text'] == "Step-by-step reasoning"
+    assert reasoning_text['signature'] == "sig-abc"
+
+
+def test_deltas_to_messages_reasoning_redacted_content():
+    # redactedContent in metadata must produce a redactedContent block and
+    # suppress the reasoningText block entirely.
+    deltas = [
+        Delta(
+            content=DeltaText(subtype="reasoning", data=""),
+            metadata={"redactedContent": b"redacted-bytes"},
+        ),
+    ]
+    messages = deltas_to_messages(deltas)
+    assert len(messages) == 1
+    reasoning_content = messages[0]['content'][0]['reasoningContent']
+    assert reasoning_content['redactedContent'] == b"redacted-bytes"
+    assert 'reasoningText' not in reasoning_content
     
 def test_merge_messages_with_reasoning():
     # Test merging messages with reasoning content
@@ -270,6 +302,33 @@ async def test_bedrock_llm_stream(bedrock_llm):
     assert isinstance(results[3].content, DeltaToolUse)
     assert results[3].content.data == ToolUse(id="1", name="tool1", input={"param": "value"})
     assert results[4].usage == Usage(input_tokens=10, output_tokens=20, cache_read_input_tokens=3, cache_written_input_tokens=7)
+
+@pytest.mark.asyncio
+async def test_bedrock_llm_stream_reasoning_metadata(bedrock_llm):
+    # Stream side of the round-trip: reasoningContent must surface as a
+    # reasoning DeltaText carrying signature/redactedContent in metadata.
+    async def async_stream_iter():
+        events = [
+            {'contentBlockDelta': {'delta': {'reasoningContent': {'text': 'Let me think', 'signature': 'sig-xyz'}}}},
+            {'messageStop': {'stopReason': 'end_turn'}},
+        ]
+        for event in events:
+            yield event
+
+    bedrock_llm.client.converse_stream.return_value = {'stream': async_stream_iter()}
+
+    results = [delta async for delta in bedrock_llm.stream(
+        prompt="Test prompt",
+        model="test-model",
+        history=[],
+        functions=[],
+    )]
+
+    assert len(results) == 1
+    assert isinstance(results[0].content, DeltaText)
+    assert results[0].content.subtype == "reasoning"
+    assert results[0].content.data == "Let me think"
+    assert results[0].metadata["signature"] == "sig-xyz"
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):

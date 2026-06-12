@@ -246,12 +246,49 @@ def test_deltas_to_contents():
     ]
     
     contents = deltas_to_contents(deltas)
-    
+
     assert len(contents) == 4
     assert contents[0].role == "user"
     assert contents[1].role == "model"
     assert contents[2].role == "model"  # tool_use
     assert contents[3].role == "tool"   # tool_result
+
+
+def test_deltas_to_contents_preserves_thought_signature():
+    # Round-trip: thought_signature stored in Delta.metadata must be written
+    # back onto the genai Part for both text and tool-use content. The genai
+    # Part field is bytes, which is what the real API returns.
+    deltas = [
+        Delta(
+            content=DeltaText(data="Reasoned response"),
+            metadata={"thought_signature": b"thinking-sig"},
+        ),
+        Delta(
+            content=DeltaToolUse(data=ToolUse(name="search", input={"query": "test"}, id="tool1")),
+            metadata={"thought_signature": b"tool-use-sig"},
+        ),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    assert len(contents) == 2
+    assert contents[0].parts[0].text == "Reasoned response"
+    assert contents[0].parts[0].thought_signature == b"thinking-sig"
+    assert contents[1].parts[0].function_call.name == "search"
+    assert contents[1].parts[0].thought_signature == b"tool-use-sig"
+
+
+def test_deltas_to_contents_without_metadata_has_no_signature():
+    # Deltas with no metadata must not crash and must leave thought_signature unset.
+    deltas = [
+        Delta(content=DeltaText(data="Plain response")),
+        Delta(content=DeltaToolUse(data=ToolUse(name="search", input={"query": "test"}, id="tool1"))),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    assert contents[0].parts[0].thought_signature is None
+    assert contents[1].parts[0].thought_signature is None
 
 
 @pytest.mark.asyncio
