@@ -1162,7 +1162,7 @@ wheels = [
 
 [[package]]
 name = "mus"
-version = "0.29.5"
+version = "0.29.6"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
