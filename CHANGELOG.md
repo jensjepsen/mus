@@ -1,3 +1,9 @@
+## v0.30.0 (2026-06-18)
+
+### Feat
+
+- inline cache checkpoints
+
 ## v0.29.6 (2026-06-12)
 
 ### Fix
