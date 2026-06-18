@@ -128,7 +128,7 @@ asyncio.run(main())
 
 ### Cache points
 
-A `CachePoint` marks a prompt-cache breakpoint *inside* a message. Everything before it becomes a cacheable prefix that's reused on later calls, so a large shared document or context only has to be processed once — only the content after the cache point is reprocessed.
+A `CachePoint` marks a prompt-cache breakpoint *inside* a message. Everything before it becomes a cacheable prefix that's reused on later calls, so a large shared document or context only has to be processed once, only the content after the cache point is reprocessed.
 
 ```python
 from mus import CachePoint
