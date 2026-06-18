@@ -10,6 +10,7 @@ from .types import (
     Query,
     Usage,
     Assistant,
+    CachePoint,
     LLMClientStreamArgs,
     is_tool_simple_return_value,
     FunctionSchemaNoAnnotations,
@@ -134,6 +135,9 @@ def query_to_contents(query: Query):
     current_role = None
 
     for q in query.val:
+        if isinstance(q, CachePoint):
+            # Google caches automatically; manual cache points don't apply.
+            continue
         if isinstance(q, Assistant):
             # Flush any pending user parts
             if current_parts and current_role == "user":

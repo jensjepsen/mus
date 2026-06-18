@@ -33,7 +33,7 @@ from mus.llm.mistral import (
     deltas_to_messages,
     convert_tool_arguments,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue, CachePoint
 from mus.functions import to_schema
 
 
@@ -902,3 +902,12 @@ async def test_mistral_json_repair_in_stream(mistral_llm, mock_mistral_client, m
     tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
     assert len(tool_uses) == 1
     assert tool_uses[0].content.data.input == expected_args
+
+
+def test_query_to_messages_skips_cache_point():
+    # Mistral caches automatically; an inline CachePoint is a no-op marker that
+    # must be dropped rather than crash the conversion.
+    messages = query_to_messages(Query(["User message", CachePoint(), "more"]))
+    assert len(messages) == 2
+    assert messages[0].content == "User message"
+    assert messages[1].content == "more"

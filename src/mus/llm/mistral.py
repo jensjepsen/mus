@@ -11,6 +11,7 @@ from .types import (
     Query,
     Usage,
     Assistant,
+    CachePoint,
     LLMClientStreamArgs,
     is_tool_simple_return_value,
     FunctionSchemaNoAnnotations,
@@ -174,6 +175,9 @@ def parse_content(query: t.Union[str, File]) -> t.Union[TextChunk, ImageURLChunk
 def query_to_messages(query: Query) -> t.List[Messages]:
     messages = []
     for q in query.val:
+        if isinstance(q, CachePoint):
+            # Mistral caches automatically; manual cache points don't apply.
+            continue
         if isinstance(q, Assistant):
             messages.append(
                 AssistantMessage(

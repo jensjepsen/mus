@@ -8,6 +8,7 @@ from .types import (
     File,
     Query,
     Assistant,
+    CachePoint,
     LLMClientStreamArgs,
     ToolSimpleReturnValue,
     is_tool_simple_return_value,
@@ -180,6 +181,9 @@ def parse_content(query: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
 def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
     messages = []
     for q in query.val:
+        if isinstance(q, CachePoint):
+            # OpenAI caches automatically; manual cache points don't apply.
+            continue
         if isinstance(q, Assistant):
             messages.append({"role": "assistant", "content": q.val})
         else:

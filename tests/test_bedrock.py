@@ -13,11 +13,12 @@ from mus.llm.bedrock import (
     merge_messages,
     deltas_to_messages,
 )
-from mus.llm.types import DeltaToolInputUpdate, File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue
+from mus.llm.types import DeltaToolInputUpdate, File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue, CachePoint
 from mus.functions import to_schema
 from dataclasses import dataclass
 import base64
 import json
+import logging
 
 @pytest.fixture
 def mock_bedrock_client():
@@ -446,6 +447,7 @@ from mus.llm.exceptions import (
     LLMNotFoundException,
     LLMModelException,
     LLMToolParseException,
+    LLMCachingException,
     LLMException,
 )
 
@@ -479,6 +481,27 @@ def test_map_bedrock_access_denied():
     err = _make_client_error("AccessDeniedException", status_code=403)
     mapped = _map_bedrock_exception(err)
     assert isinstance(mapped, LLMAuthenticationException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 403
+
+
+def test_map_bedrock_caching_not_supported():
+    # Bedrock returns this when a cache point is sent to a model that does not
+    # support prompt caching. It arrives as AccessDeniedException, but the cause
+    # is a caching feature mismatch, not credentials.
+    err = _make_client_error(
+        "AccessDeniedException",
+        message=(
+            "You invoked an unsupported model or your request did not allow "
+            "prompt caching. See the documentation for more information."
+        ),
+        status_code=403,
+    )
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMCachingException)
+    # Still a caching error even though Bedrock used the AccessDenied code, so it
+    # must not be mistaken for an auth failure.
+    assert not isinstance(mapped, LLMAuthenticationException)
     assert mapped.provider == "bedrock"
     assert mapped.status_code == 403
 
@@ -727,3 +750,99 @@ async def test_bedrock_json_repair(bedrock_llm, mock_bedrock_client, malformed_j
     tool_uses = [d for d in deltas if isinstance(d.content, DeltaToolUse)]
     assert len(tool_uses) == 1
     assert tool_uses[0].content.data.input == expected_args
+
+
+def test_cache_point_inserts_block():
+    messages = deltas_to_messages([Query(["big", CachePoint(), "tail"])])
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    content = messages[0]["content"]
+    assert len(content) == 3
+    assert content[0]["text"] == "big"
+    assert content[1] == {"cachePoint": {"type": "default"}}
+    assert content[2]["text"] == "tail"
+
+
+def test_cache_point_leading_is_noop():
+    messages = deltas_to_messages([Query([CachePoint(), "hello"])])
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert all("cachePoint" not in block for block in content)
+    assert content[0]["text"] == "hello"
+
+
+def test_no_cache_point_still_merges_text():
+    messages = deltas_to_messages([Query(["a", "b"])])
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert len(content) == 1
+    assert content[0]["text"] == "ab"
+
+
+def _make_caching_error():
+    return _make_client_error(
+        "AccessDeniedException",
+        message=(
+            "You invoked an unsupported model or your request did not allow "
+            "prompt caching."
+        ),
+        status_code=403,
+    )
+
+
+async def _ok_stream():
+    events = [
+        {"contentBlockDelta": {"delta": {"text": "ok"}}},
+        {"contentBlockStop": {}},
+        {"messageStop": {"stopReason": "end_turn"}},
+        {"metadata": {"usage": {"inputTokens": 5, "outputTokens": 2}}},
+    ]
+    for event in events:
+        yield event
+
+
+@pytest.mark.asyncio
+async def test_warn_on_unsupported_cache_retries_without_cache_points(caplog):
+    client = AsyncMock()
+    client.converse_stream.side_effect = [
+        _make_caching_error(),
+        {"stream": _ok_stream()},
+    ]
+    llm = BedrockLLM("a-model-id", client, warn_on_unsupported_cache=True)
+
+    with caplog.at_level(logging.WARNING):
+        deltas = [
+            d
+            async for d in llm.stream(
+                model="a-model-id",
+                history=[Query(["big context", CachePoint(), "the question"])],
+            )
+        ]
+
+    # Retried exactly once after the caching failure.
+    assert client.converse_stream.call_count == 2
+    # The retry stripped the cache point out of the request.
+    retry_args = client.converse_stream.call_args_list[1].kwargs
+    assert all(
+        "cachePoint" not in block
+        for message in retry_args["messages"]
+        for block in message["content"]
+    )
+    # Output still flowed through, and a warning was logged.
+    assert any(isinstance(d.content, DeltaText) and d.content.data for d in deltas)
+    assert "caching" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_unsupported_cache_raises_without_flag():
+    client = AsyncMock()
+    client.converse_stream.side_effect = _make_caching_error()
+    llm = BedrockLLM("a-model-id", client)  # default: warn_on_unsupported_cache=False
+
+    with pytest.raises(LLMCachingException):
+        async for _ in llm.stream(
+            model="a-model-id",
+            history=[Query(["big context", CachePoint(), "the question"])],
+        ):
+            pass
+    assert client.converse_stream.call_count == 1

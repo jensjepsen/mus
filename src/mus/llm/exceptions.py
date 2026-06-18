@@ -89,3 +89,15 @@ class LLMToolParseException(LLMException):
     """Raised when the model returns malformed JSON for a tool call."""
 
     pass
+
+
+class LLMCachingException(LLMException):
+    """Raised when a request uses prompt-caching features the model doesn't support.
+
+    For example, sending a ``CachePoint`` to a Bedrock model that predates prompt
+    caching. The underlying provider error may surface under a different code
+    (Bedrock reports it as ``AccessDeniedException``); this exception normalises
+    it so it isn't mistaken for an authentication failure.
+    """
+
+    pass

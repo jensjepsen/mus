@@ -8,6 +8,7 @@ from .llm.types import (
     ToolResult as ToolResult,
     Assistant as Assistant,
     System as System,
+    CachePoint as CachePoint,
     Delta as Delta,
     DeltaHistory as DeltaHistory,
     DeltaText as DeltaText,
