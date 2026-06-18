@@ -18,7 +18,7 @@ from mus.llm.google import (
     tool_result_to_parts,
     deltas_to_contents,
 )
-from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate, ToolValue
+from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate, ToolValue, CachePoint
 from mus.functions import to_schema
 
 
@@ -1104,3 +1104,12 @@ async def test_google_genai_stream_tool_use_prompt_tokens(google_genai_llm, mock
     assert len(usage_deltas) == 1
     assert usage_deltas[0].usage.input_tokens == 65  # 40 prompt + 25 tool_use_prompt
     assert usage_deltas[0].usage.output_tokens == 15
+
+
+def test_query_to_contents_skips_cache_point():
+    # Google caches automatically; an inline CachePoint is a no-op marker that
+    # must be dropped rather than crash the conversion.
+    contents = query_to_contents(Query(["User message", CachePoint(), "more"]))
+    assert len(contents) == 1
+    assert contents[0].role == "user"
+    assert len(contents[0].parts) == 2

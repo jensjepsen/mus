@@ -17,6 +17,7 @@ from .types import (
     DeltaToolInputUpdate,
     DeltaHistory,
     DeltaStreamReset,
+    CachePoint,
 )
 from .exceptions import (
     LLMException,
@@ -29,6 +30,7 @@ from .exceptions import (
     LLMNotFoundException,
     LLMModelException,
     LLMToolParseException,
+    LLMCachingException,
 )
 import base64
 
@@ -38,8 +40,41 @@ from json_repair import repair_json
 import aiobotocore.session
 import botocore.exceptions
 import contextlib
+import logging
 
 PROVIDER = "bedrock"
+
+logger = logging.getLogger(__name__)
+
+
+def _strip_cache_points(args: bt.ConverseStreamRequestTypeDef):
+    """Return a copy of converse args with all cache points removed.
+
+    Covers inline message cache points, the system-prompt cache point, and the
+    tools cache point, so a request can be retried against a model that doesn't
+    support prompt caching.
+    """
+    cleaned: dict[str, t.Any] = dict(args)
+    if messages := cleaned.get("messages"):
+        stripped_messages = [
+            {
+                **message,
+                "content": [
+                    block for block in message["content"] if "cachePoint" not in block
+                ],
+            }
+            for message in messages
+        ]
+        # A message that held only a cache point would now be empty; drop it.
+        cleaned["messages"] = [m for m in stripped_messages if m["content"]]
+    if system := cleaned.get("system"):
+        cleaned["system"] = [block for block in system if "cachePoint" not in block]
+    if (tool_config := cleaned.get("toolConfig")) and "tools" in tool_config:
+        cleaned["toolConfig"] = {
+            **tool_config,
+            "tools": [tool for tool in tool_config["tools"] if "cachePoint" not in tool],
+        }
+    return cleaned
 
 
 def _map_bedrock_exception(e: Exception) -> LLMException:
@@ -53,6 +88,19 @@ def _map_bedrock_exception(e: Exception) -> LLMException:
         error_code = e.response.get("Error", {}).get("Code", "")
         request_id = e.response.get("ResponseMetadata", {}).get("RequestId")
         status_code = e.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+        # A cache point sent to a model that doesn't support prompt caching is
+        # reported by Bedrock as AccessDeniedException, but the cause is a caching
+        # feature mismatch — surface it as such rather than an auth failure.
+        lowered = msg.lower()
+        if "prompt caching" in lowered or "cache point" in lowered:
+            return LLMCachingException(
+                msg,
+                provider=PROVIDER,
+                status_code=status_code,
+                request_id=request_id,
+                raw_response=raw_response,
+            )
 
         if error_code == "AccessDeniedException":
             return LLMAuthenticationException(
@@ -184,10 +232,26 @@ def parse_content(query: t.Union[str, File]):
 
 
 def query_to_messages(query: Query):
+    last_role: t.Optional[t.Literal["user", "assistant"]] = None
     for q in query.val:
+        if isinstance(q, CachePoint):
+            # Emit a cache point block that merges into the preceding message.
+            # A leading cache point (no content before it) is a no-op.
+            if last_role is not None:
+                yield bt.MessageTypeDef(
+                    role=last_role,
+                    content=[
+                        bt.ContentBlockTypeDef(
+                            cachePoint=bt.CachePointBlockTypeDef(type="default")
+                        )
+                    ],
+                )
+            continue
         if isinstance(q, Assistant):
+            last_role = "assistant"
             yield bt.MessageTypeDef(role="assistant", content=[{"text": q.val}])
         else:
+            last_role = "user"
             yield bt.MessageTypeDef(role="user", content=[parse_content(q)])
 
 
@@ -336,12 +400,6 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
                                     content=tool_result_to_content(delta.content.data),
                                 )
                             ),
-                            # example of how to add a cache point, if needed
-                            # bt.ContentBlockTypeDef(
-                            #    cachePoint= bt.CachePointBlockTypeDef(
-                            #        type="default"
-                            #    )
-                            # )
                         ],
                     )
                 )
@@ -382,12 +440,17 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
         model: MODEL_TYPE,
         client: t.Optional[BedrockRuntimeClient] = None,
         session: t.Optional[aiobotocore.session.AioSession] = None,
+        warn_on_unsupported_cache: bool = False,
     ):
         self.client = client
         self.session = (
             session if session is not None else aiobotocore.session.get_session()
         )
         self.model = model
+        # When True, a request that fails because the model doesn't support
+        # prompt caching is retried without cache points (logging a warning)
+        # instead of raising LLMCachingException.
+        self.warn_on_unsupported_cache = warn_on_unsupported_cache
 
     async def stream(
         self, **kwargs: t.Unpack[LLMClientStreamArgs[StreamArgs, MODEL_TYPE]]
@@ -448,14 +511,33 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                     yield client
 
         async with get_client() as client:
-            if not kwargs.get("no_stream", False):
+            nonlocal_args: dict[str, t.Any] = {"args": args}
+
+            async def issue(method):
                 try:
-                    response = await client.converse_stream(**args)
+                    return await method(**nonlocal_args["args"])
                 except (
                     botocore.exceptions.ClientError,
                     botocore.exceptions.BotoCoreError,
                 ) as e:
                     raise _map_bedrock_exception(e) from e
+
+            async def issue_with_cache_fallback(method):
+                try:
+                    return await issue(method)
+                except LLMCachingException:
+                    if not self.warn_on_unsupported_cache:
+                        raise
+                    logger.warning(
+                        "Model %s does not support prompt caching; "
+                        "retrying without cache points.",
+                        self.model,
+                    )
+                    nonlocal_args["args"] = _strip_cache_points(nonlocal_args["args"])
+                    return await issue(method)
+
+            if not kwargs.get("no_stream", False):
+                response = await issue_with_cache_fallback(client.converse_stream)
                 function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
                 current_function = None
                 try:
@@ -551,13 +633,7 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 ) as e:
                     raise _map_bedrock_exception(e) from e
             else:
-                try:
-                    response = await client.converse(**args)
-                except (
-                    botocore.exceptions.ClientError,
-                    botocore.exceptions.BotoCoreError,
-                ) as e:
-                    raise _map_bedrock_exception(e) from e
+                response = await issue_with_cache_fallback(client.converse)
 
                 output = response.get("output")
                 tools: t.List[Delta] = []

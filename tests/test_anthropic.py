@@ -4,8 +4,9 @@ import pytest
 from unittest.mock import Mock
 from contextlib import asynccontextmanager
 
-from mus.llm.anthropic import func_to_tool, functions_for_llm, _map_anthropic_exception
+from mus.llm.anthropic import func_to_tool, functions_for_llm, _map_anthropic_exception, deltas_to_messages
 from mus import AnthropicLLM
+from mus.llm.types import Query, CachePoint
 from mus.functions import to_schema
 from anthropic import types as at
 
@@ -357,3 +358,48 @@ async def test_anthropic_exception_chaining(mock_client):
         async for _ in llm.stream(prompt="p", history=[], model="m"):
             pass
     assert exc_info.value.__cause__ is exc
+
+
+def test_cache_point_tags_preceding_block():
+    messages = deltas_to_messages([Query(["big context", CachePoint(), "the question"])])
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    content = messages[0]["content"]
+    # The cache point splits the otherwise-merged text into two blocks; the
+    # block before the cache point carries cache_control, the one after does not.
+    assert len(content) == 2
+    assert content[0]["text"] == "big context"
+    assert content[0]["cache_control"] == {"type": "ephemeral"}
+    assert content[1]["text"] == "the question"
+    assert "cache_control" not in content[1]
+
+
+def test_cache_point_trailing_tags_last_block():
+    messages = deltas_to_messages([Query(["only", CachePoint()])])
+    content = messages[0]["content"]
+    assert len(content) == 1
+    assert content[0]["text"] == "only"
+    assert content[0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cache_point_ttl_maps_to_cache_control():
+    messages = deltas_to_messages([Query(["doc", CachePoint(ttl="1h"), "q"])])
+    content = messages[0]["content"]
+    assert content[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_cache_point_leading_is_noop():
+    messages = deltas_to_messages([Query([CachePoint(), "hello"])])
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert all("cache_control" not in block for block in content)
+    assert any(block.get("text") == "hello" for block in content)
+
+
+def test_no_cache_point_still_merges_text():
+    # Regression: without a cache point, adjacent same-role text blocks merge into one.
+    messages = deltas_to_messages([Query(["a", "b"])])
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert len(content) == 1
+    assert content[0]["text"] == "ab"

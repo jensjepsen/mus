@@ -6,7 +6,7 @@ import typing as t
 import httpx
 import openai
 
-from mus.llm.openai import OpenAILLM, _map_openai_exception
+from mus.llm.openai import OpenAILLM, _map_openai_exception, query_to_messages
 from mus.llm.types import (
     Delta,
     DeltaText,
@@ -15,6 +15,7 @@ from mus.llm.types import (
     Query,
     ToolUse,
     Usage,
+    CachePoint,
 )
 from mus.llm.exceptions import (
     LLMAuthenticationException,
@@ -538,3 +539,12 @@ async def test_openai_non_stream_cached_tokens(openai_llm, mock_openai_client):
     assert usage_deltas[0].usage.input_tokens == 100
     assert usage_deltas[0].usage.output_tokens == 20
     assert usage_deltas[0].usage.cache_read_input_tokens == 60
+
+
+def test_query_to_messages_skips_cache_point():
+    # OpenAI caches automatically; an inline CachePoint is a no-op marker that
+    # must be dropped rather than crash the conversion.
+    messages = query_to_messages(Query(["hi", CachePoint(), "bye"]))
+    assert len(messages) == 2
+    assert messages[0]["content"] == "hi"
+    assert messages[1]["content"] == "bye"

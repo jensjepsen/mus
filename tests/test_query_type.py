@@ -1,4 +1,4 @@
-from mus.llm.types import Query, File, Assistant, System
+from mus.llm.types import Query, File, Assistant, System, CachePoint
 
 def test_query_text_plus_file():
     q = "Hello" + File(b64type="image/png", content="sadf")
@@ -233,3 +233,51 @@ def test_system_plus_string():
     assert result.val == "System message"
     assert isinstance(result.query, str)
     assert result.query == "User query"
+
+def test_query_string_plus_cache_point_plus_string():
+    q = "Hello" + CachePoint() + "World"
+    assert isinstance(q, Query)
+    assert len(q.val) == 3
+    assert q.val[0] == "Hello"
+    assert isinstance(q.val[1], CachePoint)
+    assert q.val[2] == "World"
+
+def test_query_cache_point_leading():
+    q = CachePoint() + "tail"
+    assert isinstance(q, Query)
+    assert len(q.val) == 2
+    assert isinstance(q.val[0], CachePoint)
+    assert q.val[1] == "tail"
+
+def test_query_file_plus_cache_point():
+    f = File(b64type="image/png", content="image_content")
+    q = f + CachePoint()
+    assert isinstance(q, Query)
+    assert len(q.val) == 2
+    assert isinstance(q.val[0], File)
+    assert isinstance(q.val[1], CachePoint)
+
+def test_query_plus_cache_point():
+    q = Query(["Initial"]) + CachePoint()
+    assert isinstance(q, Query)
+    assert len(q.val) == 2
+    assert q.val[0] == "Initial"
+    assert isinstance(q.val[1], CachePoint)
+
+def test_query_parse_cache_point():
+    q = Query.parse(CachePoint())
+    assert isinstance(q, Query)
+    assert len(q.val) == 1
+    assert isinstance(q.val[0], CachePoint)
+
+def test_query_parse_list_with_cache_point():
+    q = Query.parse(["before", CachePoint(), "after"])
+    assert isinstance(q, Query)
+    assert len(q.val) == 3
+    assert q.val[0] == "before"
+    assert isinstance(q.val[1], CachePoint)
+    assert q.val[2] == "after"
+
+def test_cache_point_ttl_default():
+    assert CachePoint().ttl == "5m"
+    assert CachePoint(ttl="1h").ttl == "1h"

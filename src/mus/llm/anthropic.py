@@ -20,6 +20,7 @@ from .types import (
     DeltaToolInputUpdate,
     DeltaHistory,
     DeltaStreamReset,
+    CachePoint,
 )
 from .exceptions import (
     LLMException,
@@ -188,14 +189,31 @@ def parse_content(query: t.Union[str, File]):
         raise ValueError(f"Invalid query type: {type(query)}")
 
 
+def cache_point_to_control(cache_point: CachePoint) -> at.CacheControlEphemeralParam:
+    control: at.CacheControlEphemeralParam = {"type": "ephemeral"}
+    if cache_point.ttl == "1h":
+        control["ttl"] = "1h"
+    return control
+
+
 def query_to_content(query: Query):
+    last_content: t.Optional[t.List[t.Any]] = None
     for q in query.val:
+        if isinstance(q, CachePoint):
+            # A cache point tags the preceding content block as a cache
+            # breakpoint. With nothing before it (leading cache point) it is a
+            # no-op.
+            if last_content:
+                block = last_content[-1]
+                if isinstance(block, dict):
+                    block["cache_control"] = cache_point_to_control(q)
+            continue
         if isinstance(q, Assistant):
-            yield at.MessageParam(
-                role="assistant", content=[at.TextBlock(type="text", text=q.val)]
-            )
+            last_content = [at.TextBlock(type="text", text=q.val)]
+            yield at.MessageParam(role="assistant", content=last_content)
         else:
-            yield at.MessageParam(role="user", content=[parse_content(q)])
+            last_content = [parse_content(q)]
+            yield at.MessageParam(role="user", content=last_content)
 
 
 def tool_result_to_content(tool_result: ToolResult):
@@ -226,10 +244,21 @@ def join_content(
         a = [str_to_text_block(a)]
     if isinstance(b, str):
         b = [str_to_text_block(b)]
-    if a[0]["type"] == "text" and b[0]["type"] == "text":
-        return [
-            at.TextBlockParam({"type": "text", "text": a[0]["text"] + b[0]["text"]})
-        ]
+    # Merge adjacent text, but never across a cache breakpoint: a block carrying
+    # cache_control on the left edge ends the cacheable prefix, so it must stay a
+    # distinct block. A cache breakpoint on the right block is preserved onto the
+    # merged block.
+    if (
+        a[-1]["type"] == "text"
+        and b[0]["type"] == "text"
+        and "cache_control" not in a[-1]
+    ):
+        merged_block = at.TextBlockParam(
+            {"type": "text", "text": a[-1]["text"] + b[0]["text"]}
+        )
+        if "cache_control" in b[0]:
+            merged_block["cache_control"] = b[0]["cache_control"]
+        return a[:-1] + [merged_block] + b[1:]
     return a + b
 
 

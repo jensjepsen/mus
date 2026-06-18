@@ -126,6 +126,29 @@ async def main():
 asyncio.run(main())
 ```
 
+### Cache points
+
+A `CachePoint` marks a prompt-cache breakpoint *inside* a message. Everything before it becomes a cacheable prefix that's reused on later calls, so a large shared document or context only has to be processed once — only the content after the cache point is reprocessed.
+
+```python
+from mus import CachePoint
+
+document = "...a very large document..."
+
+# Compose a cache point into the query with `+`. Everything up to the
+# CachePoint is cached; only the trailing question varies between calls.
+query = (
+    "Here is a document:\n"
+    + document
+    + CachePoint()  # cache everything up to here
+    + "\n\nSummarise it in one sentence."
+)
+
+# Pass `query` to a bot like any other query.
+```
+
+`CachePoint` applies to the Anthropic and Bedrock backends. Providers that cache automatically (OpenAI, Google, Mistral) ignore the marker, so the same query stays portable across providers. Pass `CachePoint(ttl="1h")` to request the longer cache TTL where the provider supports it (Anthropic).
+
 
 ## Contributing
 We use uv.

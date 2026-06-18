@@ -286,6 +286,7 @@ def is_query_type(val: t.Any) -> t.TypeGuard[QueryType]:
     return (
         isinstance(val, str)
         or isinstance(val, File)
+        or isinstance(val, CachePoint)
         or isinstance(val, Query)
         or (isinstance(val, list) and all(is_query_type(v) for v in val))
     )
@@ -321,7 +322,32 @@ class Assistant:
         return other + Query(self)
 
 
-QuerySimpleType = t.Union[str, File, Assistant]
+@attrs.define
+class CachePoint:
+    """An inline cache breakpoint placed within a query.
+
+    Compose it into a query with ``+`` to mark where a prompt-cache boundary
+    should go, so the content up to this point can be cached and reused across
+    calls::
+
+        bot("Large document:\\n" + doc + CachePoint() + "\\n\\nQuestion: " + q)
+
+    ``ttl`` ("5m" or "1h") only applies to providers that expose a cache TTL
+    (Anthropic); it is ignored elsewhere. Providers that cache automatically
+    (OpenAI, Google, Mistral) drop the marker.
+    """
+
+    ttl: t.Literal["5m", "1h"] = "5m"
+    _type: t.Literal["cache-point"] = "cache-point"
+
+    def __add__(self, other: "QueryType"):
+        return Query([self]) + other
+
+    def __radd__(self, other: "QueryType"):
+        return other + Query([self])
+
+
+QuerySimpleType = t.Union[str, File, Assistant, CachePoint]
 QueryIterableType = t.List[QuerySimpleType]
 
 
@@ -335,6 +361,7 @@ class Query:
             isinstance(query, str)
             or isinstance(query, File)
             or isinstance(query, Assistant)
+            or isinstance(query, CachePoint)
         ):
             parsed_query = Query(val=[query])
         elif isinstance(query, list):
@@ -353,7 +380,12 @@ class Query:
         return [self]
 
     def set_val(self, val: QueryType):
-        if isinstance(val, str) or isinstance(val, File) or isinstance(val, Assistant):
+        if (
+            isinstance(val, str)
+            or isinstance(val, File)
+            or isinstance(val, Assistant)
+            or isinstance(val, CachePoint)
+        ):
             if isinstance(val, str):
                 val = dedent(val)
             self.val = t.cast(QueryIterableType, [val])
@@ -367,6 +399,7 @@ class Query:
             isinstance(other, str)
             or isinstance(other, File)
             or isinstance(other, Assistant)
+            or isinstance(other, CachePoint)
         ):
             return Query(self.val + [other])
         elif isinstance(other, Query):
@@ -379,6 +412,7 @@ class Query:
             isinstance(other, str)
             or isinstance(other, File)
             or isinstance(other, Assistant)
+            or isinstance(other, CachePoint)
         ):
             return Query([other] + self.val)
         elif isinstance(other, Query):
