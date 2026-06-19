@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock
 from contextlib import asynccontextmanager
 
-from mus.llm.anthropic import func_to_tool, functions_for_llm, _map_anthropic_exception, deltas_to_messages
+from mus.llm.anthropic import func_to_tool, functions_for_llm, _map_anthropic_exception, deltas_to_messages, add_history_cache_point
 from mus import AnthropicLLM
 from mus.llm.types import Query, CachePoint
 from mus.functions import to_schema
@@ -403,3 +403,46 @@ def test_no_cache_point_still_merges_text():
     content = messages[0]["content"]
     assert len(content) == 1
     assert content[0]["text"] == "ab"
+
+
+def test_add_history_cache_point_tags_last_block():
+    messages = deltas_to_messages([Query(["hello world"])])
+    add_history_cache_point(messages, {"type": "ephemeral"})
+    assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_add_history_cache_point_empty_is_noop():
+    messages = []
+    add_history_cache_point(messages, {"type": "ephemeral"})
+    assert messages == []
+
+
+@pytest.mark.asyncio
+async def test_stream_applies_cache_history(mock_client):
+    mock_client.messages.stream = Mock(return_value=return_val())
+    llm = AnthropicLLM("a-model-id", mock_client)
+    async for _ in llm.stream(
+        model="a-model-id",
+        history=[Query(["remember this"])],
+        cache={"cache_history": True},
+    ):
+        pass
+    messages = mock_client.messages.stream.call_args.kwargs["messages"]
+    assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_stream_without_cache_history_has_no_breakpoint(mock_client):
+    mock_client.messages.stream = Mock(return_value=return_val())
+    llm = AnthropicLLM("a-model-id", mock_client)
+    async for _ in llm.stream(
+        model="a-model-id",
+        history=[Query(["remember this"])],
+    ):
+        pass
+    messages = mock_client.messages.stream.call_args.kwargs["messages"]
+    assert all(
+        "cache_control" not in block
+        for message in messages
+        for block in message["content"]
+    )

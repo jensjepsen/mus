@@ -12,6 +12,7 @@ from mus.llm.bedrock import (
     join_content,
     merge_messages,
     deltas_to_messages,
+    add_history_cache_point,
 )
 from mus.llm.types import DeltaToolInputUpdate, File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, Usage, ToolValue, CachePoint
 from mus.functions import to_schema
@@ -831,6 +832,51 @@ async def test_warn_on_unsupported_cache_retries_without_cache_points(caplog):
     # Output still flowed through, and a warning was logged.
     assert any(isinstance(d.content, DeltaText) and d.content.data for d in deltas)
     assert "caching" in caplog.text.lower()
+
+
+def test_add_history_cache_point_appends_block():
+    messages = deltas_to_messages([Query(["hello world"])])
+    add_history_cache_point(messages)
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_add_history_cache_point_empty_is_noop():
+    messages = []
+    add_history_cache_point(messages)
+    assert messages == []
+
+
+@pytest.mark.asyncio
+async def test_stream_applies_cache_history():
+    client = AsyncMock()
+    client.converse_stream.return_value = {"stream": _ok_stream()}
+    llm = BedrockLLM("a-model-id", client)
+    async for _ in llm.stream(
+        model="a-model-id",
+        history=[Query(["remember this"])],
+        cache={"cache_history": True},
+    ):
+        pass
+    messages = client.converse_stream.call_args.kwargs["messages"]
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+@pytest.mark.asyncio
+async def test_stream_without_cache_history_has_no_breakpoint():
+    client = AsyncMock()
+    client.converse_stream.return_value = {"stream": _ok_stream()}
+    llm = BedrockLLM("a-model-id", client)
+    async for _ in llm.stream(
+        model="a-model-id",
+        history=[Query(["remember this"])],
+    ):
+        pass
+    messages = client.converse_stream.call_args.kwargs["messages"]
+    assert all(
+        "cachePoint" not in block
+        for message in messages
+        for block in message["content"]
+    )
 
 
 @pytest.mark.asyncio

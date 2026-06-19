@@ -196,6 +196,24 @@ def cache_point_to_control(cache_point: CachePoint) -> at.CacheControlEphemeralP
     return control
 
 
+def add_history_cache_point(
+    messages: t.List[at.MessageParam],
+    control: at.CacheControlEphemeralParam,
+) -> None:
+    """Place a cache breakpoint on the final content block of the last message.
+
+    Used by the ``cache_history`` option to cache the whole conversation prefix
+    (system + tools + history) up to the latest message.
+    """
+    if not messages:
+        return
+    content = messages[-1]["content"]
+    # deltas_to_messages always produces list content; the final block is a
+    # content-block param dict, which accepts cache_control.
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        content[-1]["cache_control"] = control  # type: ignore
+
+
 def query_to_content(query: Query):
     last_content: t.Optional[t.List[t.Any]] = None
     for q in query.val:
@@ -357,6 +375,9 @@ class AnthropicLLM(
             extra_kwargs["system"] = prompt
 
         messages = deltas_to_messages(kwargs.get("history"))
+        cache_config = kwargs.get("cache", None)
+        if cache_config and cache_config.get("cache_history"):
+            add_history_cache_point(messages, {"type": "ephemeral"})
         try:
             async with self.client.messages.stream(
                 max_tokens=kwargs.get("max_tokens", None) or 4096,
