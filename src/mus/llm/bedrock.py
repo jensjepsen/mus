@@ -337,6 +337,20 @@ def merge_messages(messages: t.List[bt.MessageTypeDef]):
     return merged
 
 
+def add_history_cache_point(messages: t.List[bt.MessageTypeDef]) -> None:
+    """Append a cache point to the last message's content.
+
+    Used by the ``cache_history`` option to cache the whole conversation prefix
+    (system + tools + history) up to the latest message.
+    """
+    if not messages:
+        return
+    messages[-1]["content"] = [
+        *messages[-1]["content"],
+        bt.ContentBlockTypeDef(cachePoint=bt.CachePointBlockTypeDef(type="default")),
+    ]
+
+
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     messages = []
     for delta in deltas:
@@ -480,6 +494,8 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
             extra_kwargs["system"] = system
 
         messages = deltas_to_messages(kwargs.get("history"))
+        if cache_config and cache_config.get("cache_history"):
+            add_history_cache_point(messages)
 
         args = bt.ConverseStreamRequestTypeDef(
             modelId=str(self.model),

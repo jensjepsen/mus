@@ -33,9 +33,10 @@ class FunctionSchemaNoAnnotations(t.TypedDict):
     schema: t.Dict[str, t.Any]
 
 
-class CacheOptions(t.TypedDict):
+class CacheOptions(t.TypedDict, total=False):
     cache_system_prompt: t.Optional[bool]
     cache_tools: t.Optional[bool]
+    cache_history: t.Optional[bool]
 
 
 class QueryStreamArgs(t.TypedDict, total=False):
