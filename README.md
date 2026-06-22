@@ -149,6 +149,22 @@ query = (
 
 `CachePoint` applies to the Anthropic and Bedrock backends. Providers that cache automatically (OpenAI, Google, Mistral) ignore the marker, so the same query stays portable across providers. Pass `CachePoint(ttl="1h")` to request the longer cache TTL where the provider supports it (Anthropic).
 
+### Caching the conversation history
+
+Instead of placing cache points by hand, set `cache_history` to automatically drop a cache breakpoint at the end of the conversation on every call. This caches the whole prefix (tools + system prompt + history) up to the latest message, so multi-turn conversations and tool-use loops reuse it instead of reprocessing it each call.
+
+```python
+from mus import Bot
+
+bot = Bot(
+    "You are a helpful assistant",
+    model=model,
+    cache={"cache_history": True},
+)
+```
+
+Exactly one breakpoint is placed per request (at the current end), so it doesn't accumulate across turns. Like `CachePoint`, this applies to the Anthropic and Bedrock backends and is ignored by providers that cache automatically. Note that Anthropic and Bedrock allow at most 4 cache breakpoints per request, so combining `cache_history` with `cache_system_prompt`, `cache_tools`, and inline `CachePoint`s shares that budget.
+
 
 ## Contributing
 We use uv.

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from mus.llm.anthropic import func_to_tool, functions_for_llm, _map_anthropic_exception, deltas_to_messages, add_history_cache_point
 from mus import AnthropicLLM
-from mus.llm.types import Query, CachePoint
+from mus.llm.types import Query, CachePoint, Delta, DeltaText
 from mus.functions import to_schema
 from anthropic import types as at
 
@@ -429,6 +429,29 @@ async def test_stream_applies_cache_history(mock_client):
         pass
     messages = mock_client.messages.stream.call_args.kwargs["messages"]
     assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cache_history_does_not_accumulate_or_mutate_history():
+    # A growing multi-turn history, reused across calls (as a Bot would).
+    history = [
+        Query(["turn 1"]),
+        Delta(content=DeltaText(data="answer 1")),
+        Query(["turn 2"]),
+    ]
+    for _ in range(3):
+        messages = deltas_to_messages(history)
+        add_history_cache_point(messages, {"type": "ephemeral"})
+        # Exactly one cache breakpoint per request, never more.
+        breakpoints = sum(
+            1
+            for m in messages
+            for b in m["content"]
+            if isinstance(b, dict) and "cache_control" in b
+        )
+        assert breakpoints == 1
+    # The stored history is never mutated with cache points.
+    assert all(not isinstance(h, CachePoint) for h in history)
+    assert [type(h).__name__ for h in history] == ["Query", "Delta", "Query"]
 
 
 @pytest.mark.asyncio

@@ -861,6 +861,26 @@ async def test_stream_applies_cache_history():
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
+def test_cache_history_does_not_accumulate_or_mutate_history():
+    # A growing multi-turn history, reused across calls (as a Bot would).
+    history = [
+        Query(["turn 1"]),
+        Delta(content=DeltaText(data="answer 1")),
+        Query(["turn 2"]),
+    ]
+    for _ in range(3):
+        messages = deltas_to_messages(history)
+        add_history_cache_point(messages)
+        # Exactly one cache point per request, never more.
+        cache_points = sum(
+            1 for m in messages for b in m["content"] if "cachePoint" in b
+        )
+        assert cache_points == 1
+    # The stored history is never mutated with cache points.
+    assert all(not isinstance(h, CachePoint) for h in history)
+    assert [type(h).__name__ for h in history] == ["Query", "Delta", "Query"]
+
+
 @pytest.mark.asyncio
 async def test_stream_without_cache_history_has_no_breakpoint():
     client = AsyncMock()
