@@ -15,7 +15,7 @@ from mus.llm.google import (
     file_to_part,
     parse_content,
     query_to_contents,
-    tool_result_to_parts,
+    tool_result_to_function_response,
     deltas_to_contents,
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate, ToolValue, CachePoint
@@ -168,73 +168,76 @@ def test_query_to_contents_empty():
     assert contents == []
 
 
-def test_tool_result_to_parts_string():
+def test_tool_result_to_function_response_string():
     tool_result = ToolResult(id="1", content=ToolValue("Simple string result"))
-    parts = tool_result_to_parts(tool_result)
-    
-    assert len(parts) == 1
-    assert isinstance(parts[0], genai_types.Part)
-    assert parts[0].text == "Simple string result"
+    part = tool_result_to_function_response(tool_result, "my_tool")
+
+    assert isinstance(part, genai_types.Part)
+    assert part.function_response.name == "my_tool"
+    assert part.function_response.response == {"result": "Simple string result"}
+    assert not part.function_response.parts
 
 
-def test_tool_result_to_parts_invalid():
+def test_tool_result_to_function_response_invalid():
     tool_result = ToolResult(id="invalid", content=ToolValue(123))  # type: ignore # intentionally wrong type
-    
+
     with pytest.raises(ValueError, match="Invalid tool result type"):
-        tool_result_to_parts(tool_result)
-    
+        tool_result_to_function_response(tool_result, "my_tool")
+
     tool_result = ToolResult(id="invalid", content=ToolValue([123, "hello"]))  # type: ignore # intentionally wrong type
     with pytest.raises(ValueError, match="Invalid tool result type"):
-        tool_result_to_parts(tool_result)
+        tool_result_to_function_response(tool_result, "my_tool")
 
-def test_tool_result_to_parts_file():
+
+def test_tool_result_to_function_response_file():
     file = File(
-        b64type="image/png", 
+        b64type="image/png",
         content=base64.b64encode(b"fake_image").decode()
     )
     tool_result = ToolResult(id="2", content=ToolValue(file))
-    parts = tool_result_to_parts(tool_result)
-    
-    assert len(parts) == 1
-    assert isinstance(parts[0], genai_types.Part)
-    assert parts[0].as_image() is not None
+    part = tool_result_to_function_response(tool_result, "my_tool")
+
+    assert isinstance(part, genai_types.Part)
+    # The image rides as an inline-data blob inside the function response.
+    assert len(part.function_response.parts) == 1
+    blob = part.function_response.parts[0].inline_data
+    assert blob.mime_type == "image/png"
+    assert blob.data == b"fake_image"
 
 
-def test_tool_result_to_parts_list():
+def test_tool_result_to_function_response_list():
     tool_result = ToolResult(id="3", content=ToolValue(["text1", "text2"]))
-    parts = tool_result_to_parts(tool_result)
-    
-    assert len(parts) == 2
-    assert all(isinstance(part, genai_types.Part) for part in parts)
-    assert parts[0].text == "text1"
-    assert parts[1].text == "text2"
+    part = tool_result_to_function_response(tool_result, "my_tool")
+
+    assert part.function_response.response == {"result": ["text1", "text2"]}
+    assert not part.function_response.parts
 
 
-def test_tool_result_to_parts_mixed_list():
+def test_tool_result_to_function_response_mixed_list():
     file = File(
-        b64type="image/jpeg", 
+        b64type="image/jpeg",
         content=base64.b64encode(b"fake_image").decode()
     )
     tool_result = ToolResult(id="4", content=ToolValue(["text", file, "123"]))
-    parts = tool_result_to_parts(tool_result)
-    
-    assert len(parts) == 3
-    assert all(isinstance(part, genai_types.Part) for part in parts)
-    assert parts[0].text == "text"
-    assert parts[1].as_image() is not None
-    assert parts[2].text == "123"
+    part = tool_result_to_function_response(tool_result, "my_tool")
 
-def test_tool_result_to_parts_with_metadata():
-    """Test that metadata in ToolValue is not serialized as text in parts."""
+    assert part.function_response.response == {"result": ["text", "123"]}
+    assert len(part.function_response.parts) == 1
+    blob = part.function_response.parts[0].inline_data
+    assert blob.mime_type == "image/jpeg"
+    assert blob.data == b"fake_image"
+
+
+def test_tool_result_to_function_response_with_metadata():
+    """Test that metadata in ToolValue is not serialized into the response."""
     tool_result = ToolResult(
-        id="5", 
-        content=ToolValue("Result with metadata", metadata={"key": "value"}), 
+        id="5",
+        content=ToolValue("Result with metadata", metadata={"key": "value"}),
     )
-    parts = tool_result_to_parts(tool_result)
-    
-    assert len(parts) == 1
-    assert isinstance(parts[0], genai_types.Part)
-    assert parts[0].text == "Result with metadata"
+    part = tool_result_to_function_response(tool_result, "my_tool")
+
+    assert part.function_response.response == {"result": "Result with metadata"}
+    assert not part.function_response.parts
     
 
 def test_deltas_to_contents():
