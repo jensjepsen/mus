@@ -10,8 +10,6 @@ from .types import (
     Assistant,
     CachePoint,
     LLMClientStreamArgs,
-    ToolSimpleReturnValue,
-    is_tool_simple_return_value,
     FunctionSchemaNoAnnotations,
     DeltaText,
     DeltaToolUse,
@@ -39,6 +37,8 @@ from openai.types.chat import (
     ChatCompletionMessageToolCallParam,
     ChatCompletionChunk,
     ChatCompletion,
+    ChatCompletionContentPartParam,
+    ChatCompletionContentPartImageParam,
 )
 from openai._types import Omit
 import json
@@ -169,17 +169,23 @@ def file_to_image(file: File) -> str:
     return f"data:{file.b64type};base64,{file.content}"
 
 
-def parse_content(query: t.Union[str, File]) -> t.Union[str, t.Dict[str, str]]:
+def file_to_image_part(file: File) -> ChatCompletionContentPartImageParam:
+    return {"type": "image_url", "image_url": {"url": file_to_image(file)}}
+
+
+def parse_content(
+    query: t.Union[str, File],
+) -> t.Union[str, ChatCompletionContentPartParam]:
     if isinstance(query, str):
         return query
     elif isinstance(query, File):
-        return {"image": file_to_image(query)}
+        return file_to_image_part(query)
     else:
         raise ValueError(f"Invalid query type: {type(query)}")
 
 
 def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
-    messages = []
+    messages: t.List[ChatCompletionMessageParam] = []
     for q in query.val:
         if isinstance(q, CachePoint):
             # OpenAI caches automatically; manual cache points don't apply.
@@ -188,36 +194,41 @@ def query_to_messages(query: Query) -> t.List[ChatCompletionMessageParam]:
             messages.append({"role": "assistant", "content": q.val})
         else:
             content = parse_content(q)
-            messages.append({"role": "user", "content": content})
+            if isinstance(content, str):
+                messages.append({"role": "user", "content": content})
+            else:
+                # image content parts must be sent as a list of parts
+                messages.append({"role": "user", "content": [content]})
     return messages
 
 
-def parse_tool_content(c: ToolSimpleReturnValue) -> t.Union[str, t.Dict[str, str]]:
-    if isinstance(c, str):
-        return c
-    elif isinstance(c, File):
-        return {"image": file_to_image(c)}
-    else:
-        raise ValueError(f"Invalid tool result type: {type(c)}")
-
-
-def tool_result_to_content(
+def split_tool_result(
     tool_result: ToolResult,
-) -> t.Union[str, t.List[t.Union[str, t.Dict[str, str]]]]:
-    if is_tool_simple_return_value(tool_result.content.val):
-        return [parse_tool_content(tool_result.content.val)]
-    elif isinstance(tool_result.content.val, list):
-        return [parse_tool_content(c) for c in tool_result.content.val]
-    else:
-        raise ValueError(
-            f"Invalid tool result content type: {type(tool_result.content.val)}"
-        )
+) -> t.Tuple[t.List[str], t.List[ChatCompletionContentPartImageParam]]:
+    """Split a tool result into text strings and image content parts.
+
+    OpenAI tool messages accept text only, so images are returned separately to
+    be sent in a following user message (the only message type that carries
+    images in the Chat Completions API).
+    """
+    val = tool_result.content.val
+    items = val if isinstance(val, list) else [val]
+    texts: t.List[str] = []
+    images: t.List[ChatCompletionContentPartImageParam] = []
+    for c in items:
+        if isinstance(c, str):
+            texts.append(c)
+        elif isinstance(c, File):
+            images.append(file_to_image_part(c))
+        else:
+            raise ValueError(f"Invalid tool result content type: {type(c)}")
+    return texts, images
 
 
 def deltas_to_messages(
     deltas: t.Iterable[t.Union[Query, Delta]],
 ) -> t.List[ChatCompletionMessageParam]:
-    messages = []
+    messages: t.List[ChatCompletionMessageParam] = []
     for delta in deltas:
         if isinstance(delta, Delta):
             if isinstance(delta.content, DeltaText):
@@ -238,15 +249,34 @@ def deltas_to_messages(
                     {"role": "assistant", "content": None, "tool_calls": [tool_call]}
                 )
             elif isinstance(delta.content, DeltaToolResult):
+                tool_result = delta.content.data
+                texts, images = split_tool_result(tool_result)
+                if texts:
+                    tool_text = "\n".join(texts)
+                elif images:
+                    tool_text = (
+                        "[Tool returned image(s); see the following user message.]"
+                    )
+                else:
+                    tool_text = ""
                 messages.append(
                     {
                         "role": "tool",
-                        "content": json.dumps(
-                            tool_result_to_content(delta.content.data)
-                        ),
-                        "tool_call_id": delta.content.data.id,
+                        "content": tool_text,
+                        "tool_call_id": tool_result.id,
                     }
                 )
+                # OpenAI tool messages can't carry images, so send them in a
+                # follow-up user message that references the tool call.
+                if images:
+                    parts: t.List[ChatCompletionContentPartParam] = [
+                        {
+                            "type": "text",
+                            "text": f"Image output from tool call {tool_result.id}:",
+                        },
+                        *images,
+                    ]
+                    messages.append({"role": "user", "content": parts})
             elif isinstance(
                 delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
             ):

@@ -12,7 +12,6 @@ from .types import (
     Assistant,
     CachePoint,
     LLMClientStreamArgs,
-    is_tool_simple_return_value,
     FunctionSchemaNoAnnotations,
     DeltaText,
     DeltaToolUse,
@@ -168,28 +167,49 @@ def query_to_contents(query: Query):
     return contents
 
 
-def tool_result_to_parts(tool_result: ToolResult):
-    if is_tool_simple_return_value(tool_result.content.val):
-        if isinstance(tool_result.content.val, str):
-            return [genai_types.Part.from_text(text=tool_result.content.val)]
-        elif isinstance(tool_result.content.val, File):
-            return [file_to_part(tool_result.content.val)]
+def file_to_function_response_part(file: File) -> genai_types.FunctionResponsePart:
+    return genai_types.FunctionResponsePart(
+        inline_data=genai_types.FunctionResponseBlob(
+            mime_type=file.b64type,
+            data=base64.b64decode(file.content),
+        )
+    )
+
+
+def tool_result_to_function_response(
+    tool_result: ToolResult, tool_name: str
+) -> genai_types.Part:
+    """Build a Gemini function-response part from a tool result.
+
+    Text results go in the ``response`` dict; ``File`` results are attached as
+    inline-data ``parts`` so images actually reach the model rather than being
+    stuffed unserialized into the response dict.
+    """
+    val = tool_result.content.val
+    items = val if isinstance(val, list) else [val]
+
+    texts: t.List[str] = []
+    file_parts: t.List[genai_types.FunctionResponsePart] = []
+    for c in items:
+        if isinstance(c, str):
+            texts.append(c)
+        elif isinstance(c, File):
+            file_parts.append(file_to_function_response_part(c))
         else:
-            raise ValueError(
-                f"Invalid tool result type: {type(tool_result.content.val)}"
-            )
-    elif isinstance(tool_result.content.val, list):
-        parts = []
-        for c in tool_result.content.val:
-            if isinstance(c, str):
-                parts.append(genai_types.Part.from_text(text=c))
-            elif isinstance(c, File):
-                parts.append(file_to_part(c))
-            else:
-                raise ValueError(f"Invalid tool result type in list: {type(c)}")
-        return parts
+            raise ValueError(f"Invalid tool result type: {type(c)}")
+
+    if isinstance(val, str):
+        response: t.Dict[str, t.Any] = {"result": val}
+    elif texts:
+        response = {"result": texts}
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
+        response = {"result": ""}
+
+    return genai_types.Part.from_function_response(
+        name=tool_name,
+        response=response,
+        parts=file_parts or None,
+    )
 
 
 def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
@@ -239,8 +259,8 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
             elif isinstance(delta.content, DeltaToolResult):
                 tool_result = delta.content.data
                 tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
-                function_response_part = genai_types.Part.from_function_response(
-                    name=tool_name, response={"result": tool_result.content.val}
+                function_response_part = tool_result_to_function_response(
+                    tool_result, tool_name
                 )
                 contents.append(
                     genai_types.Content(role="tool", parts=[function_response_part])

@@ -292,7 +292,7 @@ def merge_messages(messages: t.List[at.MessageParam]):
 
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
-    messages = []
+    messages: t.List[at.MessageParam] = []
     for delta in deltas:
         if isinstance(delta, Delta):
             if isinstance(delta.content, DeltaText):

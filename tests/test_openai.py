@@ -6,17 +6,28 @@ import typing as t
 import httpx
 import openai
 
-from mus.llm.openai import OpenAILLM, _map_openai_exception, query_to_messages
+from mus.llm.openai import (
+    OpenAILLM,
+    _map_openai_exception,
+    query_to_messages,
+    deltas_to_messages,
+    split_tool_result,
+)
 from mus.llm.types import (
     Delta,
     DeltaText,
     DeltaToolUse,
+    DeltaToolResult,
     DeltaToolInputUpdate,
     Query,
+    File,
     ToolUse,
+    ToolResult,
+    ToolValue,
     Usage,
     CachePoint,
 )
+import base64
 from mus.llm.exceptions import (
     LLMAuthenticationException,
     LLMRateLimitException,
@@ -548,3 +559,87 @@ def test_query_to_messages_skips_cache_point():
     assert len(messages) == 2
     assert messages[0]["content"] == "hi"
     assert messages[1]["content"] == "bye"
+
+
+def _img(b64type="image/png", data=b"PNGBYTES"):
+    return File(b64type=b64type, content=base64.b64encode(data).decode())
+
+
+def test_query_to_messages_user_image_is_valid_content_part():
+    # A user image must be sent as a proper image_url content part, not a bare
+    # {"image": ...} dict that the OpenAI API would reject.
+    messages = query_to_messages(Query(["look:", _img()]))
+    assert messages[0]["content"] == "look:"
+    img_content = messages[1]["content"]
+    assert isinstance(img_content, list)
+    assert img_content[0]["type"] == "image_url"
+    assert img_content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_split_tool_result_separates_text_and_images():
+    tr = ToolResult(id="c1", content=ToolValue(["caption", _img(), "more"]))
+    texts, images = split_tool_result(tr)
+    assert texts == ["caption", "more"]
+    assert len(images) == 1
+    assert images[0]["type"] == "image_url"
+
+
+def test_tool_result_with_image_emits_followup_user_message():
+    # OpenAI tool messages can't carry images, so an image tool result becomes a
+    # text tool message plus a follow-up user message holding the image.
+    deltas = [
+        Delta(content=DeltaToolUse(data=ToolUse(id="c1", name="get_badge", input={}))),
+        Delta(
+            content=DeltaToolResult(
+                data=ToolResult(id="c1", content=ToolValue(["here", _img()]))
+            )
+        ),
+    ]
+    messages = deltas_to_messages(deltas)
+
+    tool_msg = next(m for m in messages if m.get("role") == "tool")
+    assert tool_msg["content"] == "here"
+    assert tool_msg["tool_call_id"] == "c1"
+    assert isinstance(tool_msg["content"], str)  # never an image-bearing structure
+
+    # The image rides in a following user message as a real image_url part.
+    tool_idx = messages.index(tool_msg)
+    followup = messages[tool_idx + 1]
+    assert followup["role"] == "user"
+    parts = followup["content"]
+    assert any(
+        p.get("type") == "image_url"
+        and p["image_url"]["url"].startswith("data:image/png;base64,")
+        for p in parts
+    )
+
+
+def test_tool_result_image_only_uses_placeholder_text():
+    deltas = [
+        Delta(content=DeltaToolUse(data=ToolUse(id="c2", name="snap", input={}))),
+        Delta(
+            content=DeltaToolResult(data=ToolResult(id="c2", content=ToolValue(_img())))
+        ),
+    ]
+    messages = deltas_to_messages(deltas)
+    tool_msg = next(m for m in messages if m.get("role") == "tool")
+    # No text in the result -> a placeholder so the tool message isn't empty.
+    assert "image" in tool_msg["content"].lower()
+    followup = messages[messages.index(tool_msg) + 1]
+    assert followup["role"] == "user"
+
+
+def test_tool_result_text_only_has_no_followup():
+    deltas = [
+        Delta(content=DeltaToolUse(data=ToolUse(id="c3", name="calc", input={}))),
+        Delta(
+            content=DeltaToolResult(
+                data=ToolResult(id="c3", content=ToolValue("42"))
+            )
+        ),
+    ]
+    messages = deltas_to_messages(deltas)
+    tool_msg = next(m for m in messages if m.get("role") == "tool")
+    assert tool_msg["content"] == "42"
+    # Text-only tool result is the last message; no follow-up user message added.
+    assert messages.index(tool_msg) == len(messages) - 1

@@ -49,6 +49,7 @@ from mistralai.client.models import (
     ImageURL,
     Arguments,
     Function,
+    ContentChunk,
 )
 
 Messages = t.Union[AssistantMessage, SystemMessage, ToolMessage, UserMessage]
@@ -173,7 +174,7 @@ def parse_content(query: t.Union[str, File]) -> t.Union[TextChunk, ImageURLChunk
 
 
 def query_to_messages(query: Query) -> t.List[Messages]:
-    messages = []
+    messages: t.List[Messages] = []
     for q in query.val:
         if isinstance(q, CachePoint):
             # Mistral caches automatically; manual cache points don't apply.
@@ -195,24 +196,33 @@ def query_to_messages(query: Query) -> t.List[Messages]:
     return messages
 
 
-def parse_tool_content(c: t.Union[str, File]) -> str:
+def parse_tool_content(c: t.Union[str, File]) -> ContentChunk:
     if isinstance(c, str):
-        return c
+        return str_to_text_chunk(c)
     elif isinstance(c, File):
-        # For tool results, Mistral typically expects text descriptions of images
-        # You might want to implement image-to-text conversion here
-        return f"[Image: {c.b64type}]"
+        return file_to_image_chunk(c)
     else:
         raise ValueError(f"Invalid tool result type: {type(c)}")
 
 
-def tool_result_to_content(tool_result: ToolResult) -> str:
-    if is_tool_simple_return_value(tool_result.content.val):
-        return parse_tool_content(tool_result.content.val)
-    elif isinstance(tool_result.content.val, list):
-        return "\n".join([parse_tool_content(c) for c in tool_result.content.val])
+def tool_result_to_content(
+    tool_result: ToolResult,
+) -> t.Union[str, t.List[ContentChunk]]:
+    val = tool_result.content.val
+    if is_tool_simple_return_value(val):
+        # A lone string stays a plain string; a lone File becomes a chunk list.
+        if isinstance(val, str):
+            return val
+        return [parse_tool_content(val)]
+    elif isinstance(val, list):
+        if all(isinstance(c, str) for c in val):
+            # Text-only results stay a plain string.
+            return "\n".join(t.cast(t.List[str], val))
+        # Mistral tool messages accept a content-chunk list, so images (as
+        # ImageURLChunk) actually reach the model instead of a text placeholder.
+        return [parse_tool_content(c) for c in val]
     else:
-        raise ValueError(f"Invalid tool result type: {type(tool_result.content.val)}")
+        raise ValueError(f"Invalid tool result type: {type(val)}")
 
 
 def merge_messages(messages: t.List[Messages]) -> t.List[Messages]:
@@ -234,7 +244,7 @@ def merge_messages(messages: t.List[Messages]) -> t.List[Messages]:
 
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]) -> t.List[Messages]:
-    messages = []
+    messages: t.List[Messages] = []
     tool_id_to_name: t.Dict[str, str] = {}
     for delta in deltas:
         if isinstance(delta, Delta):

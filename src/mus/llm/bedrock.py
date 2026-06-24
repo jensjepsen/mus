@@ -352,7 +352,7 @@ def add_history_cache_point(messages: t.List[bt.MessageTypeDef]) -> None:
 
 
 def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
-    messages = []
+    messages: t.List[bt.MessageTypeDef] = []
     for delta in deltas:
         if isinstance(delta, Delta):
             if (
