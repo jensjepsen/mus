@@ -1,3 +1,10 @@
+## v0.30.2 (2026-06-24)
+
+### Fix
+
+- OAI and Mistral image handling
+- google image passing
+
 ## v0.30.1 (2026-06-19)
 
 ### Fix
