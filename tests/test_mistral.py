@@ -194,14 +194,16 @@ def test_query_to_messages():
 def test_parse_tool_content_string():
     from mus.llm.mistral import parse_tool_content
     result = parse_tool_content("Test content")
-    assert result == "Test content"
+    assert isinstance(result, TextChunk)
+    assert result.text == "Test content"
 
 
 def test_parse_tool_content_file():
     from mus.llm.mistral import parse_tool_content
     file = File(b64type="image/jpeg", content=base64.b64encode(b"fake_image").decode())
     result = parse_tool_content(file)
-    assert result == "[Image: image/jpeg]"
+    # Images now reach the model as a real image chunk, not a text placeholder.
+    assert isinstance(result, ImageURLChunk)
 
 
 def test_parse_tool_content_invalid():
@@ -211,21 +213,33 @@ def test_parse_tool_content_invalid():
 
 
 def test_tool_result_to_content():
-    # String result
+    # String result -> plain string
     str_result = ToolResult(id="1", content=ToolValue("text result"))
     assert tool_result_to_content(str_result) == "text result"
 
-    # File result
+    # File result -> content-chunk list carrying a real image chunk
     file_result = ToolResult(id="2", content=ToolValue(File(b64type="image/png", content=base64.b64encode(b"fake_image_data").decode())))
-    assert tool_result_to_content(file_result) == "[Image: image/png]"
+    file_content = tool_result_to_content(file_result)
+    assert isinstance(file_content, list)
+    assert len(file_content) == 1
+    assert isinstance(file_content[0], ImageURLChunk)
 
-    # List result
+    # Text-only list result -> joined string
     list_result = ToolResult(id="3", content=ToolValue(["text1", "text2"]))
     assert tool_result_to_content(list_result) == "text1\ntext2"
 
+    # Mixed list -> content-chunk list with text + image chunks
+    mixed_result = ToolResult(
+        id="4",
+        content=ToolValue(["caption", File(b64type="image/png", content=base64.b64encode(b"img").decode())]),
+    )
+    mixed_content = tool_result_to_content(mixed_result)
+    assert isinstance(mixed_content, list)
+    assert [type(c).__name__ for c in mixed_content] == ["TextChunk", "ImageURLChunk"]
+
     # Invalid result
     with pytest.raises(ValueError):
-        tool_result_to_content(ToolResult(id="4", content=ToolValue(123)))
+        tool_result_to_content(ToolResult(id="5", content=ToolValue(123)))
 
 
 def test_merge_messages():
