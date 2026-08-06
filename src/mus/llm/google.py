@@ -212,7 +212,56 @@ def tool_result_to_function_response(
     )
 
 
+def _thought_signature(delta: Delta) -> t.Optional[bytes]:
+    """The Gemini thought signature carried on a delta's provider-replay
+    metadata, if any."""
+    return delta.metadata.get("thought_signature") if delta.metadata else None
+
+
+def _tool_result_plaintext(tool_result: ToolResult) -> str:
+    """The string portion of a tool result, for representing a collapsed call as
+    text. File parts are dropped -- they can't ride a plain text note."""
+    val = tool_result.content.val
+    items = val if isinstance(val, list) else [val]
+    return " ".join(c for c in items if isinstance(c, str))
+
+
 def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
+    deltas = list(deltas)
+
+    # Gemini 3 rejects any functionCall part replayed without the
+    # thought_signature it was issued with ("Function call is missing a
+    # thought_signature in functionCall parts"), which 400s the whole request
+    # and bricks the conversation on every subsequent turn. A signature can be
+    # absent for several reasons: the caller rejected the call, Gemini placed
+    # the signature on a thinking part we didn't carry through, or the turn came
+    # from a different provider. Detect a *signed* conversation -- one where at
+    # least one tool call carries a signature -- and, within it, represent any
+    # signature-less call (plus its paired result) as plain text rather than an
+    # invalid functionCall. Non-thinking histories and other providers never
+    # carry the field, so this is a no-op for them.
+    # A signature on ANY delta (thinking-3 stamps them on text parts too, not
+    # just tool calls) marks a signature-bearing conversation.
+    signed = any(isinstance(d, Delta) and _thought_signature(d) for d in deltas)
+    unsigned_ids: t.Set[str] = (
+        {
+            d.content.data.id
+            for d in deltas
+            if isinstance(d, Delta)
+            and isinstance(d.content, DeltaToolUse)
+            and not _thought_signature(d)
+        }
+        if signed
+        else set()
+    )
+    collapsed_result_text: t.Dict[str, str] = {
+        d.content.data.id: _tool_result_plaintext(d.content.data)
+        for d in deltas
+        if isinstance(d, Delta)
+        and isinstance(d.content, DeltaToolResult)
+        and d.content.data.id in unsigned_ids
+    }
+
     contents = []
     tool_id_to_name = {}
     for delta in deltas:
@@ -237,6 +286,23 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
             elif isinstance(delta.content, DeltaToolUse):
                 tool_use = delta.content.data
                 tool_id_to_name[tool_use.id] = tool_use.name
+                if tool_use.id in unsigned_ids:
+                    # No thought_signature -> Gemini would reject the
+                    # functionCall. Represent the call (and its result) as text
+                    # so the request stays valid.
+                    res = collapsed_result_text.get(tool_use.id, "")
+                    note = (
+                        f"[Earlier tool call to `{tool_use.name}` returned: {res}]"
+                        if res
+                        else f"[Earlier tool call to `{tool_use.name}` "
+                        "(no result recorded).]"
+                    )
+                    contents.append(
+                        genai_types.Content(
+                            role="model", parts=[genai_types.Part(text=note)]
+                        )
+                    )
+                    continue
                 contents.append(
                     genai_types.Content(
                         role="model",
@@ -258,6 +324,9 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 )
             elif isinstance(delta.content, DeltaToolResult):
                 tool_result = delta.content.data
+                if tool_result.id in unsigned_ids:
+                    # Folded into the collapsed text note for its call above.
+                    continue
                 tool_name = tool_id_to_name.get(tool_result.id, tool_result.id)
                 function_response_part = tool_result_to_function_response(
                     tool_result, tool_name

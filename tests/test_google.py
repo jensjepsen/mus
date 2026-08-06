@@ -294,6 +294,79 @@ def test_deltas_to_contents_without_metadata_has_no_signature():
     assert contents[1].parts[0].thought_signature is None
 
 
+def test_deltas_to_contents_collapses_unsigned_tool_call_in_signed_convo():
+    # In a signed (Gemini-thinking) conversation, a tool call WITHOUT a
+    # thought_signature would 400 on replay ("Function call is missing a
+    # thought_signature in functionCall parts"), so it -- and its result -- are
+    # represented as a plain text note instead of an invalid functionCall.
+    deltas = [
+        Delta(
+            content=DeltaToolUse(data=ToolUse(name="python", input={"code": "1"}, id="signed")),
+            metadata={"thought_signature": b"sig"},
+        ),
+        Delta(content=DeltaToolResult(data=ToolResult(id="signed", content=ToolValue("ok")))),
+        Delta(content=DeltaToolUse(data=ToolUse(name="query_read", input={"f": "x"}, id="unsigned"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="unsigned", content=ToolValue("Tool not found: query_read.")))),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    # signed call stays a real functionCall + tool result...
+    assert len(contents) == 3
+    assert contents[0].parts[0].function_call.name == "python"
+    assert contents[0].parts[0].thought_signature == b"sig"
+    assert contents[1].role == "tool"
+    # ...the unsigned call collapses to ONE model text note (result folded in),
+    # with no functionCall part and no separate tool result.
+    assert contents[2].role == "model"
+    assert contents[2].parts[0].function_call is None
+    assert "query_read" in contents[2].parts[0].text
+    assert "Tool not found" in contents[2].parts[0].text
+    # No signature-less functionCall survives anywhere.
+    for c in contents:
+        for p in c.parts:
+            if getattr(p, "function_call", None) is not None:
+                assert p.thought_signature is not None
+
+
+def test_deltas_to_contents_detects_signed_convo_from_text_signature():
+    # Thinking-3 stamps signatures on text parts too. A conversation whose only
+    # signature sits on a text delta is still signature-bearing, so an unsigned
+    # tool call in it must be collapsed (not left as an invalid functionCall).
+    deltas = [
+        Delta(
+            content=DeltaText(data="Thinking out loud"),
+            metadata={"thought_signature": b"text-sig"},
+        ),
+        Delta(content=DeltaToolUse(data=ToolUse(name="query_read", input={"f": "x"}, id="unsigned"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="unsigned", content=ToolValue("Tool not found: query_read.")))),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    # text (signed) kept as text; unsigned tool call collapsed to a text note.
+    assert contents[0].parts[0].text == "Thinking out loud"
+    assert contents[0].parts[0].thought_signature == b"text-sig"
+    assert len(contents) == 2
+    assert contents[1].role == "model"
+    assert contents[1].parts[0].function_call is None
+    assert "query_read" in contents[1].parts[0].text
+
+
+def test_deltas_to_contents_keeps_tool_calls_when_no_signatures_anywhere():
+    # No signatures at all (non-thinking model / other provider): the collapse
+    # must NOT fire -- tool calls pass through as real functionCalls.
+    deltas = [
+        Delta(content=DeltaToolUse(data=ToolUse(name="search", input={"q": "x"}, id="a"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="a", content=ToolValue("ok")))),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    assert contents[0].parts[0].function_call.name == "search"
+    assert contents[1].role == "tool"
+
+
 @pytest.mark.asyncio
 async def test_google_genai_stream_basic(google_genai_llm, mock_genai_client):
     # Mock streaming response. Gemini reports usage_metadata as a cumulative
