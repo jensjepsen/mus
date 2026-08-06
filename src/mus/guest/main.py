@@ -6,6 +6,24 @@ import random as _random
 # WASI sandbox where the real random_get syscall is stubbed out.
 os.urandom = _random.randbytes  # type: ignore[assignment]
 
+# Pre-import every text codec so they land in componentize-py's frozen
+# sys.modules snapshot. The guest is built with --stub-wasi (no filesystem), so
+# CPython's lazy codec import on the first str.encode() with a non-builtin
+# encoding -- which happens deep in deps like requests/charset-normalizer -- would
+# os.stat the stubbed filesystem to locate encodings.<name> and trap
+# (wasm `unreachable` in __wasilibc_populate_preopens). Importing them here, once
+# at build/init time, means the runtime lookup is a sys.modules cache hit that
+# never touches the filesystem.
+import encodings as _encodings  # noqa: E402
+import importlib as _importlib  # noqa: E402
+import pkgutil as _pkgutil  # noqa: E402
+
+for _codec in _pkgutil.iter_modules(_encodings.__path__):
+    try:
+        _importlib.import_module("encodings." + _codec.name)
+    except Exception:  # nosec B112 - best-effort codec warmup; skip any that won't import
+        continue
+
 import wit_world  # type: ignore
 import mus
 import mus.llm
