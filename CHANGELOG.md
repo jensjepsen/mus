@@ -1,3 +1,10 @@
+## v0.30.3 (2026-08-07)
+
+### Fix
+
+- missing codecs in requests in wasm
+- collapse functions w.o. sigs to text for gem
+
 ## v0.30.2 (2026-06-24)
 
 ### Fix
