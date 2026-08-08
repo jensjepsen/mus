@@ -23,9 +23,11 @@ from .exceptions import (
     LLMAuthenticationException,
     LLMRateLimitException,
     LLMBadRequestException,
+    LLMContextLengthExceededException,
     LLMServerException,
     LLMNotFoundException,
     LLMModelException,
+    is_context_length_error,
 )
 import base64
 import json
@@ -51,7 +53,12 @@ def _map_google_exception(e: genai_errors.APIError) -> LLMException:
             msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response
         )
     elif status_code == 400 or status_code == 422:
-        return LLMBadRequestException(
+        exc_cls = (
+            LLMContextLengthExceededException
+            if is_context_length_error(msg)
+            else LLMBadRequestException
+        )
+        return exc_cls(
             msg, provider=PROVIDER, status_code=status_code, raw_response=raw_response
         )
     elif status_code == 404:

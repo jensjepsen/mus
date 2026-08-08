@@ -450,6 +450,7 @@ from mus.llm.exceptions import (
     LLMToolParseException,
     LLMCachingException,
     LLMException,
+    LLMContextLengthExceededException,
 )
 
 
@@ -510,6 +511,28 @@ def test_map_bedrock_caching_not_supported():
 def test_map_bedrock_validation_exception():
     err = _make_client_error("ValidationException", status_code=400)
     mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMBadRequestException)
+    # A generic validation error must NOT be classified as a context-length
+    # overflow, so the recovery hook is not offered errors it can't fix by
+    # trimming.
+    assert not isinstance(mapped, LLMContextLengthExceededException)
+    assert mapped.provider == "bedrock"
+    assert mapped.status_code == 400
+
+
+def test_map_bedrock_context_length_validation_exception():
+    # A context-window overflow arrives as a ValidationException carrying a
+    # length message. It must map to the distinct subclass so a recovery hook
+    # can dispatch on it and retry with a smaller history.
+    err = _make_client_error(
+        "ValidationException",
+        message="Input is too long for requested model.",
+        status_code=400,
+    )
+    mapped = _map_bedrock_exception(err)
+    assert isinstance(mapped, LLMContextLengthExceededException)
+    # Still a bad-request subclass, so existing `except LLMBadRequestException`
+    # handlers keep catching it.
     assert isinstance(mapped, LLMBadRequestException)
     assert mapped.provider == "bedrock"
     assert mapped.status_code == 400

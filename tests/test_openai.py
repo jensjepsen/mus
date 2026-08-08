@@ -38,6 +38,7 @@ from mus.llm.exceptions import (
     LLMNotFoundException,
     LLMToolParseException,
     LLMException,
+    LLMContextLengthExceededException,
 )
 from mus.functions import to_schema
 
@@ -138,8 +139,26 @@ def test_map_openai_bad_request_error():
     exc = _make_openai_status_error(openai.BadRequestError, 400)
     mapped = _map_openai_exception(exc)
     assert isinstance(mapped, LLMBadRequestException)
+    # A generic bad request must NOT be treated as an overflow.
+    assert not isinstance(mapped, LLMContextLengthExceededException)
     assert mapped.provider == "openai"
     assert mapped.status_code == 400
+
+
+def test_map_openai_context_length_uses_structured_code():
+    # OpenAI stamps overflow with the stable code ``context_length_exceeded``.
+    # Classification must key off that code, not the (here deliberately
+    # non-matching) message, so it survives message-wording changes.
+    resp = _make_httpx_response(400)
+    exc = openai.BadRequestError(
+        message="This model's limit was reached.",
+        response=resp,
+        body={"code": "context_length_exceeded", "type": "invalid_request_error"},
+    )
+    mapped = _map_openai_exception(exc)
+    assert isinstance(mapped, LLMContextLengthExceededException)
+    assert isinstance(mapped, LLMBadRequestException)
+    assert mapped.provider == "openai"
 
 
 def test_map_openai_unprocessable_entity_error():
