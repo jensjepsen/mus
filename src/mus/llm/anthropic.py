@@ -29,9 +29,11 @@ from .exceptions import (
     LLMConnectionException,
     LLMTimeoutException,
     LLMBadRequestException,
+    LLMContextLengthExceededException,
     LLMServerException,
     LLMNotFoundException,
     LLMModelException,
+    is_context_length_error,
 )
 
 omit = Omit()
@@ -96,7 +98,12 @@ def _map_anthropic_exception(e: Exception) -> LLMException:
             raw_response=raw_response,
         )
     elif isinstance(e, anthropic.BadRequestError):
-        return LLMBadRequestException(
+        exc_cls = (
+            LLMContextLengthExceededException
+            if is_context_length_error(msg)
+            else LLMBadRequestException
+        )
+        return exc_cls(
             msg,
             provider=PROVIDER,
             status_code=status_code,

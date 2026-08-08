@@ -26,11 +26,13 @@ from .exceptions import (
     LLMConnectionException,
     LLMTimeoutException,
     LLMBadRequestException,
+    LLMContextLengthExceededException,
     LLMServerException,
     LLMNotFoundException,
     LLMModelException,
     LLMToolParseException,
     LLMCachingException,
+    is_context_length_error,
 )
 import base64
 
@@ -119,6 +121,18 @@ def _map_bedrock_exception(e: Exception) -> LLMException:
                 raw_response=raw_response,
             )
         elif error_code == "ValidationException":
+            # A context-window overflow arrives as a ValidationException with a
+            # length message (e.g. "Input is too long for requested model").
+            # Classify it distinctly so an error-recovery hook can retry with a
+            # smaller history.
+            if is_context_length_error(msg):
+                return LLMContextLengthExceededException(
+                    msg,
+                    provider=PROVIDER,
+                    status_code=status_code,
+                    request_id=request_id,
+                    raw_response=raw_response,
+                )
             return LLMBadRequestException(
                 msg,
                 provider=PROVIDER,

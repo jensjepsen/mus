@@ -25,9 +25,11 @@ from .exceptions import (
     LLMConnectionException,
     LLMTimeoutException,
     LLMBadRequestException,
+    LLMContextLengthExceededException,
     LLMServerException,
     LLMNotFoundException,
     LLMToolParseException,
+    is_context_length_error,
 )
 
 import openai
@@ -101,7 +103,14 @@ def _map_openai_exception(e: Exception) -> LLMException:
             raw_response=raw_response,
         )
     elif isinstance(e, openai.BadRequestError):
-        return LLMBadRequestException(
+        # OpenAI exposes a stable machine code for overflow
+        # (``context_length_exceeded``); prefer it over message matching.
+        exc_cls = (
+            LLMContextLengthExceededException
+            if is_context_length_error(msg, code=getattr(e, "code", None))
+            else LLMBadRequestException
+        )
+        return exc_cls(
             msg,
             provider=PROVIDER,
             status_code=status_code,

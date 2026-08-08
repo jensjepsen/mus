@@ -241,6 +241,10 @@ class RetryPolicy:
     max_backoff: float = 60.0
     backoff_multiplier: float = 2.0
     jitter: float = 0.5
+    # Max times ``error_recovery_hook`` may be asked to recover from a pre-stream
+    # error (e.g. context overflow) by returning a modified history. Separate
+    # from transport retries; no backoff. 0 disables recovery.
+    max_recovery_attempts: int = 4
 
 
 @dataclass

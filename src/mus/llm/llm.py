@@ -41,6 +41,7 @@ from .types import (
     FallbackToolCallableType,
 )
 from .exceptions import (
+    LLMException,
     LLMRateLimitException,
     LLMServerException,
     LLMTimeoutException,
@@ -205,6 +206,22 @@ class TransformHistoryHook(t.Protocol):
     async def __call__(self, history: History) -> History: ...
 
 
+class ErrorRecoveryHook(t.Protocol):
+    """Called when an LLM call fails *pre-stream* (no delta yielded yet).
+
+    Given the history that failed, the error, and a zero-based retry attempt,
+    return a *modified* history to re-issue with, or ``None`` to give up (the
+    error propagates). The hook fully owns the retry history — mus re-issues
+    exactly what it returns. The motivating case is context-window overflow
+    (return a smaller history), but it is general: inspect ``error`` and recover
+    only what you know how to.
+    """
+
+    async def __call__(
+        self, history: History, error: LLMException, attempt: int
+    ) -> t.Optional[History]: ...
+
+
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
@@ -213,6 +230,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     cache: t.Optional[CacheOptions]
     transform_delta_hook: t.Optional[TransformDeltaHook]
     transform_history_hook: t.Optional[TransformHistoryHook]
+    error_recovery_hook: t.Optional[ErrorRecoveryHook]
 
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
@@ -300,6 +318,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         tools = parse_tools(functions)
         transform_delta_hook = kwargs.get("transform_delta_hook", None)
         transform_history_hook = kwargs.get("transform_history_hook", None)
+        error_recovery_hook = kwargs.get("error_recovery_hook", None)
         policy = self.retry_policy
 
         function_schemas = [
@@ -362,111 +381,146 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
         last_exception: t.Optional[Exception] = None
 
-        for attempt in range(policy.max_transport_retries + 1):
-            if attempt > 0:
-                retry_after = getattr(last_exception, "retry_after", None)
-                sleep_time = _compute_backoff(attempt - 1, policy, retry_after)
-                logger.warning(
-                    "Retrying stream (attempt %d/%d) after %.1fs due to %s: %s",
-                    attempt + 1,
-                    policy.max_transport_retries + 1,
-                    sleep_time,
-                    type(last_exception).__name__,
-                    last_exception,
+        recovery_attempt = 0
+        while True:
+            yielded_any = False
+            try:
+                for attempt in range(policy.max_transport_retries + 1):
+                    if attempt > 0:
+                        retry_after = getattr(last_exception, "retry_after", None)
+                        sleep_time = _compute_backoff(attempt - 1, policy, retry_after)
+                        logger.warning(
+                            "Retrying stream (attempt %d/%d) after %.1fs due to %s: %s",
+                            attempt + 1,
+                            policy.max_transport_retries + 1,
+                            sleep_time,
+                            type(last_exception).__name__,
+                            last_exception,
+                        )
+                        yield Delta(
+                            content=DeltaStreamReset(
+                                stream_id=stream_id,
+                                reason=str(last_exception),
+                                attempt=attempt,
+                            )
+                        )
+                        await asyncio.sleep(sleep_time)
+                        history = list(pre_stream_history)
+                        stream_kwargs["history"] = history
+                        stream_id = uuid.uuid4().hex
+
+                    tool_id_to_uuid: dict[str, str] = {}
+                    try:
+                        async for msg in self.client.stream(**stream_kwargs):
+                            # Assign tool_invocation_id for tool-related deltas
+                            if isinstance(msg.content, DeltaToolInputUpdate):
+                                provider_id = msg.content.id
+                                if provider_id not in tool_id_to_uuid:
+                                    tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                                msg = replace(
+                                    msg,
+                                    stream_id=stream_id,
+                                    tool_invocation_id=tool_id_to_uuid[provider_id],
+                                )
+                            elif isinstance(msg.content, DeltaToolUse):
+                                provider_id = msg.content.data.id
+                                if provider_id not in tool_id_to_uuid:
+                                    tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                                msg = replace(
+                                    msg,
+                                    stream_id=stream_id,
+                                    tool_invocation_id=tool_id_to_uuid[provider_id],
+                                )
+                            else:
+                                msg = replace(msg, stream_id=stream_id)
+
+                            if transform_delta_hook:
+                                msg = await transform_delta_hook(msg)
+                            yield msg
+                            yielded_any = True
+
+                            history = history + [msg]
+                            if isinstance(msg.content, DeltaToolUse):
+                                print(
+                                    "Invoking tool:",
+                                    msg.content.data.name,
+                                    "with input:",
+                                    msg.content.data.input,
+                                )
+                                try:
+                                    func_result = ensure_tool_value(
+                                        await invoke_function(
+                                            msg.content.data.name,
+                                            msg.content.data.input,
+                                            func_map,
+                                        )
+                                    )
+                                except ToolNotFoundError as e:
+                                    if fallback_function := kwargs.get(
+                                        "fallback_function", None
+                                    ):
+                                        func_result = ensure_tool_value(
+                                            await fallback_function(
+                                                original_tool_name=msg.content.data.name,
+                                                original_input=msg.content.data.input,
+                                            )
+                                        )
+                                    else:
+                                        raise e from e
+                                fd = Delta(
+                                    content=DeltaToolResult(
+                                        ToolResult(id=msg.content.data.id, content=func_result)
+                                    ),
+                                    stream_id=stream_id,
+                                    tool_invocation_id=tool_id_to_uuid[msg.content.data.id],
+                                )
+                                if transform_delta_hook:
+                                    fd = await transform_delta_hook(fd)
+                                yield fd
+                                yielded_any = True
+                                history.append(fd)
+                                async for msg in self.query(history=history, **kwargs):
+                                    if isinstance(msg.content, DeltaHistory):
+                                        history.extend(msg.content.data[len(history) :])
+                                    else:
+                                        yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
+                        # Stream completed successfully
+                        break
+
+                    except _TRANSIENT_EXCEPTIONS as e:
+                        last_exception = e
+                        if attempt >= policy.max_transport_retries:
+                            raise
+                        continue
+                break
+            except LLMException as _exc:
+                # A pre-stream failure escaped the transport loop (non-transient,
+                # or transient-exhausted). If a recovery hook is set, no delta was
+                # yielded, and we're under the cap, ask it for a modified history
+                # and re-issue. Otherwise propagate.
+                if (
+                    error_recovery_hook is None
+                    or yielded_any
+                    or recovery_attempt >= policy.max_recovery_attempts
+                ):
+                    raise
+                _recovered = await error_recovery_hook(
+                    stream_kwargs["history"], _exc, recovery_attempt
                 )
+                if _recovered is None:
+                    raise
+                recovery_attempt += 1
                 yield Delta(
                     content=DeltaStreamReset(
                         stream_id=stream_id,
-                        reason=str(last_exception),
-                        attempt=attempt,
+                        reason="error_recovery",
+                        attempt=recovery_attempt,
                     )
                 )
-                await asyncio.sleep(sleep_time)
-                history = list(pre_stream_history)
+                history = list(_recovered)
+                pre_stream_history = list(_recovered)
                 stream_kwargs["history"] = history
                 stream_id = uuid.uuid4().hex
-
-            tool_id_to_uuid: dict[str, str] = {}
-            try:
-                async for msg in self.client.stream(**stream_kwargs):
-                    # Assign tool_invocation_id for tool-related deltas
-                    if isinstance(msg.content, DeltaToolInputUpdate):
-                        provider_id = msg.content.id
-                        if provider_id not in tool_id_to_uuid:
-                            tool_id_to_uuid[provider_id] = uuid.uuid4().hex
-                        msg = replace(
-                            msg,
-                            stream_id=stream_id,
-                            tool_invocation_id=tool_id_to_uuid[provider_id],
-                        )
-                    elif isinstance(msg.content, DeltaToolUse):
-                        provider_id = msg.content.data.id
-                        if provider_id not in tool_id_to_uuid:
-                            tool_id_to_uuid[provider_id] = uuid.uuid4().hex
-                        msg = replace(
-                            msg,
-                            stream_id=stream_id,
-                            tool_invocation_id=tool_id_to_uuid[provider_id],
-                        )
-                    else:
-                        msg = replace(msg, stream_id=stream_id)
-
-                    if transform_delta_hook:
-                        msg = await transform_delta_hook(msg)
-                    yield msg
-
-                    history = history + [msg]
-                    if isinstance(msg.content, DeltaToolUse):
-                        print(
-                            "Invoking tool:",
-                            msg.content.data.name,
-                            "with input:",
-                            msg.content.data.input,
-                        )
-                        try:
-                            func_result = ensure_tool_value(
-                                await invoke_function(
-                                    msg.content.data.name,
-                                    msg.content.data.input,
-                                    func_map,
-                                )
-                            )
-                        except ToolNotFoundError as e:
-                            if fallback_function := kwargs.get(
-                                "fallback_function", None
-                            ):
-                                func_result = ensure_tool_value(
-                                    await fallback_function(
-                                        original_tool_name=msg.content.data.name,
-                                        original_input=msg.content.data.input,
-                                    )
-                                )
-                            else:
-                                raise e from e
-                        fd = Delta(
-                            content=DeltaToolResult(
-                                ToolResult(id=msg.content.data.id, content=func_result)
-                            ),
-                            stream_id=stream_id,
-                            tool_invocation_id=tool_id_to_uuid[msg.content.data.id],
-                        )
-                        if transform_delta_hook:
-                            fd = await transform_delta_hook(fd)
-                        yield fd
-                        history.append(fd)
-                        async for msg in self.query(history=history, **kwargs):
-                            if isinstance(msg.content, DeltaHistory):
-                                history.extend(msg.content.data[len(history) :])
-                            else:
-                                yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
-                # Stream completed successfully
-                break
-
-            except _TRANSIENT_EXCEPTIONS as e:
-                last_exception = e
-                if attempt >= policy.max_transport_retries:
-                    raise
-                continue
 
         yield Delta(content=DeltaHistory(data=history))
 
