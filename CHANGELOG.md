@@ -1,3 +1,9 @@
+## v0.31.0 (2026-08-08)
+
+### Feat
+
+- add execption handling recovery hook
+
 ## v0.30.3 (2026-08-07)
 
 ### Fix
