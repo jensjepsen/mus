@@ -1,3 +1,9 @@
+## v0.31.1 (2026-08-13)
+
+### Fix
+
+- pass image properly to gemini
+
 ## v0.31.0 (2026-08-08)
 
 ### Feat
