@@ -16,6 +16,7 @@ from mus.llm.google import (
     parse_content,
     query_to_contents,
     tool_result_to_function_response,
+    tool_result_image_parts,
     deltas_to_contents,
 )
 from mus.llm.types import File, Query, Delta, ToolUse, ToolResult, Assistant, DeltaContent, DeltaText, DeltaToolUse, DeltaToolResult, DeltaHistory, DeltaToolInputUpdate, ToolValue, CachePoint
@@ -198,11 +199,16 @@ def test_tool_result_to_function_response_file():
     part = tool_result_to_function_response(tool_result, "my_tool")
 
     assert isinstance(part, genai_types.Part)
-    # The image rides as an inline-data blob inside the function response.
-    assert len(part.function_response.parts) == 1
-    blob = part.function_response.parts[0].inline_data
-    assert blob.mime_type == "image/png"
-    assert blob.data == b"fake_image"
+    # The image does NOT ride inside the function response (Gemini rejects that);
+    # the response notes an image follows, and the image is a separate part.
+    assert not part.function_response.parts
+    assert part.function_response.response == {
+        "result": "Image returned; see the following message."
+    }
+    image_parts = tool_result_image_parts(tool_result)
+    assert len(image_parts) == 1
+    assert image_parts[0].inline_data.mime_type == "image/png"
+    assert image_parts[0].inline_data.data == b"fake_image"
 
 
 def test_tool_result_to_function_response_list():
@@ -221,11 +227,13 @@ def test_tool_result_to_function_response_mixed_list():
     tool_result = ToolResult(id="4", content=ToolValue(["text", file, "123"]))
     part = tool_result_to_function_response(tool_result, "my_tool")
 
+    # Text stays in the response dict; the image is surfaced separately.
     assert part.function_response.response == {"result": ["text", "123"]}
-    assert len(part.function_response.parts) == 1
-    blob = part.function_response.parts[0].inline_data
-    assert blob.mime_type == "image/jpeg"
-    assert blob.data == b"fake_image"
+    assert not part.function_response.parts
+    image_parts = tool_result_image_parts(tool_result)
+    assert len(image_parts) == 1
+    assert image_parts[0].inline_data.mime_type == "image/jpeg"
+    assert image_parts[0].inline_data.data == b"fake_image"
 
 
 def test_tool_result_to_function_response_with_metadata():
@@ -255,6 +263,33 @@ def test_deltas_to_contents():
     assert contents[1].role == "model"
     assert contents[2].role == "model"  # tool_use
     assert contents[3].role == "tool"   # tool_result
+
+
+def test_deltas_to_contents_file_result_rides_user_turn():
+    """Gemini rejects images embedded in function responses ("Multimodal
+    function responses are not supported for this model"), which 400s the whole
+    request. A File tool result must therefore ride a *following user turn* as
+    normal inline data, not be stuffed into the functionResponse."""
+    file = File(b64type="image/png", content=base64.b64encode(b"fake_image").decode())
+    deltas = [
+        Query(["Look at the image"]),
+        Delta(content=DeltaToolUse(data=ToolUse(name="look_at_image", input={"filename": "x.png"}, id="tool1"))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="tool1", content=ToolValue(file)))),
+    ]
+
+    contents = deltas_to_contents(deltas)
+
+    # The tool turn's function response must carry NO inline media.
+    tool_contents = [c for c in contents if c.role == "tool"]
+    assert len(tool_contents) == 1
+    assert not tool_contents[0].parts[0].function_response.parts
+
+    # The image rides a following user turn as an inline-data part.
+    assert contents[-1].role == "user"
+    blob = contents[-1].parts[0].inline_data
+    assert blob is not None
+    assert blob.mime_type == "image/png"
+    assert blob.data == b"fake_image"
 
 
 def test_deltas_to_contents_preserves_thought_signature():

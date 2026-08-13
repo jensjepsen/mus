@@ -174,13 +174,18 @@ def query_to_contents(query: Query):
     return contents
 
 
-def file_to_function_response_part(file: File) -> genai_types.FunctionResponsePart:
-    return genai_types.FunctionResponsePart(
-        inline_data=genai_types.FunctionResponseBlob(
-            mime_type=file.b64type,
-            data=base64.b64decode(file.content),
-        )
-    )
+def tool_result_image_parts(tool_result: ToolResult) -> t.List[genai_types.Part]:
+    """Inline-image parts for any ``File`` result(s) in a tool result.
+
+    Gemini rejects images embedded in a function response ("Multimodal function
+    responses are not supported for this model"), so ``File`` tool results are
+    surfaced as normal inline-data parts on a *following user turn* instead (see
+    ``deltas_to_contents``). Reuses ``file_to_part`` so tool-result images go
+    through the same conversion as user-supplied images.
+    """
+    val = tool_result.content.val
+    items = val if isinstance(val, list) else [val]
+    return [file_to_part(c) for c in items if isinstance(c, File)]
 
 
 def tool_result_to_function_response(
@@ -188,20 +193,22 @@ def tool_result_to_function_response(
 ) -> genai_types.Part:
     """Build a Gemini function-response part from a tool result.
 
-    Text results go in the ``response`` dict; ``File`` results are attached as
-    inline-data ``parts`` so images actually reach the model rather than being
-    stuffed unserialized into the response dict.
+    Text results go in the ``response`` dict. ``File`` results can't ride inside
+    the function response -- Gemini rejects multimodal function responses -- so
+    they are surfaced separately as inline-data user parts (see
+    ``tool_result_image_parts`` / ``deltas_to_contents``); an image-only result
+    notes that an image follows so the model connects the two.
     """
     val = tool_result.content.val
     items = val if isinstance(val, list) else [val]
 
     texts: t.List[str] = []
-    file_parts: t.List[genai_types.FunctionResponsePart] = []
+    has_file = False
     for c in items:
         if isinstance(c, str):
             texts.append(c)
         elif isinstance(c, File):
-            file_parts.append(file_to_function_response_part(c))
+            has_file = True
         else:
             raise ValueError(f"Invalid tool result type: {type(c)}")
 
@@ -209,14 +216,12 @@ def tool_result_to_function_response(
         response: t.Dict[str, t.Any] = {"result": val}
     elif texts:
         response = {"result": texts}
+    elif has_file:
+        response = {"result": "Image returned; see the following message."}
     else:
         response = {"result": ""}
 
-    return genai_types.Part.from_function_response(
-        name=tool_name,
-        response=response,
-        parts=file_parts or None,
-    )
+    return genai_types.Part.from_function_response(name=tool_name, response=response)
 
 
 def _thought_signature(delta: Delta) -> t.Optional[bytes]:
@@ -341,6 +346,13 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                 contents.append(
                     genai_types.Content(role="tool", parts=[function_response_part])
                 )
+                # Gemini rejects images inside function responses, so any File
+                # result is attached as inline data on a following user turn.
+                image_parts = tool_result_image_parts(tool_result)
+                if image_parts:
+                    contents.append(
+                        genai_types.Content(role="user", parts=image_parts)
+                    )
             elif isinstance(
                 delta.content, (DeltaToolInputUpdate, DeltaHistory, DeltaStreamReset)
             ):
