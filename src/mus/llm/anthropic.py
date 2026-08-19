@@ -21,6 +21,9 @@ from .types import (
     DeltaHistory,
     DeltaStreamReset,
     CachePoint,
+    StopReason,
+    StopReasonKind,
+    normalize_stop_reason,
 )
 from .exceptions import (
     LLMException,
@@ -349,6 +352,30 @@ def deltas_to_messages(deltas: t.Iterable[t.Union[Query, Delta]]):
     return merge_messages(messages)
 
 
+_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    "end_turn": "end_turn",
+    "stop_sequence": "stop_sequence",
+    "tool_use": "tool_use",
+    "max_tokens": "max_tokens",
+    "refusal": "content_filter",
+    "pause_turn": "pause_turn",
+}
+
+
+def _map_anthropic_stop_reason(
+    raw: t.Optional[str],
+    *,
+    stop_sequence: t.Optional[str] = None,
+    pending_tools: bool = False,
+) -> t.Optional[StopReason]:
+    return normalize_stop_reason(
+        raw,
+        _STOP_REASONS,
+        stop_sequence=stop_sequence,
+        pending_tools=pending_tools,
+    )
+
+
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
 
@@ -360,6 +387,8 @@ MODEL_TYPE = at.ModelParam
 class AnthropicLLM(
     LLM[STREAM_ARGS, at.ModelParam, t.Union[AsyncAnthropicBedrock, AsyncAnthropic]]
 ):
+    provider = PROVIDER
+
     def __init__(
         self,
         model: MODEL_TYPE,
@@ -414,7 +443,18 @@ class AnthropicLLM(
                             cache_written_input_tokens=event.message.usage.cache_creation_input_tokens
                             or 0,
                         )
-                        yield Delta(content=DeltaText(data=""), usage=usage)
+                        yield Delta(
+                            content=DeltaText(data=""),
+                            usage=usage,
+                            stop_reason=_map_anthropic_stop_reason(
+                                event.message.stop_reason,
+                                stop_sequence=event.message.stop_sequence,
+                                # Tool blocks are only flushed on a "tool_use"
+                                # stop; if any are pending on any other stop the
+                                # call was cut off mid-flight.
+                                pending_tools=bool(function_blocks),
+                            ),
+                        )
                         if event.message.stop_reason == "tool_use":
                             for block in function_blocks:
                                 tool_use = ToolUse(

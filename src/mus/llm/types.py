@@ -58,6 +58,9 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
 
 
 class LLM(ABC, t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
+    # Short provider name, used to label exceptions raised by the shared loop.
+    provider: t.ClassVar[str] = "unknown"
+
     @abstractmethod
     def __init__(
         self, model: MODEL_TYPE, client: t.Optional[CLIENT_TYPE] = None
@@ -232,6 +235,73 @@ class Usage:
     cache_written_input_tokens: int = 0
 
 
+StopReasonKind = t.Literal[
+    # Planned: the turn ended the way the caller asked it to.
+    "end_turn",
+    "stop_sequence",
+    "tool_use",
+    # Unplanned: the turn was cut short by something the caller did not ask for.
+    "max_tokens",
+    "content_filter",
+    "malformed_tool_call",
+    "pause_turn",
+    "error",
+    "unknown",
+]
+
+PLANNED_STOP_REASONS: t.FrozenSet[StopReasonKind] = frozenset(
+    {"end_turn", "stop_sequence", "tool_use"}
+)
+
+
+@dataclass
+class StopReason:
+    """Why the model stopped generating, normalised across providers.
+
+    ``kind`` is mus's vocabulary; ``raw`` is always the provider's own word for it,
+    so callers can special-case a value mus doesn't know about yet. Unrecognised
+    values normalise to ``"unknown"``, which is *unplanned* and therefore raises --
+    an unplanned stop is by definition one the caller did not plan for.
+    """
+
+    kind: StopReasonKind
+    raw: str
+    # The sequence that was matched, for providers that report which one.
+    stop_sequence: t.Optional[str] = None
+
+    @property
+    def is_planned(self) -> bool:
+        return self.kind in PLANNED_STOP_REASONS
+
+
+def normalize_stop_reason(
+    raw: t.Optional[str],
+    table: t.Mapping[str, StopReasonKind],
+    *,
+    stop_sequence: t.Optional[str] = None,
+    pending_tools: bool = False,
+) -> t.Optional[StopReason]:
+    """Build a ``StopReason`` from a provider's raw value and its mapping table.
+
+    Returns ``None`` when the provider reported no reason at all. That is
+    deliberately distinct from reporting one mus doesn't recognise, which
+    normalises to ``"unknown"`` and therefore raises: "didn't say" must not be
+    escalated into "stopped unexpectedly", or a provider omitting the field
+    would break every call.
+
+    ``pending_tools`` says a tool call was still being assembled when the model
+    stopped. Combined with an unplanned stop, that means the tool block is
+    truncated and unusable, so it normalises to ``malformed_tool_call`` -- the
+    provider's own reason is still preserved in ``raw``.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    kind: StopReasonKind = table.get(raw, "unknown")
+    if pending_tools and kind not in PLANNED_STOP_REASONS:
+        kind = "malformed_tool_call"
+    return StopReason(kind=kind, raw=raw, stop_sequence=stop_sequence)
+
+
 @dataclass
 class RetryPolicy:
     """Configuration for retry behavior on transient errors."""
@@ -251,6 +321,7 @@ class RetryPolicy:
 class Delta:
     content: DeltaContent
     usage: t.Optional[Usage] = None
+    stop_reason: t.Optional[StopReason] = None
     metadata: t.Optional[t.Dict[str, t.Any]] = (
         None  # useful for preserving library specific data, s.a. thought signatures
     )

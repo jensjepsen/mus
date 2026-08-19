@@ -150,6 +150,74 @@ query = (
 `CachePoint` applies to the Anthropic and Bedrock backends. Providers that cache automatically (OpenAI, Google, Mistral) ignore the marker, so the same query stays portable across providers. Pass `CachePoint(ttl="1h")` to request the longer cache TTL where the provider supports it (Anthropic).
 
 
+### Stop reasons
+
+Every provider reports why generation ended. mus normalises those into a common `StopReason`, keeping the provider's own value in `raw`.
+
+| `kind` | planned? | Anthropic | OpenAI | Bedrock | Google | Mistral |
+|---|---|---|---|---|---|---|
+| `end_turn` | yes | `end_turn` | `stop` | `end_turn` | `STOP` | `stop` |
+| `stop_sequence` | yes | `stop_sequence` | `stop` | `stop_sequence` | `STOP` | `stop` |
+| `tool_use` | yes | `tool_use` | `tool_calls` | `tool_use` | `STOP` + call | `tool_calls` |
+| `max_tokens` | no | `max_tokens` | `length` | `max_tokens` | `MAX_TOKENS` | `length` |
+| `content_filter` | no | `refusal` | `content_filter` | `content_filtered` | `SAFETY` | |
+| `malformed_tool_call` | no | derived | derived | derived | `MALFORMED_FUNCTION_CALL` | derived |
+| `pause_turn`, `error`, `unknown` | no | | | | | |
+
+Planned stops are the ones you asked for, and are reported on the result. Only some providers distinguish a natural stop from a stop-sequence hit; where they don't, both arrive as `end_turn`.
+
+```python
+result = bot("Say hi")
+await result.string()
+
+if result.stop_reason:
+    result.stop_reason.kind  # "end_turn"
+```
+
+Every other stop raises `LLMStoppedException`, so a truncated or filtered response isn't mistaken for a complete one. The exception carries the state needed to carry on:
+
+```python
+from mus import LLMStoppedException, IterableResult, Query
+
+try:
+    text = await bot("Write an essay", max_tokens=64).string()
+except LLMStoppedException as e:
+    e.stop_reason.kind   # "max_tokens"
+    e.stop_reason.raw    # "length", the provider's own value
+    e.partial_text       # the text that arrived before the cut
+    e.pending_tool_call  # whether a tool call was mid-flight
+    e.history            # the whole turn, including tool calls that completed
+```
+
+There is no recovery hook, because a half-emitted tool call can't be continued: the assistant turn holds a malformed tool block that providers reject on the next request. Recovery happens at the call site instead, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
+
+```python
+except LLMStoppedException as e:
+    if e.stop_reason.kind == "max_tokens" and not e.pending_tool_call:
+        text = e.partial_text + await IterableResult(
+            bot.query(history=e.history + [Query("Continue where you stopped.")])
+        ).string()
+```
+
+`partial_text` is exactly what the provider emitted, so a cut mid-word joins without a separator. Prompt the continuation to restart the final sentence to trade a few repeated tokens for a clean join.
+
+`pending_tool_call` says whether the turn can be continued at all: `False` to append and carry on, `True` to re-issue it. It is derived from tool blocks left in flight at the stop, so it depends on what the provider exposes. Anthropic, Bedrock, OpenAI and Mistral report it; Google sets it only for `MALFORMED_FUNCTION_CALL`. A tool is never invoked with truncated arguments either way.
+
+Values mus doesn't recognise normalise to `unknown`, which also raises, with `raw` preserved so a new provider value can be handled without waiting for a mus release.
+
+OpenAI-compatible gateways such as OpenRouter normalise the upstream reason, and will report a planned `tool_calls` for a call the upstream actually cut off at the token limit. Where a gateway also sends the upstream value as `native_finish_reason`, mus reads it and takes the unplanned reading, since normalising can hide a truncation but never invent one. Point `OpenAILLM` at a gateway by passing your own client:
+
+```python
+from openai import AsyncClient
+from mus import OpenAILLM
+
+model = OpenAILLM(
+    "openai/gpt-4o-mini",
+    AsyncClient(base_url="https://openrouter.ai/api/v1", api_key=...),
+)
+```
+
+
 ## Contributing
 We use uv.
 
@@ -184,6 +252,7 @@ uv build
     - [ ] Example generation should be optional and be simpler (i.e. no special chars etc)
 - [ ] Allow for trimming historic messages
 - [ ] Error handling
+    - [X] Surface stop reasons via a common API, raising on unplanned stops
     - [ ] Handle errors from underlying sdks
     - [ ] Define possible retry strategies
         - [ ] How do we recover from wrong function input from llm?

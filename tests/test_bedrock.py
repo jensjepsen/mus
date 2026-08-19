@@ -326,11 +326,15 @@ async def test_bedrock_llm_stream_reasoning_metadata(bedrock_llm):
         functions=[],
     )]
 
-    assert len(results) == 1
+    # The reasoning delta, plus a terminal delta carrying the stop reason. This
+    # stream has no metadata event to ride out on, so it gets its own.
+    assert len(results) == 2
     assert isinstance(results[0].content, DeltaText)
     assert results[0].content.subtype == "reasoning"
     assert results[0].content.data == "Let me think"
     assert results[0].metadata["signature"] == "sig-xyz"
+    assert results[1].stop_reason is not None
+    assert results[1].stop_reason.kind == "end_turn"
 
 @pytest.mark.asyncio
 async def test_bedrock_llm_no_stream(bedrock_llm):

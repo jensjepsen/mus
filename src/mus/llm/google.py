@@ -17,6 +17,9 @@ from .types import (
     DeltaToolUse,
     DeltaToolResult,
     DeltaStreamReset,
+    StopReason,
+    StopReasonKind,
+    normalize_stop_reason,
 )
 from .exceptions import (
     LLMException,
@@ -374,7 +377,54 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = StreamArgs
 
 
+_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    # Google cannot distinguish a natural stop from a stop-sequence hit, and
+    # signals tool use with a STOP plus a function_call part. All planned.
+    "STOP": "end_turn",
+    "MAX_TOKENS": "max_tokens",
+    "SAFETY": "content_filter",
+    "RECITATION": "content_filter",
+    "BLOCKLIST": "content_filter",
+    "PROHIBITED_CONTENT": "content_filter",
+    "SPII": "content_filter",
+    "IMAGE_SAFETY": "content_filter",
+    "IMAGE_PROHIBITED_CONTENT": "content_filter",
+    "IMAGE_RECITATION": "content_filter",
+    "MALFORMED_FUNCTION_CALL": "malformed_tool_call",
+    "UNEXPECTED_TOOL_CALL": "malformed_tool_call",
+    "LANGUAGE": "error",
+    "OTHER": "error",
+    "IMAGE_OTHER": "error",
+    "NO_IMAGE": "error",
+    "FINISH_REASON_UNSPECIFIED": "error",
+}
+
+
+def _map_google_stop_reason(raw: t.Optional[str]) -> t.Optional[StopReason]:
+    return normalize_stop_reason(raw, _STOP_REASONS)
+
+
+def _raw_finish_reason(value: t.Any) -> t.Optional[str]:
+    """Google reports finish reasons as an enum; take its name.
+
+    Returns ``None`` for anything that isn't a string or a named enum member,
+    rather than stringifying it -- a garbled value would normalise to "unknown"
+    and raise, turning a reporting gap into a failed call.
+    """
+    # Check the enum member first: google.genai's FinishReason subclasses str,
+    # so an isinstance(str) test would pass the member through and leave an enum
+    # sitting in StopReason.raw (and str() on it yields "FinishReason.STOP").
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    if isinstance(value, str):
+        return value or None
+    return None
+
+
 class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
+    provider = PROVIDER
+
     def __init__(self, model: MODEL_TYPE, client: t.Optional[genai.Client] = None):
         if not client:
             client = genai.Client()
@@ -460,6 +510,23 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                         )
             return deltas
 
+        def extract_stop_reason(
+            resp: genai_types.GenerateContentResponse,
+        ) -> t.Optional[StopReason]:
+            # A prompt blocked outright comes back with no candidates at all, so
+            # the reason lives on prompt_feedback rather than on a candidate.
+            feedback = getattr(resp, "prompt_feedback", None)
+            if feedback is not None:
+                blocked = _raw_finish_reason(getattr(feedback, "block_reason", None))
+                if blocked:
+                    return StopReason(kind="content_filter", raw=blocked)
+            if not resp.candidates:
+                return None
+            raw = _raw_finish_reason(resp.candidates[0].finish_reason)
+            if raw is None:
+                return None
+            return _map_google_stop_reason(raw)
+
         def extract_usage(
             resp: genai_types.GenerateContentResponse,
         ) -> t.Optional[Usage]:
@@ -487,16 +554,23 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
             except genai_errors.APIError as e:
                 raise _map_google_exception(e) from e
             latest_usage: t.Optional[Usage] = None
+            latest_stop: t.Optional[StopReason] = None
             try:
                 async for chunk in response_stream:
                     for delta in handle_response(chunk):
                         yield delta
                     if (usage := extract_usage(chunk)) is not None:
                         latest_usage = usage
+                    if (stop := extract_stop_reason(chunk)) is not None:
+                        latest_stop = stop
             except genai_errors.APIError as e:
                 raise _map_google_exception(e) from e
-            if latest_usage is not None:
-                yield Delta(content=DeltaText(data=""), usage=latest_usage)
+            if latest_usage is not None or latest_stop is not None:
+                yield Delta(
+                    content=DeltaText(data=""),
+                    usage=latest_usage,
+                    stop_reason=latest_stop,
+                )
         else:
             try:
                 response = await self.client.aio.models.generate_content(
@@ -506,5 +580,7 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                 raise _map_google_exception(e) from e
             for delta in handle_response(response):
                 yield delta
-            if (usage := extract_usage(response)) is not None:
-                yield Delta(content=DeltaText(data=""), usage=usage)
+            usage = extract_usage(response)
+            stop = extract_stop_reason(response)
+            if usage is not None or stop is not None:
+                yield Delta(content=DeltaText(data=""), usage=usage, stop_reason=stop)

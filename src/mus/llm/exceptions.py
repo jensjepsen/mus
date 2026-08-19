@@ -1,5 +1,8 @@
 import typing as t
 
+if t.TYPE_CHECKING:
+    from .types import History, StopReason
+
 
 class LLMException(Exception):
     """Base exception for all LLM-related errors."""
@@ -100,6 +103,67 @@ class LLMToolParseException(LLMException):
     """Raised when the model returns malformed JSON for a tool call."""
 
     pass
+
+
+class LLMStoppedException(LLMException):
+    """Raised when the model stopped for a reason the caller did not ask for.
+
+    "Unplanned" means anything outside ``PLANNED_STOP_REASONS`` -- truncation on
+    ``max_tokens``, a content filter, a cut-off tool call. These used to pass
+    silently: a truncated answer is indistinguishable from a complete one, and a
+    truncated *tool call* was dropped on the floor entirely.
+
+    There is deliberately no recovery hook for this. A half-emitted tool call
+    cannot be continued -- the assistant turn holds a malformed ``tool_use`` block
+    that providers reject on the next request -- so the only move is to drop it
+    and re-ask, which the caller can do at the call site. This exception carries
+    the state needed to do so::
+
+        try:
+            text = await bot("write an essay").string()
+        except LLMStoppedException as e:
+            if e.stop_reason.kind == "max_tokens" and not e.pending_tool_call:
+                text = e.partial_text + await IterableResult(
+                    bot.query(history=e.history + [Query("Continue where you stopped.")])
+                ).string()
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        stop_reason: "StopReason",
+        history: "History",
+        partial_text: str = "",
+        status_code: t.Optional[int] = None,
+        request_id: t.Optional[str] = None,
+        raw_response: t.Optional[object] = None,
+    ):
+        super().__init__(
+            message,
+            provider=provider,
+            status_code=status_code,
+            request_id=request_id,
+            raw_response=raw_response,
+        )
+        self.stop_reason = stop_reason
+        # Everything accumulated up to the stop, including tool calls that already
+        # succeeded earlier in the turn. Without this the raise would be lossy: a
+        # stop inside a nested tool-call turn propagates out of the generator
+        # before the closing ``DeltaHistory`` is ever yielded.
+        self.history = history
+        self.partial_text = partial_text
+
+    @property
+    def pending_tool_call(self) -> bool:
+        """True if a tool call was mid-flight when the model stopped.
+
+        The turn must be re-issued rather than continued: the partial tool block
+        is unusable, and ``raw`` still carries the provider's underlying reason
+        (e.g. ``"max_tokens"``).
+        """
+        return self.stop_reason.kind == "malformed_tool_call"
 
 
 class LLMCachingException(LLMException):
