@@ -39,6 +39,7 @@ from .types import (
     DeltaToolInputUpdate,
     ensure_tool_value,
     FallbackToolCallableType,
+    StopReason,
 )
 from .exceptions import (
     LLMException,
@@ -47,6 +48,7 @@ from .exceptions import (
     LLMTimeoutException,
     LLMConnectionException,
     LLMModelException,
+    LLMStoppedException,
 )
 from ..functions import (
     to_schema,
@@ -141,6 +143,9 @@ class IterableResult:
             cache_read_input_tokens=0,
             cache_written_input_tokens=0,
         )
+        # Why the turn ended. Unplanned stops raise, so anything observable here
+        # is planned -- it distinguishes end_turn from stop_sequence.
+        self.stop_reason: t.Optional[StopReason] = None
         self._stream_text: t.Dict[str, str] = {}
 
     def _rollback_stream(self, stream_id: str) -> None:
@@ -175,6 +180,12 @@ class IterableResult:
                 )
             elif isinstance(msg.content, DeltaToolResult):
                 self._track_text(msg.stream_id, "Tool applied")
+            # Last non-tool_use reason wins, rather than simply the last one. A
+            # DeltaToolUse makes Bot.query recurse *inline*, so for providers
+            # that report usage after finish_reason the outer turn's trailing
+            # "tool_use" arrives after the inner turn's real terminal reason.
+            if msg.stop_reason is not None and msg.stop_reason.kind != "tool_use":
+                self.stop_reason = msg.stop_reason
             if msg.usage:
                 self.usage = Usage(
                     input_tokens=self.usage.input_tokens + msg.usage.input_tokens,
@@ -380,6 +391,11 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         )
 
         last_exception: t.Optional[Exception] = None
+        # The terminal stop reason reported by the provider, plus the text this
+        # turn produced -- both handed to LLMStoppedException so an unplanned
+        # stop can be recovered from at the call site.
+        last_stop_reason: t.Optional[StopReason] = None
+        partial_text = ""
 
         recovery_attempt = 0
         while True:
@@ -408,6 +424,8 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         history = list(pre_stream_history)
                         stream_kwargs["history"] = history
                         stream_id = uuid.uuid4().hex
+                        last_stop_reason = None
+                        partial_text = ""
 
                     tool_id_to_uuid: dict[str, str] = {}
                     try:
@@ -436,6 +454,15 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
                             if transform_delta_hook:
                                 msg = await transform_delta_hook(msg)
+
+                            if msg.stop_reason is not None:
+                                last_stop_reason = msg.stop_reason
+                            if (
+                                isinstance(msg.content, DeltaText)
+                                and msg.content.subtype == "text"
+                            ):
+                                partial_text += msg.content.data
+
                             yield msg
                             yielded_any = True
 
@@ -521,6 +548,21 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 pre_stream_history = list(_recovered)
                 stream_kwargs["history"] = history
                 stream_id = uuid.uuid4().hex
+                last_stop_reason = None
+                partial_text = ""
+
+        if last_stop_reason is not None and not last_stop_reason.is_planned:
+            # A nested turn's history already contains everything the outer turn
+            # accumulated -- Bot.query passes its history down on recursion -- so
+            # the exception carries the whole turn without any stitching here.
+            raise LLMStoppedException(
+                f"Model stopped unexpectedly ({last_stop_reason.kind}); "
+                f"provider reported {last_stop_reason.raw!r}",
+                provider=self.client.provider,
+                stop_reason=last_stop_reason,
+                history=history,
+                partial_text=partial_text,
+            )
 
         yield Delta(content=DeltaHistory(data=history))
 

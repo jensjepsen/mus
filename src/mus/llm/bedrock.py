@@ -17,6 +17,9 @@ from .types import (
     DeltaToolInputUpdate,
     DeltaHistory,
     DeltaStreamReset,
+    StopReason,
+    StopReasonKind,
+    normalize_stop_reason,
     CachePoint,
 )
 from .exceptions import (
@@ -462,7 +465,28 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
 
+_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    "end_turn": "end_turn",
+    "stop_sequence": "stop_sequence",
+    "tool_use": "tool_use",
+    "max_tokens": "max_tokens",
+    # Reported as a stop rather than a request error, so it belongs here rather
+    # than with LLMContextLengthExceededException.
+    "model_context_window_exceeded": "max_tokens",
+    "content_filtered": "content_filter",
+    "guardrail_intervened": "content_filter",
+}
+
+
+def _map_bedrock_stop_reason(
+    raw: t.Optional[str], *, pending_tools: bool = False
+) -> t.Optional[StopReason]:
+    return normalize_stop_reason(raw, _STOP_REASONS, pending_tools=pending_tools)
+
+
 class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
+    provider = PROVIDER
+
     def __init__(
         self,
         model: MODEL_TYPE,
@@ -570,6 +594,8 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 response = await issue_with_cache_fallback(client.converse_stream)
                 function_blocks: t.List[bt.ToolUseBlockTypeDef] = []
                 current_function = None
+                pending_stop_reason: t.Optional[StopReason] = None
+                stop_reason_emitted = False
                 try:
                     async for event in response.get("stream"):
                         if "contentBlockStart" in event:
@@ -630,6 +656,17 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
 
                         if "messageStop" in event:
                             stop_reason = event["messageStop"]["stopReason"]
+                            # messageStop precedes the metadata/usage event, so
+                            # stash it and ride out on that delta rather than
+                            # emitting an extra empty one.
+                            pending_stop_reason = _map_bedrock_stop_reason(
+                                stop_reason,
+                                # A block still in current_function, or blocks
+                                # collected but not flushed because the stop
+                                # wasn't "tool_use", means a truncated call.
+                                pending_tools=bool(function_blocks)
+                                or current_function is not None,
+                            )
                             if stop_reason == "tool_use":
                                 for block in function_blocks:
                                     tool_use = ToolUse(
@@ -651,12 +688,21 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                                     "cacheWriteInputTokens", 0
                                 ),
                             )
+                            stop_reason_emitted = True
                             yield Delta(
                                 content=DeltaText(
                                     data="",
                                 ),
                                 usage=usage,
+                                stop_reason=pending_stop_reason,
                             )
+
+                    if pending_stop_reason is not None and not stop_reason_emitted:
+                        # No metadata event arrived to carry it.
+                        yield Delta(
+                            content=DeltaText(data=""),
+                            stop_reason=pending_stop_reason,
+                        )
                 except (
                     botocore.exceptions.ClientError,
                     botocore.exceptions.BotoCoreError,
@@ -684,6 +730,10 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                             )
                             tools.append(Delta(content=DeltaToolUse(data=tool_use)))
 
+                converse_stop = _map_bedrock_stop_reason(
+                    response["stopReason"], pending_tools=bool(tools)
+                )
+
                 if response["stopReason"] == "tool_use":
                     for tool in tools:
                         yield tool
@@ -703,4 +753,5 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                         data="",
                     ),
                     usage=usage,
+                    stop_reason=converse_stop,
                 )

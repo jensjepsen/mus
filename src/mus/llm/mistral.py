@@ -18,6 +18,9 @@ from .types import (
     DeltaToolUse,
     DeltaToolResult,
     DeltaStreamReset,
+    StopReason,
+    StopReasonKind,
+    normalize_stop_reason,
 )
 from .exceptions import (
     LLMException,
@@ -333,7 +336,26 @@ async def choice_content_to_chunks(content: AssistantMessageContent):
                 raise ValueError(f"Unsupported content type: {type(content_chunk)}")
 
 
+_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    # Mistral cannot distinguish a natural stop from a stop-sequence hit; both
+    # arrive as "stop". Harmless, since both are planned.
+    "stop": "end_turn",
+    "length": "max_tokens",
+    "model_length": "max_tokens",
+    "tool_calls": "tool_use",
+    "error": "error",
+}
+
+
+def _map_mistral_stop_reason(
+    raw: t.Optional[str], *, pending_tools: bool = False
+) -> t.Optional[StopReason]:
+    return normalize_stop_reason(raw, _STOP_REASONS, pending_tools=pending_tools)
+
+
 class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
+    provider = PROVIDER
+
     def __init__(
         self,
         model: MODEL_TYPE,
@@ -382,6 +404,11 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
             except MistralError as e:
                 raise _map_mistral_exception(e) from e
 
+            # Tool calls are buffered rather than yielded on arrival: a stream cut
+            # short by "length" would otherwise hand a half-received argument
+            # string to repair_json and invoke the tool with fabricated input.
+            pending_calls: t.List[ToolUse] = []
+            stop_reason: t.Optional[StopReason] = None
             try:
                 async for chunk in response:
                     if chunk.data and chunk.data.choices:
@@ -396,20 +423,26 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                         if choice.delta.tool_calls:
                             for tool_call in choice.delta.tool_calls:
                                 if tool_call.function:
-                                    tool_use = ToolUse(
-                                        id=tool_call.id or tool_call.function.name,
-                                        name=tool_call.function.name,
-                                        input=convert_tool_arguments(
-                                            tool_call.function.arguments,
-                                            tool_call.function.name,
+                                    pending_calls.append(
+                                        ToolUse(
+                                            id=tool_call.id or tool_call.function.name,
+                                            name=tool_call.function.name,
+                                            input=convert_tool_arguments(
+                                                tool_call.function.arguments,
+                                                tool_call.function.name,
+                                            )
+                                            if tool_call.function.arguments
+                                            else {},
                                         )
-                                        if tool_call.function.arguments
-                                        else {},
                                     )
-                                    yield Delta(content=DeltaToolUse(data=tool_use))
 
                         if choice.finish_reason:
+                            stop_reason = _map_mistral_stop_reason(
+                                choice.finish_reason,
+                                pending_tools=bool(pending_calls),
+                            )
                             # Handle usage information if available
+                            usage = None
                             if chunk.data and chunk.data.usage:
                                 usage = Usage(
                                     input_tokens=chunk.data.usage.prompt_tokens or 0,
@@ -418,7 +451,22 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                                     cache_read_input_tokens=0,  # Mistral doesn't provide cache info
                                     cache_written_input_tokens=0,
                                 )
-                                yield Delta(content=DeltaText(data=""), usage=usage)
+                            if stop_reason is None or stop_reason.is_planned:
+                                for tool_use in pending_calls:
+                                    yield Delta(content=DeltaToolUse(data=tool_use))
+                            pending_calls = []
+                            yield Delta(
+                                content=DeltaText(data=""),
+                                usage=usage,
+                                stop_reason=stop_reason,
+                            )
+
+                if pending_calls and stop_reason is None:
+                    # The stream ended without ever reporting a finish reason, so
+                    # there is nothing to suggest truncation. Flush rather than
+                    # drop -- buffering must not lose calls it can't judge.
+                    for tool_use in pending_calls:
+                        yield Delta(content=DeltaToolUse(data=tool_use))
             except MistralError as e:
                 raise _map_mistral_exception(e) from e
         else:
@@ -436,7 +484,16 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                     async for delta in choice_content_to_chunks(choice.message.content):
                         yield delta
 
-                if choice.message and choice.message.tool_calls:
+                not_streamed_stop = _map_mistral_stop_reason(
+                    choice.finish_reason,
+                    pending_tools=bool(choice.message and choice.message.tool_calls),
+                )
+
+                if (
+                    (not_streamed_stop is None or not_streamed_stop.is_planned)
+                    and choice.message
+                    and choice.message.tool_calls
+                ):
                     for tool_call in choice.message.tool_calls:
                         if tool_call.function:
                             tool_use = ToolUse(
@@ -452,6 +509,7 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                             yield Delta(content=DeltaToolUse(data=tool_use))
 
                 # Handle usage information
+                usage = None
                 if response.usage:
                     usage = Usage(
                         input_tokens=response.usage.prompt_tokens or 0,
@@ -459,4 +517,8 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                         cache_read_input_tokens=0,  # Mistral doesn't provide cache info
                         cache_written_input_tokens=0,
                     )
-                    yield Delta(content=DeltaText(data=""), usage=usage)
+                yield Delta(
+                    content=DeltaText(data=""),
+                    usage=usage,
+                    stop_reason=not_streamed_stop,
+                )

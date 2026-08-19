@@ -17,6 +17,9 @@ from .types import (
     Usage,
     DeltaHistory,
     DeltaStreamReset,
+    StopReason,
+    StopReasonKind,
+    normalize_stop_reason,
 )
 from .exceptions import (
     LLMException,
@@ -312,7 +315,77 @@ class PartialToolCall:
     arguments: str
 
 
+_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    # OpenAI cannot distinguish a natural stop from a stop-sequence hit; both
+    # arrive as "stop". Harmless, since both are planned.
+    "stop": "end_turn",
+    "length": "max_tokens",
+    "tool_calls": "tool_use",
+    "function_call": "tool_use",
+    "content_filter": "content_filter",
+}
+
+
+# OpenAI-compatible gateways (OpenRouter and friends) route to upstreams that
+# are not OpenAI, and report the upstream's own word in ``native_finish_reason``.
+# Spellings across the providers don't collide, so one table covers them all.
+_NATIVE_STOP_REASONS: t.Mapping[str, StopReasonKind] = {
+    **_STOP_REASONS,
+    # Anthropic / Bedrock
+    "end_turn": "end_turn",
+    "stop_sequence": "stop_sequence",
+    "tool_use": "tool_use",
+    "max_tokens": "max_tokens",
+    "model_context_window_exceeded": "max_tokens",
+    "refusal": "content_filter",
+    "content_filtered": "content_filter",
+    "guardrail_intervened": "content_filter",
+    "pause_turn": "pause_turn",
+    # Google
+    "STOP": "end_turn",
+    "MAX_TOKENS": "max_tokens",
+    "SAFETY": "content_filter",
+    "RECITATION": "content_filter",
+    "BLOCKLIST": "content_filter",
+    "PROHIBITED_CONTENT": "content_filter",
+    "SPII": "content_filter",
+    "MALFORMED_FUNCTION_CALL": "malformed_tool_call",
+    "UNEXPECTED_TOOL_CALL": "malformed_tool_call",
+    "OTHER": "error",
+    # Mistral
+    "model_length": "max_tokens",
+    "error": "error",
+}
+
+
+def _map_openai_stop_reason(
+    raw: t.Optional[str],
+    *,
+    native: t.Optional[str] = None,
+    pending_tools: bool = False,
+) -> t.Optional[StopReason]:
+    """Normalise a finish reason, preferring the upstream one when it disagrees.
+
+    A gateway that normalises reasons can report a *planned* ``tool_calls`` for a
+    call the upstream actually cut off at the token limit -- OpenRouter does
+    exactly this, reporting ``finish_reason="tool_calls"`` alongside
+    ``native_finish_reason="length"``. Left alone, the truncated call is flushed
+    as if it were complete. Normalisation only ever hides a truncation, never
+    invents one, so when the upstream value is unplanned it wins.
+    """
+    stop = normalize_stop_reason(raw, _STOP_REASONS, pending_tools=pending_tools)
+    if stop is None or stop.is_planned:
+        native_stop = normalize_stop_reason(
+            native, _NATIVE_STOP_REASONS, pending_tools=pending_tools
+        )
+        if native_stop is not None and not native_stop.is_planned:
+            return native_stop
+    return stop
+
+
 class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
+    provider = PROVIDER
+
     def __init__(
         self, model: MODEL_TYPE, client: t.Optional[openai.AsyncClient] = None
     ):
@@ -362,6 +435,11 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
 
         if is_stream(response):
             partial_calls: list[PartialToolCall] = []
+            # finish_reason and usage arrive on *different* chunks, so carry the
+            # stop reason forward and attach it to whichever terminal delta we
+            # end up emitting.
+            stop_reason: t.Optional[StopReason] = None
+            stop_reason_emitted = False
             try:
                 async for chunk in response:
                     if chunk.choices:
@@ -420,7 +498,23 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
 
                                     partial_calls.append(last_call)
 
-                        if first_choice.finish_reason == "tool_calls":
+                        if first_choice.finish_reason:
+                            stop_reason = _map_openai_stop_reason(
+                                first_choice.finish_reason,
+                                native=getattr(
+                                    first_choice, "native_finish_reason", None
+                                ),
+                                # Evaluated before the flush below: anything left
+                                # in partial_calls on a non-tool_calls finish was
+                                # cut off mid-arguments.
+                                pending_tools=bool(partial_calls),
+                            )
+
+                        # Flush on the *reconciled* reason, not the raw string:
+                        # a gateway can report "tool_calls" for a call the
+                        # upstream truncated, and stop_reason has already
+                        # settled that against native_finish_reason.
+                        if stop_reason is not None and stop_reason.kind == "tool_use":
                             for call in partial_calls:
                                 parsed_input = repair_json(
                                     call.arguments, return_objects=True
@@ -437,8 +531,10 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                             partial_calls = []
 
                     if chunk.usage:
+                        stop_reason_emitted = True
                         yield Delta(
                             content=DeltaText(data=""),
+                            stop_reason=stop_reason,
                             usage=Usage(
                                 input_tokens=chunk.usage.prompt_tokens,
                                 output_tokens=chunk.usage.completion_tokens,
@@ -454,12 +550,29 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             except openai.APIError as e:
                 raise _map_openai_exception(e) from e
 
+            if stop_reason is not None and not stop_reason_emitted:
+                # No usage chunk arrived (include_usage disabled, or the stream
+                # ended early) -- still surface the stop reason.
+                yield Delta(content=DeltaText(data=""), stop_reason=stop_reason)
+
         elif is_not_stream(response):
             content = response.choices[0].message.content
             if content:
                 yield Delta(content=DeltaText(data=content))
 
-            if response.choices[0].message.tool_calls:
+            not_streamed_stop = _map_openai_stop_reason(
+                response.choices[0].finish_reason,
+                native=getattr(response.choices[0], "native_finish_reason", None),
+                pending_tools=bool(response.choices[0].message.tool_calls),
+            )
+
+            # Mirror the streaming path: tool calls are only handed on when the
+            # stop was planned. On e.g. a "length" stop the arguments may be
+            # truncated, and invoking a tool with fabricated arguments is worse
+            # than not invoking it at all.
+            if (
+                not_streamed_stop is None or not_streamed_stop.is_planned
+            ) and response.choices[0].message.tool_calls:
                 for tool_call in response.choices[0].message.tool_calls:
                     if tool_call.type != "function":
                         raise ValueError(
@@ -480,6 +593,8 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         input=parsed_input,
                     )
                     yield Delta(content=DeltaToolUse(data=tool_use))
+
+            yield Delta(content=DeltaText(data=""), stop_reason=not_streamed_stop)
 
             if response.usage:
                 yield Delta(
