@@ -166,37 +166,73 @@ Every provider reports why generation ended. mus normalises those into a common 
 
 Planned stops are the ones you asked for, and are reported on the result. Only some providers distinguish a natural stop from a stop-sequence hit; where they don't, both arrive as `end_turn`.
 
-```python
-result = bot("Say hi")
-await result.string()
+<!-- invisible-code-block: python
+# Stub responses for the examples below
+model.put_text("Say hi", "Hi there!")
+model.put_stop_reason("Say hi", "end_turn")
+-->
 
-if result.stop_reason:
-    result.stop_reason.kind  # "end_turn"
+```python
+async def planned_stop():
+    bot = Bot("You are a nice bot", model=model)
+
+    result = bot("Say hi")
+    await result.string()
+
+    assert result.stop_reason is not None
+    assert result.stop_reason.kind == "end_turn"
+
+asyncio.run(planned_stop())
 ```
 
 Every other stop raises `LLMStoppedException`, so a truncated or filtered response isn't mistaken for a complete one. The exception carries the state needed to carry on:
 
-```python
-from mus import LLMStoppedException, IterableResult, Query
+<!-- invisible-code-block: python
+model.put_text("Write an essay", "Cartography, the art and")
+model.put_stop_reason("Write an essay", "max_tokens", "length")
+-->
 
-try:
-    text = await bot("Write an essay", max_tokens=64).string()
-except LLMStoppedException as e:
-    e.stop_reason.kind   # "max_tokens"
-    e.stop_reason.raw    # "length", the provider's own value
-    e.partial_text       # the text that arrived before the cut
-    e.pending_tool_call  # whether a tool call was mid-flight
-    e.history            # the whole turn, including tool calls that completed
+```python
+from mus import IterableResult, Query
+from mus.llm.exceptions import LLMStoppedException
+
+async def truncated():
+    bot = Bot("You are a nice bot", model=model)
+
+    try:
+        await bot("Write an essay", max_tokens=64).string()
+    except LLMStoppedException as e:
+        assert e.stop_reason.kind == "max_tokens"
+        assert e.stop_reason.raw == "length"        # the provider's own value
+        assert e.partial_text == "Cartography, the art and"
+        assert e.pending_tool_call is False         # was a tool call mid-flight?
+        assert e.history                            # the whole turn, tool calls included
+
+asyncio.run(truncated())
 ```
 
 There is no recovery hook, because a half-emitted tool call can't be continued: the assistant turn holds a malformed tool block that providers reject on the next request. Recovery happens at the call site instead, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
 
+<!-- invisible-code-block: python
+model.put_text("Continue where you stopped.", " science of map-making.")
+model.put_stop_reason("Continue where you stopped.", "end_turn")
+-->
+
 ```python
-except LLMStoppedException as e:
-    if e.stop_reason.kind == "max_tokens" and not e.pending_tool_call:
-        text = e.partial_text + await IterableResult(
-            bot.query(history=e.history + [Query("Continue where you stopped.")])
-        ).string()
+async def recover():
+    bot = Bot("You are a nice bot", model=model)
+
+    try:
+        text = await bot("Write an essay", max_tokens=64).string()
+    except LLMStoppedException as e:
+        if e.stop_reason.kind == "max_tokens" and not e.pending_tool_call:
+            text = e.partial_text + await IterableResult(
+                bot.query(history=e.history + [Query("Continue where you stopped.")])
+            ).string()
+
+    assert text == "Cartography, the art and science of map-making."
+
+asyncio.run(recover())
 ```
 
 `partial_text` is exactly what the provider emitted, so a cut mid-word joins without a separator. Prompt the continuation to restart the final sentence to trade a few repeated tokens for a clean join.
@@ -211,9 +247,9 @@ OpenAI-compatible gateways such as OpenRouter normalise the upstream reason, and
 from openai import AsyncClient
 from mus import OpenAILLM
 
-model = OpenAILLM(
+gateway_model = OpenAILLM(
     "openai/gpt-4o-mini",
-    AsyncClient(base_url="https://openrouter.ai/api/v1", api_key=...),
+    AsyncClient(base_url="https://openrouter.ai/api/v1", api_key="sk-or-v1-..."),
 )
 ```
 
