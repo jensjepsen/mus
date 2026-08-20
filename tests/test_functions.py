@@ -3,7 +3,7 @@ from typing import List, Optional, Annotated, TypedDict, Literal
 import pytest
 
 # Import the functions to be tested
-from mus.functions import get_schema, to_schema, FunctionSchema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
+from mus.functions import get_schema, to_schema, func_to_schema, FunctionSchema, schema_to_example, parse_tools, ToolCallable, verify_schema_inputs
 
 # Test data
 def sample_function(param1: str, param2: int) -> str:
@@ -370,3 +370,31 @@ def test_dataclass_sequence():
     assert json_schema["properties"]["field1"]["type"] == "string"
     assert json_schema["properties"]["field2"]["type"] == "array"
     assert json_schema["properties"]["field2"]["items"] == {}    
+
+def test_callable_object_gets_its_call_signature():
+    """A tool may be a callable object, not just a function.
+
+    ``get_type_hints`` cannot read an instance: Python 3.12 raises TypeError and
+    3.14 quietly returns {}, which yields a tool with no parameters at all --
+    the model is then told the tool takes nothing and calls it with nothing. The
+    hints have to come from ``type(obj).__call__``.
+    """
+
+    class Lookup:
+        __name__ = "lookup"
+        __doc__ = "Look a city up."
+
+        def __init__(self, suffix: str):
+            self.suffix = suffix
+
+        async def __call__(self, city: str, year: int) -> str:
+            return city + self.suffix
+
+    schema = func_to_schema(Lookup("!"))
+
+    assert schema["name"] == "lookup"
+    assert schema["description"] == "Look a city up."
+    props = schema["schema"]["properties"]
+    assert set(props) == {"city", "year"}, props
+    assert props["city"]["type"] == "string"
+    assert props["year"]["type"] == "integer"
