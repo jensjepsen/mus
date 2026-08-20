@@ -254,6 +254,86 @@ gateway_model = OpenAILLM(
 ```
 
 
+### Durable runs
+
+A mus run is normally ephemeral: if the process dies mid-conversation the turn is lost, completed tool calls are forgotten, and a reconnecting client has nothing to reattach to. `mus.dbos` runs a bot inside a [DBOS](https://docs.dbos.dev/) workflow so a run survives a crash or a deploy, without re-billing completed provider calls or re-firing completed tools, and can be tailed from anywhere by workflow id.
+
+Install the extra with `pip install "mus[dbos]"`.
+
+<!-- invisible-code-block: python
+# Set up DBOS on a throwaway SQLite database, and a stubbed model, so the
+# examples below actually run.
+import tempfile
+from dbos import DBOS, DBOSConfig, SetWorkflowID
+from mus import ToolUse
+from mus import dbos as mus_dbos
+
+_db = f"sqlite:///{tempfile.mkdtemp()}/mus.sqlite"
+DBOS.destroy()
+DBOS(config=DBOSConfig(name="mus-readme", database_url=_db, system_database_url=_db))
+DBOS.launch()
+
+async def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return {"Paris": "17C, rain"}.get(city, "unknown")
+
+QUESTION = "What is the weather in Paris?"
+model.put_tool_use(QUESTION, ToolUse(id="t1", name="get_weather", input={"city": "Paris"}))
+-->
+
+The bot is built *inside* the workflow, and `bot.query` runs in the workflow body. Each provider call and each tool call becomes a checkpointed step, so a recovered run picks up where it stopped instead of replaying from the top.
+
+```python
+@DBOS.workflow()
+async def weather_agent(question: str) -> str:
+    bot = mus_dbos.durable(Bot(
+        prompt="Use the tool for every city mentioned.",
+        model=model,
+        functions=[get_weather],
+    ))
+    result = bot(question)
+    text = await result.string()
+    await bot.close()
+    return text
+```
+
+Start a run and hand out its id, then read it from anywhere -- another process, a web handler -- while it is still running. Keying the workflow id on your request id also makes the run idempotent: a retried request re-attaches to the existing run rather than starting a second conversation.
+
+```python
+async def demo():
+    with SetWorkflowID("support-42"):
+        handle = await DBOS.start_workflow_async(weather_agent, QUESTION)
+    workflow_id = handle.workflow_id
+    answer = await handle.get_result()
+
+    # Tail the run's deltas by id -- this works from any process.
+    streamed = [delta async for delta in mus_dbos.read(workflow_id)]
+    assert len(streamed) > 0
+
+    # Or reattach as the result object you already know, which behaves exactly
+    # as it does in-process.
+    result = mus_dbos.attach(workflow_id)
+    assert await result.string() == answer
+    return result.usage, result.stop_reason
+
+usage, stop_reason = asyncio.run(demo())
+```
+
+Pass `offset=` to resume mid-stream, so a client that reconnects after a dropped socket or a page refresh continues where it left off rather than replaying the transcript.
+
+**What is guaranteed.** A tool that *completed* before a crash never runs again. A tool interrupted *mid-execution* does run again, because DBOS cannot know whether its side effect landed -- so side-effecting tools still need to be idempotent for that window. What durability buys is that the window is one tool call, not the whole run.
+
+**Failures reach the reader.** If the run raises, a terminal delta carrying `metadata["mus.error"]` is written before the error propagates, so a failed run is distinguishable from a truncated one.
+
+Tools may be defined anywhere -- module level, closures over local state, callable objects, or built dynamically per run. Only the wrapper is registered with DBOS; your tool is reached through mus's own invocation path, so schema validation and the fallback function still apply.
+
+Without the extra installed `mus.dbos` still imports, but `durable()`, `read()` and `attach()` raise. A `durable()` that quietly wasn't durable would be worse than an error -- run the bot unwrapped if you don't need durability.
+
+<!-- invisible-code-block: python
+DBOS.destroy()
+-->
+
+
 ## Contributing
 We use uv.
 

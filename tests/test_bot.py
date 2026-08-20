@@ -1482,3 +1482,35 @@ async def test_tool_invocation_id_differs_for_same_provider_id_across_streams(mo
     # Each pair still matches
     assert tool_use_deltas[0].tool_invocation_id == tool_result_deltas[0].tool_invocation_id
     assert tool_use_deltas[1].tool_invocation_id == tool_result_deltas[1].tool_invocation_id
+
+@pytest.mark.asyncio
+async def test_prefill_assistant_turn_does_not_end_with_whitespace(mock_model):
+    """Anthropic and Bedrock reject an assistant turn ending in whitespace.
+
+        ValidationException: messages: final assistant content cannot end with
+        trailing whitespace
+
+    The prefill strategy sends a partial JSON object as an assistant turn for the
+    model to continue, so that turn is the last message in the request and its
+    exact trailing character matters. JSON is whitespace-insensitive, so nothing
+    is lost by ending at the colon.
+    """
+    mock_model.set_response([
+        Delta(content=DeltaText(data='"test", "field2": 123}\n```')),
+    ])
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    await llm.fill("Test query", TestStructure, strategy="prefill")
+
+    history = mock_model.stream.call_args.kwargs["history"]
+    prefills = [
+        part
+        for item in history
+        if isinstance(item, Query)
+        for part in item.val
+        if isinstance(part, Assistant)
+    ]
+    assert len(prefills) == 1
+    assert prefills[0].val == prefills[0].val.rstrip(), (
+        f"prefill ends with whitespace: {prefills[0].val[-12:]!r}"
+    )
