@@ -21,6 +21,9 @@ from .llm.types import (
     RetryPolicy as RetryPolicy,
     StopReason as StopReason,
     StopReasonKind as StopReasonKind,
+    StopRecovery as StopRecovery,
+    StopRecoveryContinue as StopRecoveryContinue,
+    StopRecoveryReset as StopRecoveryReset,
 )
 from .llm.exceptions import LLMStoppedException as LLMStoppedException
 from .llm.llm import IterableResult as IterableResult, Bot as Bot, LLM as LLM

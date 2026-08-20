@@ -303,6 +303,44 @@ def normalize_stop_reason(
 
 
 @dataclass
+class StopRecoveryContinue:
+    """Keep this turn's partial output and generate onward from it.
+
+    The right answer for a plain ``max_tokens`` truncation: the text already
+    produced is good, the model simply ran out of room. mus re-issues with the
+    partial output still in context and yields no ``DeltaStreamReset``, so what
+    the consumer has already seen stays on screen.
+
+    ``append`` is added to the history before re-issuing -- the place to tell the
+    model it was cut off, since nothing else will. ``history`` replaces the
+    history outright, for when a nudge isn't enough (trimming, summarising).
+    """
+
+    append: t.Optional["History"] = None
+    history: t.Optional["History"] = None
+
+
+@dataclass
+class StopRecoveryReset:
+    """Discard this turn's uncommitted output and re-issue it.
+
+    The right answer when the partial output is unusable -- a content filter, or
+    a tool call cut off mid-arguments. mus rewinds to the last committed point
+    and yields a ``DeltaStreamReset`` so consumers drop the discarded output too.
+
+    "Last committed point" means after the most recent completed tool call, not
+    the start of the turn: tools run as their deltas arrive, so rewinding past
+    one would re-execute it.
+    """
+
+    append: t.Optional["History"] = None
+    history: t.Optional["History"] = None
+
+
+StopRecovery = t.Union[StopRecoveryContinue, StopRecoveryReset]
+
+
+@dataclass
 class RetryPolicy:
     """Configuration for retry behavior on transient errors."""
 
@@ -315,6 +353,15 @@ class RetryPolicy:
     # error (e.g. context overflow) by returning a modified history. Separate
     # from transport retries; no backoff. 0 disables recovery.
     max_recovery_attempts: int = 4
+    # Max times ``stop_recovery_hook`` may be asked to recover from an unplanned
+    # stop. Higher than the pre-stream budget: continuing a long answer
+    # legitimately takes several rounds, where a context trim usually takes one.
+    max_stop_recovery_attempts: int = 8
+    # Max times ``error_recovery_hook`` may be asked to recover from an
+    # *unplanned stop* (truncation, content filter) by rewriting history.
+    # Higher than the pre-stream budget: continuing a long answer legitimately
+    # takes several rounds, whereas a context trim usually takes one.
+    max_stop_recovery_attempts: int = 8
 
 
 @dataclass

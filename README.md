@@ -211,7 +211,7 @@ async def truncated():
 asyncio.run(truncated())
 ```
 
-There is no recovery hook, because a half-emitted tool call can't be continued: the assistant turn holds a malformed tool block that providers reject on the next request. Recovery happens at the call site instead, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
+Recovery happens at the call site, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
 
 <!-- invisible-code-block: python
 model.put_text("Continue where you stopped.", " science of map-making.")
@@ -236,6 +236,45 @@ asyncio.run(recover())
 ```
 
 `partial_text` is exactly what the provider emitted, so a cut mid-word joins without a separator. Prompt the continuation to restart the final sentence to trade a few repeated tokens for a clean join.
+
+### Recovering from a stop in-loop
+
+Catching at the call site unwinds the whole turn, which is fine for a single call but throws away work in a long tool-calling flow: a truncation three calls deep loses the calls that already succeeded. Pass a `stop_recovery_hook` to recover in place instead, and the flow carries on.
+
+The hook returns `StopRecoveryContinue` to keep this turn's partial output and generate onward from it, `StopRecoveryReset` to discard it and re-issue the turn, or `None` to give up (which raises, exactly as with no hook). `append` is where you tell the model what happened.
+
+<!-- invisible-code-block: python
+model.put_text("Tell me a long story", "Once upon a")
+model.put_stop_reason("Tell me a long story", "max_tokens", "length")
+model.put_text("You were cut off; continue.", " time, all was well.")
+model.put_stop_reason("You were cut off; continue.", "end_turn")
+-->
+
+```python
+from mus import StopRecoveryContinue, StopRecoveryReset
+
+async def on_stop(error, attempt):
+    if error.pending_tool_call:
+        # A half-emitted tool call can't be continued -- the turn holds a
+        # malformed tool block that providers reject on the next request.
+        return StopRecoveryReset()
+    if error.stop_reason.kind == "max_tokens":
+        return StopRecoveryContinue(append=[Query("You were cut off; continue.")])
+    return None  # anything else: give up and let it raise
+
+async def long_flow():
+    bot = Bot("You are a nice bot", model=model, stop_recovery_hook=on_stop)
+    result = bot("Tell me a long story")
+    assert await result.string() == "Once upon a time, all was well."
+
+asyncio.run(long_flow())
+```
+
+A reset rewinds to the last *committed* point rather than the top of the turn — tools run as their deltas arrive, so rewinding past a completed tool call would fire its side effects a second time. It also yields a `DeltaStreamReset` so consumers drop the discarded output; a continue yields none, since what they have already rendered is still valid.
+
+Returning `StopRecoveryContinue` for a stop with `pending_tool_call` is coerced to a reset, with a warning. `RetryPolicy(max_stop_recovery_attempts=...)` caps how many rounds the hook gets, separately from the pre-stream `max_recovery_attempts`.
+
+This is a different hook from `error_recovery_hook`, which handles calls that fail *before* the stream starts (a context-window overflow, say). That one still never sees a stop.
 
 `pending_tool_call` says whether the turn can be continued at all: `False` to append and carry on, `True` to re-issue it. It is derived from tool blocks left in flight at the stop, so it depends on what the provider exposes. Anthropic, Bedrock, OpenAI and Mistral report it; Google sets it only for `MALFORMED_FUNCTION_CALL`. A tool is never invoked with truncated arguments either way.
 

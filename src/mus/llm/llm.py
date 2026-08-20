@@ -40,6 +40,9 @@ from .types import (
     ensure_tool_value,
     FallbackToolCallableType,
     StopReason,
+    StopRecovery,
+    StopRecoveryContinue,
+    StopRecoveryReset,
 )
 from .exceptions import (
     LLMException,
@@ -233,6 +236,33 @@ class ErrorRecoveryHook(t.Protocol):
     ) -> t.Optional[History]: ...
 
 
+class StopRecoveryHook(t.Protocol):
+    """Called when the model stops for a reason the caller did not ask for.
+
+    Distinct from ``ErrorRecoveryHook``, which handles calls that fail *before*
+    the stream starts. Here the request succeeded and deltas have already been
+    yielded -- the model simply stopped early, typically on ``max_tokens``.
+
+    Return :class:`StopRecoveryContinue` to keep the partial output and generate
+    onward from it, :class:`StopRecoveryReset` to discard it and re-issue the
+    turn, or ``None`` to give up (``LLMStoppedException`` propagates, which is
+    also what happens when no hook is set).
+
+    Recovering here is what keeps a long tool-calling flow alive: a truncation
+    three calls deep would otherwise unwind the whole turn. The exception
+    carries what you need to decide -- ``stop_reason``, ``partial_text``,
+    ``history`` and ``pending_tool_call``.
+
+    A stop with ``pending_tool_call`` cannot be continued: the turn holds a
+    half-emitted tool block that providers reject on the next request. Returning
+    ``StopRecoveryContinue`` for one is coerced to a reset, with a warning.
+    """
+
+    async def __call__(
+        self, error: "LLMStoppedException", attempt: int
+    ) -> t.Optional[StopRecovery]: ...
+
+
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
@@ -242,6 +272,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     transform_delta_hook: t.Optional[TransformDeltaHook]
     transform_history_hook: t.Optional[TransformHistoryHook]
     error_recovery_hook: t.Optional[ErrorRecoveryHook]
+    stop_recovery_hook: t.Optional[StopRecoveryHook]
 
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
@@ -330,6 +361,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         transform_delta_hook = kwargs.get("transform_delta_hook", None)
         transform_history_hook = kwargs.get("transform_history_hook", None)
         error_recovery_hook = kwargs.get("error_recovery_hook", None)
+        stop_recovery_hook = kwargs.get("stop_recovery_hook", None)
         policy = self.retry_policy
 
         function_schemas = [
@@ -398,6 +430,11 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         partial_text = ""
 
         recovery_attempt = 0
+        stop_recovery_attempt = 0
+        # Where a StopRecoveryReset rewinds to. Starts at the top of the turn and
+        # advances past each completed tool call: tools run as their deltas
+        # arrive, so rewinding past one would re-execute it.
+        rollback_history = list(pre_stream_history)
         while True:
             yielded_any = False
             try:
@@ -422,6 +459,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         )
                         await asyncio.sleep(sleep_time)
                         history = list(pre_stream_history)
+                        rollback_history = list(pre_stream_history)
                         stream_kwargs["history"] = history
                         stream_id = uuid.uuid4().hex
                         last_stop_reason = None
@@ -511,6 +549,9 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                                         history.extend(msg.content.data[len(history) :])
                                     else:
                                         yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
+                                # This tool call has run; a reset must not rewind
+                                # past it and fire its side effects a second time.
+                                rollback_history = list(history)
                         # Stream completed successfully
                         break
 
@@ -519,7 +560,81 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         if attempt >= policy.max_transport_retries:
                             raise
                         continue
+
+                if last_stop_reason is not None and not last_stop_reason.is_planned:
+                    # Raised inside the try so stop_recovery_hook gets a shot at
+                    # it. A nested turn's history already holds everything the
+                    # outer turn accumulated -- Bot.query passes its history down
+                    # on recursion -- so this carries the whole turn.
+                    raise LLMStoppedException(
+                        f"Model stopped unexpectedly ({last_stop_reason.kind}); "
+                        f"provider reported {last_stop_reason.raw!r}",
+                        provider=self.client.provider,
+                        stop_reason=last_stop_reason,
+                        history=history,
+                        partial_text=partial_text,
+                    )
                 break
+            except LLMStoppedException as _stop:
+                # Recovering in-loop is the point: a truncation several tool
+                # calls deep would otherwise unwind the whole flow.
+                if (
+                    stop_recovery_hook is None
+                    or stop_recovery_attempt >= policy.max_stop_recovery_attempts
+                    # Already offered to the hook by a nested turn; don't ask
+                    # again on the way up with a staler history.
+                    or getattr(_stop, "_mus_recovery_declined", False)
+                ):
+                    _stop._mus_recovery_declined = True  # type: ignore[attr-defined]
+                    raise
+                _recovery = await stop_recovery_hook(_stop, stop_recovery_attempt)
+                if _recovery is None:
+                    _stop._mus_recovery_declined = True  # type: ignore[attr-defined]
+                    raise
+                stop_recovery_attempt += 1
+
+                if isinstance(_recovery, StopRecoveryContinue) and _stop.pending_tool_call:
+                    logger.warning(
+                        "stop_recovery_hook returned StopRecoveryContinue for a stop with a "
+                        "half-emitted tool call; coercing to StopRecoveryReset, since "
+                        "providers reject the malformed tool block on the next request."
+                    )
+                    _recovery = StopRecoveryReset(
+                        append=_recovery.append, history=_recovery.history
+                    )
+
+                if isinstance(_recovery, StopRecoveryReset):
+                    _base = (
+                        _recovery.history
+                        if _recovery.history is not None
+                        else rollback_history
+                    )
+                    yield Delta(
+                        content=DeltaStreamReset(
+                            stream_id=stream_id,
+                            reason="stop_recovery",
+                            attempt=stop_recovery_attempt,
+                        )
+                    )
+                    partial_text = ""
+                else:
+                    _base = (
+                        _recovery.history if _recovery.history is not None else history
+                    )
+                    if not any(
+                        isinstance(h, Delta) and h.stream_id == stream_id for h in _base
+                    ):
+                        logger.warning(
+                            "StopRecoveryContinue returned a history without this turn's "
+                            "partial output; consumers will hold text the model cannot see."
+                        )
+
+                history = list(_base) + list(_recovery.append or [])
+                pre_stream_history = list(history)
+                rollback_history = list(history)
+                stream_kwargs["history"] = history
+                stream_id = uuid.uuid4().hex
+                last_stop_reason = None
             except LLMException as _exc:
                 # A pre-stream failure escaped the transport loop (non-transient,
                 # or transient-exhausted). If a recovery hook is set, no delta was
@@ -550,19 +665,6 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 stream_id = uuid.uuid4().hex
                 last_stop_reason = None
                 partial_text = ""
-
-        if last_stop_reason is not None and not last_stop_reason.is_planned:
-            # A nested turn's history already contains everything the outer turn
-            # accumulated -- Bot.query passes its history down on recursion -- so
-            # the exception carries the whole turn without any stitching here.
-            raise LLMStoppedException(
-                f"Model stopped unexpectedly ({last_stop_reason.kind}); "
-                f"provider reported {last_stop_reason.raw!r}",
-                provider=self.client.provider,
-                stop_reason=last_stop_reason,
-                history=history,
-                partial_text=partial_text,
-            )
 
         yield Delta(content=DeltaHistory(data=history))
 
