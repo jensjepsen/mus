@@ -262,7 +262,7 @@ def test_deltas_to_contents():
     assert contents[0].role == "user"
     assert contents[1].role == "model"
     assert contents[2].role == "model"  # tool_use
-    assert contents[3].role == "tool"   # tool_result
+    assert contents[3].role == "user"   # tool_result (role "tool" is rejected by Gemini 3)
 
 
 def test_deltas_to_contents_file_result_rides_user_turn():
@@ -279,8 +279,13 @@ def test_deltas_to_contents_file_result_rides_user_turn():
 
     contents = deltas_to_contents(deltas)
 
-    # The tool turn's function response must carry NO inline media.
-    tool_contents = [c for c in contents if c.role == "tool"]
+    # The function-response turn must carry NO inline media. It is now a "user"
+    # turn like the image turn below, so select it by content rather than role.
+    tool_contents = [
+        c
+        for c in contents
+        if any(getattr(p, "function_response", None) for p in (c.parts or []))
+    ]
     assert len(tool_contents) == 1
     assert not tool_contents[0].parts[0].function_response.parts
 
@@ -334,14 +339,20 @@ def test_deltas_to_contents_collapses_unsigned_tool_call_in_signed_convo():
     # thought_signature would 400 on replay ("Function call is missing a
     # thought_signature in functionCall parts"), so it -- and its result -- are
     # represented as a plain text note instead of an invalid functionCall.
+    # Two separate turns, as mus records them: signatures are judged per turn,
+    # because Gemini signs only the first call of a parallel batch and its
+    # unsigned siblings are still valid on replay. The rejected call here is
+    # from a *later* turn that carries no signed call of its own, so it still
+    # collapses.
     deltas = [
         Delta(
             content=DeltaToolUse(data=ToolUse(name="python", input={"code": "1"}, id="signed")),
             metadata={"thought_signature": b"sig"},
+            stream_id="turn-1",
         ),
-        Delta(content=DeltaToolResult(data=ToolResult(id="signed", content=ToolValue("ok")))),
-        Delta(content=DeltaToolUse(data=ToolUse(name="query_read", input={"f": "x"}, id="unsigned"))),
-        Delta(content=DeltaToolResult(data=ToolResult(id="unsigned", content=ToolValue("Tool not found: query_read.")))),
+        Delta(content=DeltaToolResult(data=ToolResult(id="signed", content=ToolValue("ok"))), stream_id="turn-1"),
+        Delta(content=DeltaToolUse(data=ToolUse(name="query_read", input={"f": "x"}, id="unsigned")), stream_id="turn-2"),
+        Delta(content=DeltaToolResult(data=ToolResult(id="unsigned", content=ToolValue("Tool not found: query_read."))), stream_id="turn-2"),
     ]
 
     contents = deltas_to_contents(deltas)
@@ -350,7 +361,7 @@ def test_deltas_to_contents_collapses_unsigned_tool_call_in_signed_convo():
     assert len(contents) == 3
     assert contents[0].parts[0].function_call.name == "python"
     assert contents[0].parts[0].thought_signature == b"sig"
-    assert contents[1].role == "tool"
+    assert contents[1].role == "user"
     # ...the unsigned call collapses to ONE model text note (result folded in),
     # with no functionCall part and no separate tool result.
     assert contents[2].role == "model"
@@ -399,7 +410,7 @@ def test_deltas_to_contents_keeps_tool_calls_when_no_signatures_anywhere():
     contents = deltas_to_contents(deltas)
 
     assert contents[0].parts[0].function_call.name == "search"
-    assert contents[1].role == "tool"
+    assert contents[1].role == "user"
 
 
 @pytest.mark.asyncio
@@ -724,10 +735,14 @@ async def test_google_genai_function_call_without_id(google_genai_llm, mock_gena
     assert len(results) == 2
     assert isinstance(results[0].content, DeltaToolInputUpdate)
     assert results[0].content.name == "test_function"
-    assert results[0].content.id == "test_function"
     tool_use = results[1].content.data
-    assert tool_use.id == "test_function"  # Should use name as fallback
     assert tool_use.name == "test_function"
+    # Gemini omits function_call.id, so mus mints one: the function name plus a
+    # unique suffix, so a turn calling the same function twice keeps the two
+    # calls -- and their results -- distinguishable.
+    assert tool_use.id.startswith("test_function:")
+    assert tool_use.id != "test_function"
+    assert results[0].content.id == tool_use.id
 
 
 @pytest.mark.asyncio

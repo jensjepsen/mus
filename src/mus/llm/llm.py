@@ -21,6 +21,7 @@ from .types import (
     LLMPromptFunctionArgs,
     ToolCallableType,
     ToolResult,
+    ToolUse,
     RetryPolicy,
     STREAM_EXTRA_ARGS,
     MODEL_TYPE,
@@ -428,6 +429,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         partial_text = ""
 
                     tool_id_to_uuid: dict[str, str] = {}
+                    pending_tool_uses: list[ToolUse] = []
                     try:
                         async for msg in self.client.stream(**stream_kwargs):
                             # Assign tool_invocation_id for tool-related deltas
@@ -468,49 +470,63 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
                             history = history + [msg]
                             if isinstance(msg.content, DeltaToolUse):
-                                print(
-                                    "Invoking tool:",
-                                    msg.content.data.name,
-                                    "with input:",
-                                    msg.content.data.input,
+                                # Collected, not invoked: a turn may request
+                                # several tools at once, and the model expects
+                                # them all answered together. Invoking inline
+                                # would re-issue the turn after the first result,
+                                # before the rest of the stream had even been
+                                # read.
+                                pending_tool_uses.append(msg.content.data)
+
+                        # Stream drained: every tool this turn asked for is known.
+                        for tool_use in pending_tool_uses:
+                            print(
+                                "Invoking tool:",
+                                tool_use.name,
+                                "with input:",
+                                tool_use.input,
+                            )
+                            try:
+                                func_result = ensure_tool_value(
+                                    await invoke_function(
+                                        tool_use.name,
+                                        tool_use.input,
+                                        func_map,
+                                    )
                                 )
-                                try:
+                            except ToolNotFoundError as e:
+                                if fallback_function := kwargs.get(
+                                    "fallback_function", None
+                                ):
                                     func_result = ensure_tool_value(
-                                        await invoke_function(
-                                            msg.content.data.name,
-                                            msg.content.data.input,
-                                            func_map,
+                                        await fallback_function(
+                                            original_tool_name=tool_use.name,
+                                            original_input=tool_use.input,
                                         )
                                     )
-                                except ToolNotFoundError as e:
-                                    if fallback_function := kwargs.get(
-                                        "fallback_function", None
-                                    ):
-                                        func_result = ensure_tool_value(
-                                            await fallback_function(
-                                                original_tool_name=msg.content.data.name,
-                                                original_input=msg.content.data.input,
-                                            )
-                                        )
-                                    else:
-                                        raise e from e
-                                fd = Delta(
-                                    content=DeltaToolResult(
-                                        ToolResult(id=msg.content.data.id, content=func_result)
-                                    ),
-                                    stream_id=stream_id,
-                                    tool_invocation_id=tool_id_to_uuid[msg.content.data.id],
-                                )
-                                if transform_delta_hook:
-                                    fd = await transform_delta_hook(fd)
-                                yield fd
-                                yielded_any = True
-                                history.append(fd)
-                                async for msg in self.query(history=history, **kwargs):
-                                    if isinstance(msg.content, DeltaHistory):
-                                        history.extend(msg.content.data[len(history) :])
-                                    else:
-                                        yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
+                                else:
+                                    raise e from e
+                            fd = Delta(
+                                content=DeltaToolResult(
+                                    ToolResult(id=tool_use.id, content=func_result)
+                                ),
+                                stream_id=stream_id,
+                                tool_invocation_id=tool_id_to_uuid[tool_use.id],
+                            )
+                            if transform_delta_hook:
+                                fd = await transform_delta_hook(fd)
+                            yield fd
+                            yielded_any = True
+                            history.append(fd)
+
+                        if pending_tool_uses:
+                            # One continuation carrying every result, rather than
+                            # one per tool.
+                            async for msg in self.query(history=history, **kwargs):
+                                if isinstance(msg.content, DeltaHistory):
+                                    history.extend(msg.content.data[len(history) :])
+                                else:
+                                    yield msg  # NOTE: we don't need to transform here, as the recursive call to self.query will have already done so
                         # Stream completed successfully
                         break
 

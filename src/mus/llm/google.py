@@ -34,6 +34,7 @@ from .exceptions import (
 )
 import base64
 import json
+import uuid
 
 from google import genai
 from google.genai import types as genai_types
@@ -258,13 +259,41 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
     # A signature on ANY delta (thinking-3 stamps them on text parts too, not
     # just tool calls) marks a signature-bearing conversation.
     signed = any(isinstance(d, Delta) and _thought_signature(d) for d in deltas)
+
+    # Replayability is decided per *turn*, by its FIRST tool call. Gemini stamps
+    # a signature on the head of a parallel batch only, and that signature
+    # covers the siblings behind it. Measured against gemini-3.5-flash-lite by
+    # replaying a real batch with signatures selectively stripped:
+    #
+    #     first signed (as issued) -> accepted
+    #     only first signed        -> accepted
+    #     only last signed         -> 400 missing thought_signature
+    #     all stripped             -> 400 missing thought_signature
+    #
+    # So "some call in the turn is signed" is too weak, and "every call is
+    # signed" too strong. Note it must be the first *tool call*: a turn whose
+    # only signature sits on a text part is the "signature we didn't carry
+    # through" case, and its calls do still have to collapse.
+    # ``stream_id`` is the turn key; deltas built outside a live stream share
+    # the ``None`` group. (gemini-2.5 enforces none of this -- every variant is
+    # accepted there -- so this only bites on Gemini 3.)
+    replayable_turns: t.Set[t.Optional[str]] = set()
+    seen_turns: t.Set[t.Optional[str]] = set()
+    for d in deltas:
+        if not (isinstance(d, Delta) and isinstance(d.content, DeltaToolUse)):
+            continue
+        if d.stream_id in seen_turns:
+            continue  # only the first call of a turn decides
+        seen_turns.add(d.stream_id)
+        if _thought_signature(d):
+            replayable_turns.add(d.stream_id)
     unsigned_ids: t.Set[str] = (
         {
             d.content.data.id
             for d in deltas
             if isinstance(d, Delta)
             and isinstance(d.content, DeltaToolUse)
-            and not _thought_signature(d)
+            and d.stream_id not in replayable_turns
         }
         if signed
         else set()
@@ -347,7 +376,10 @@ def deltas_to_contents(deltas: t.Iterable[t.Union[Query, Delta]]):
                     tool_result, tool_name
                 )
                 contents.append(
-                    genai_types.Content(role="tool", parts=[function_response_part])
+                    # "user", not "tool": Gemini 3 models reject role="tool"
+                    # outright ("Role 'tool' is not supported"), which breaks
+                    # every tool flow on that family. 2.5 accepts either.
+                    genai_types.Content(role="user", parts=[function_response_part])
                 )
                 # Gemini rejects images inside function responses, so any File
                 # result is attached as inline data on a following user turn.
@@ -488,8 +520,24 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
                             Delta(content=DeltaText(data=part.text), metadata=metadata)
                         )
                     if part.function_call:
+                        # Gemini omits function_call.id. Falling back to the
+                        # function name made a turn that calls the same function
+                        # twice ("weather in Paris and Tokyo") produce two calls
+                        # sharing an id, so results could not be paired with
+                        # their calls.
+                        #
+                        # The suffix is random rather than a counter: ids are
+                        # keyed on across the *whole* history by
+                        # deltas_to_contents (unsigned_ids, collapsed_result_text),
+                        # so a per-turn counter would make turn 3's first call
+                        # collide with turn 1's. The real name is recovered from
+                        # the matching tool use when converting back, so the
+                        # suffix never reaches the wire.
+                        call_id = part.function_call.id or (
+                            f"{part.function_call.name}:{uuid.uuid4().hex[:8]}"
+                        )
                         tool_use = ToolUse(
-                            id=part.function_call.id or part.function_call.name,  # type: ignore
+                            id=call_id,
                             name=part.function_call.name,  # type: ignore
                             input=part.function_call.args,  # type: ignore
                         )
