@@ -67,11 +67,13 @@ async def test_llm_with_tool_use(mock_model):
     assert isinstance(result[1].content, DeltaToolUse)
     assert isinstance(result[1].content.data, ToolUse)
 
-    assert isinstance(result[2].content.data, ToolResult)
-    assert result[2].content.data.content.val == "Tool result"
+    # Tools are invoked once the stream has drained, so content the model emitted
+    # after the tool call still belongs to that turn and precedes the result.
+    assert isinstance(result[2].content, DeltaText)
+    assert result[2].content.data == "Tool used"
 
-    assert isinstance(result[3].content, DeltaText)
-    assert result[3].content.data == "Tool used"
+    assert isinstance(result[3].content.data, ToolResult)
+    assert result[3].content.data.content.val == "Tool result"
 
 @pytest.mark.asyncio
 async def test_llm_with_tool_use_nonexistent_function(mock_model):
@@ -745,8 +747,13 @@ async def test_usage_with_tool_calls(mock_model):
     assert result[1].content.data.name == "test_tool"
     assert result[1].content.data.input == {"param1": "asdf", "param2": 10}
 
-    assert isinstance(result[2].content.data, ToolResult)
-    assert result[2].content.data.content.val == "Tool called with asdf and 10"
+    # The usage-carrying delta closes the turn, so it arrives before the tool
+    # result: tools run once the stream has drained.
+    assert isinstance(result[2].content, DeltaText)
+    assert result[2].usage is not None
+
+    assert isinstance(result[3].content.data, ToolResult)
+    assert result[3].content.data.content.val == "Tool called with asdf and 10"
 
     assert called, "Tool function was not called"
 
@@ -1042,34 +1049,32 @@ async def test_transform_delta_hook_with_multiple_tool_calls(mock_model):
 
     # Hook should be called for all deltas from the model stream
     # Order of execution:
-    # 1. First stream yields DeltaToolUse
-    # 2. Tool is invoked, DeltaToolResult created and passed through hook
-    # 3. Recursive query starts (second stream)
-    # 4. Second stream yields DeltaText("Final response")
-    # 5. Recursive query completes, control returns to first stream
-    # 6. First stream continues and yields DeltaText("After first tool")
+    # 1. First stream yields DeltaToolUse (collected, not yet invoked)
+    # 2. First stream yields DeltaText("After first tool") -- still the same turn
+    # 3. Stream drains; tool is invoked, DeltaToolResult passed through the hook
+    # 4. One continuation query starts (second stream)
+    # 5. Second stream yields DeltaText("Final response")
     # Total = 4 calls to the hook
     assert hook_call_count == 4
     assert len(deltas_seen) == 4
     assert deltas_seen[0][0] == "DeltaToolUse"
-    assert deltas_seen[1][0] == "DeltaToolResult"
-    assert deltas_seen[2][0] == "DeltaText"
-    assert deltas_seen[2][1] == "Final response"  # From recursive call
+    assert deltas_seen[1][0] == "DeltaText"
+    assert deltas_seen[1][1] == "After first tool"  # rest of the requesting turn
+    assert deltas_seen[2][0] == "DeltaToolResult"
     assert deltas_seen[3][0] == "DeltaText"
-    assert deltas_seen[3][1] == "After first tool"  # Continuing first stream
+    assert deltas_seen[3][1] == "Final response"  # from the continuation
 
     # Verify the result contains all expected deltas
-    # Result order matches what user sees: tool use, tool result, then text responses
     assert len(result) == 4
     assert isinstance(result[0].content, DeltaToolUse)
     assert result[0].content.data.name == "tool1"
     assert result[0].content.data.input == {"x": 1}
-    assert isinstance(result[1].content, DeltaToolResult)
-    assert result[1].content.data.content.val == "Result 1"
-    assert isinstance(result[2].content, DeltaText)
-    assert result[2].content.data == "Final response"
+    assert isinstance(result[1].content, DeltaText)
+    assert result[1].content.data == "After first tool"
+    assert isinstance(result[2].content, DeltaToolResult)
+    assert result[2].content.data.content.val == "Result 1"
     assert isinstance(result[3].content, DeltaText)
-    assert result[3].content.data == "After first tool"
+    assert result[3].content.data == "Final response"
 
 @pytest.mark.asyncio
 async def test_transform_delta_hook_with_sequential_tool_calls(mock_model):
