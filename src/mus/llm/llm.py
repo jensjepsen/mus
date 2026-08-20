@@ -480,12 +480,6 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
                         # Stream drained: every tool this turn asked for is known.
                         for tool_use in pending_tool_uses:
-                            print(
-                                "Invoking tool:",
-                                tool_use.name,
-                                "with input:",
-                                tool_use.input,
-                            )
                             try:
                                 func_result = ensure_tool_value(
                                     await invoke_function(
