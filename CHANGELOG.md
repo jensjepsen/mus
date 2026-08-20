@@ -1,3 +1,9 @@
+## v0.32.0 (2026-08-20)
+
+### Feat
+
+- refactor tool call flow (changes tool call ordering emitted) \nfix: gemini 3.x tool calls
+
 ## v0.31.2 (2026-08-19)
 
 ### Fix
