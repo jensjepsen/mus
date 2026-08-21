@@ -37,9 +37,6 @@ def reset_dbos(tmp_path):
     DBOS(config=config)
     DBOS.reset_system_database(truncate=True)
     DBOS.launch()
-    # A fresh registry per test, so a tool name from one test cannot satisfy
-    # another's lookup.
-    mus_dbos._TOOL_STEPS.clear()
     mus_dbos._PROVIDER_TURN = None
     yield
     DBOS.destroy()

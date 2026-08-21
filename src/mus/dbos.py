@@ -20,8 +20,8 @@ Shape, and why it is this shape:
     served from the checkpoint. mus therefore receives tokens as they are
     produced rather than when the turn ends, so its tagging, transform hooks
     and tool-result synthesis all apply in real time.
-  * Each tool call is a step -- one registered per tool name -- wrapping mus's
-    own ``invoke`` so schema validation and the fallback function still apply.
+  * Each tool call is a step wrapping mus's own ``invoke``, so schema
+    validation and the fallback function still apply.
   * Every delta mus yields is written to the public key from workflow scope,
     where writes are exactly-once.
 
@@ -84,32 +84,28 @@ async def sleep(seconds: float) -> None:
 
 # --- tool steps -----------------------------------------------------------
 
-_TOOL_STEPS: dict[str, t.Callable] = {}
-
-
 def _step_for(tool_name: str):
-    """One registered step per tool name, created on first use.
+    """A checkpointed step for one tool call, named after the tool.
 
-    Registering lazily works after launch and survives recovery in a fresh
-    process, and gives each tool its own name in the checkpoint record instead
-    of one generic entry.
+    The wrapper is generic and the tool itself is never registered or pickled --
+    it is reached through mus's ``invoke``, which crosses the step boundary as an
+    argument, and step arguments are not persisted. That is what lets tools be
+    closures, callable objects, or built dynamically per run.
 
-    The tool function itself is never registered or pickled -- only this generic
-    wrapper is -- which is what lets tools be closures, callable objects, or
-    built dynamically per run.
+    Registered per call. A cache keyed on tool name would buy only the ~10us of
+    registration, while growing without bound when tools are generated per
+    request.
     """
-    if tool_name not in _TOOL_STEPS:
 
-        @DBOS.step(name=f"mus.tool:{tool_name}")
-        async def _run(invoke: t.Callable[[], t.Awaitable[ToolValue]]) -> ToolValue:
-            # Wraps mus's own invoke, so validation and the fallback function
-            # are not reimplemented and cannot drift. A closure is not
-            # picklable, but step arguments are never persisted, and a replayed
-            # step is not executed -- the closure is rebuilt and never called.
-            return await invoke()
+    @DBOS.step(name=f"mus.tool:{tool_name}")
+    async def _run(invoke: t.Callable[[], t.Awaitable[ToolValue]]) -> ToolValue:
+        # Wraps mus's own invoke, so validation and the fallback function are
+        # not reimplemented and cannot drift. A closure is not picklable, but
+        # step arguments are never persisted, and a replayed step is not
+        # executed -- the closure is rebuilt and never called.
+        return await invoke()
 
-        _TOOL_STEPS[tool_name] = _run
-    return _TOOL_STEPS[tool_name]
+    return _run
 
 
 async def _tool_runner(
