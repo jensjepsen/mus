@@ -1,3 +1,4 @@
+import inspect
 import typing as t
 from .llm.types import ToolCallableType, FunctionSchema, FunctionSchemaNoAnnotations
 from dataclasses import is_dataclass
@@ -42,6 +43,23 @@ def parse_tools(
     return result
 
 
+def _annotated_target(func: t.Any) -> t.Any:
+    """Where a callable's parameter annotations actually live.
+
+    A tool may be a callable *object* rather than a function, and
+    ``get_type_hints`` cannot read an instance: 3.12 raises TypeError while 3.14
+    quietly returns {}, which would hand the model a tool declaring no
+    parameters at all. Its ``__call__`` has the real signature. ``self`` is
+    excluded because ``get_type_hints`` only reports annotated parameters.
+    """
+    if inspect.isfunction(func) or inspect.ismethod(func) or inspect.isclass(func):
+        # Functions carry their own; a class carries its field annotations,
+        # which is what dataclass- and model-shaped tools rely on.
+        return func
+    call = getattr(type(func), "__call__", None)
+    return call if call is not None else func
+
+
 def func_to_schema(
     func: ToolCallableType, ensure_docstring: bool = True
 ) -> FunctionSchema:
@@ -50,7 +68,7 @@ def func_to_schema(
             return definition
     if not func.__doc__ and ensure_docstring:
         raise ValueError(f"Function {func.__name__} is missing a docstring")
-    annotations = list(t.get_type_hints(func).items())
+    annotations = list(t.get_type_hints(_annotated_target(func)).items())
     if annotations and annotations[-1][0] == "return":
         annotations = annotations[:-1]  # Remove the return annotation if present
     p = FunctionSchema(

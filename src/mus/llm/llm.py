@@ -22,6 +22,7 @@ from .types import (
     ToolCallableType,
     ToolResult,
     ToolUse,
+    ToolValue,
     RetryPolicy,
     STREAM_EXTRA_ARGS,
     MODEL_TYPE,
@@ -218,6 +219,27 @@ class TransformHistoryHook(t.Protocol):
     async def __call__(self, history: History) -> History: ...
 
 
+class ToolRunner(t.Protocol):
+    """Executes one tool call.
+
+    ``invoke`` performs mus's own execution -- schema validation, the fallback
+    function, the call itself -- so a runner that just awaits it changes
+    nothing. A durable backend instead wraps it in a checkpointed step, so a
+    replay after a crash returns the recorded result rather than firing the
+    tool's side effects a second time.
+    """
+
+    async def __call__(
+        self, tool_use: ToolUse, invoke: t.Callable[[], t.Awaitable[ToolValue]]
+    ) -> ToolValue: ...
+
+
+async def _default_tool_runner(
+    tool_use: ToolUse, invoke: t.Callable[[], t.Awaitable[ToolValue]]
+) -> ToolValue:
+    return await invoke()
+
+
 class ErrorRecoveryHook(t.Protocol):
     """Called when an LLM call fails *pre-stream* (no delta yielded yet).
 
@@ -243,6 +265,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     transform_delta_hook: t.Optional[TransformDeltaHook]
     transform_history_hook: t.Optional[TransformHistoryHook]
     error_recovery_hook: t.Optional[ErrorRecoveryHook]
+    tool_runner: t.Optional[ToolRunner]
 
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
@@ -331,6 +354,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         transform_delta_hook = kwargs.get("transform_delta_hook", None)
         transform_history_hook = kwargs.get("transform_history_hook", None)
         error_recovery_hook = kwargs.get("error_recovery_hook", None)
+        tool_runner = kwargs.get("tool_runner", None) or _default_tool_runner
         policy = self.retry_policy
 
         function_schemas = [
@@ -480,26 +504,35 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
 
                         # Stream drained: every tool this turn asked for is known.
                         for tool_use in pending_tool_uses:
-                            try:
-                                func_result = ensure_tool_value(
-                                    await invoke_function(
-                                        tool_use.name,
-                                        tool_use.input,
-                                        func_map,
-                                    )
-                                )
-                            except ToolNotFoundError as e:
-                                if fallback_function := kwargs.get(
-                                    "fallback_function", None
-                                ):
-                                    func_result = ensure_tool_value(
-                                        await fallback_function(
-                                            original_tool_name=tool_use.name,
-                                            original_input=tool_use.input,
+
+                            async def _invoke(tool_use: ToolUse = tool_use) -> ToolValue:
+                                """mus's own execution of one call.
+
+                                Handed to the tool runner so a durable one can
+                                checkpoint around it without reimplementing
+                                validation or the fallback function.
+                                """
+                                try:
+                                    return ensure_tool_value(
+                                        await invoke_function(
+                                            tool_use.name,
+                                            tool_use.input,
+                                            func_map,
                                         )
                                     )
-                                else:
+                                except ToolNotFoundError as e:
+                                    if fallback_function := kwargs.get(
+                                        "fallback_function", None
+                                    ):
+                                        return ensure_tool_value(
+                                            await fallback_function(
+                                                original_tool_name=tool_use.name,
+                                                original_input=tool_use.input,
+                                            )
+                                        )
                                     raise e from e
+
+                            func_result = await tool_runner(tool_use, _invoke)
                             fd = Delta(
                                 content=DeltaToolResult(
                                     ToolResult(id=tool_use.id, content=func_result)
@@ -645,7 +678,10 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     {
                         \""""
                     + first_prop
-                    + '": ',
+                    # No trailing space: Anthropic and Bedrock reject an
+                    # assistant turn ending in whitespace, and this turn is the
+                    # last message in the request. JSON does not care.
+                    + '":',
                     echo=True,
                 )
             )
