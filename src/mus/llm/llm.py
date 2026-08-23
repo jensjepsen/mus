@@ -240,6 +240,23 @@ async def _default_tool_runner(
     return await invoke()
 
 
+class IdGenerator(t.Protocol):
+    """Mints the correlation ids mus stamps on deltas.
+
+    ``stream_id`` groups a turn; ``tool_invocation_id`` pairs a tool use with
+    its result. A durable backend replaces this so a replayed run re-mints the
+    ids it minted the first time. Without that, deltas already written to a
+    durable stream keep their original ids while the replay stamps fresh ones,
+    and a reader is left with tool results that pair to no tool use.
+    """
+
+    async def __call__(self) -> str: ...
+
+
+async def _default_id_generator() -> str:
+    return uuid.uuid4().hex
+
+
 class ErrorRecoveryHook(t.Protocol):
     """Called when an LLM call fails *pre-stream* (no delta yielded yet).
 
@@ -266,6 +283,7 @@ class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     transform_history_hook: t.Optional[TransformHistoryHook]
     error_recovery_hook: t.Optional[ErrorRecoveryHook]
     tool_runner: t.Optional[ToolRunner]
+    id_generator: t.Optional[IdGenerator]
 
 
 class _LLMCallArgs(_LLMInitAndQuerySharedKwargs, total=False):
@@ -355,6 +373,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         transform_history_hook = kwargs.get("transform_history_hook", None)
         error_recovery_hook = kwargs.get("error_recovery_hook", None)
         tool_runner = kwargs.get("tool_runner", None) or _default_tool_runner
+        new_id = kwargs.get("id_generator", None) or _default_id_generator
         policy = self.retry_policy
 
         function_schemas = [
@@ -398,7 +417,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         if transform_history_hook:
             history = await transform_history_hook(history)
 
-        stream_id = uuid.uuid4().hex
+        stream_id = await new_id()
 
         stream_kwargs = LLMClientStreamArgs(
             prompt=dedented_prompt,
@@ -448,7 +467,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         await asyncio.sleep(sleep_time)
                         history = list(pre_stream_history)
                         stream_kwargs["history"] = history
-                        stream_id = uuid.uuid4().hex
+                        stream_id = await new_id()
                         last_stop_reason = None
                         partial_text = ""
 
@@ -460,7 +479,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                             if isinstance(msg.content, DeltaToolInputUpdate):
                                 provider_id = msg.content.id
                                 if provider_id not in tool_id_to_uuid:
-                                    tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                                    tool_id_to_uuid[provider_id] = await new_id()
                                 msg = replace(
                                     msg,
                                     stream_id=stream_id,
@@ -469,7 +488,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                             elif isinstance(msg.content, DeltaToolUse):
                                 provider_id = msg.content.data.id
                                 if provider_id not in tool_id_to_uuid:
-                                    tool_id_to_uuid[provider_id] = uuid.uuid4().hex
+                                    tool_id_to_uuid[provider_id] = await new_id()
                                 msg = replace(
                                     msg,
                                     stream_id=stream_id,
@@ -590,7 +609,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                 history = list(_recovered)
                 pre_stream_history = list(_recovered)
                 stream_kwargs["history"] = history
-                stream_id = uuid.uuid4().hex
+                stream_id = await new_id()
                 last_stop_reason = None
                 partial_text = ""
 

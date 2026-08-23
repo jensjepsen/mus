@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import typing as t
+import uuid
 
 from .llm.llm import Bot, IterableResult
 from .llm.types import LLM, Delta, DeltaText, ToolUse, ToolValue
@@ -84,28 +85,35 @@ async def sleep(seconds: float) -> None:
 
 # --- tool steps -----------------------------------------------------------
 
+_TOOL_STEPS: dict[str, t.Callable] = {}
+
+
 def _step_for(tool_name: str):
     """A checkpointed step for one tool call, named after the tool.
 
     The wrapper is generic and the tool itself is never registered or pickled --
-    it is reached through mus's ``invoke``, which crosses the step boundary as an
-    argument, and step arguments are not persisted. That is what lets tools be
-    closures, callable objects, or built dynamically per run.
+    it is reached through mus's ``invoke``, which crosses the step boundary as
+    an argument, and step arguments are not persisted. That is what lets tools
+    be closures, callable objects, or built dynamically per run.
 
-    Registered per call. A cache keyed on tool name would buy only the ~10us of
-    registration, while growing without bound when tools are generated per
-    request.
+    Cached per name because DBOS keys its own function registry by name, so
+    re-registering one logs a duplicate-registration warning -- uncached, that
+    is a warning on every tool call. The cache does not change what is
+    retained: DBOS keeps an entry per distinct name either way, so a program
+    minting a fresh tool name per request grows that registry regardless.
     """
+    if tool_name not in _TOOL_STEPS:
 
-    @DBOS.step(name=f"mus.tool:{tool_name}")
-    async def _run(invoke: t.Callable[[], t.Awaitable[ToolValue]]) -> ToolValue:
-        # Wraps mus's own invoke, so validation and the fallback function are
-        # not reimplemented and cannot drift. A closure is not picklable, but
-        # step arguments are never persisted, and a replayed step is not
-        # executed -- the closure is rebuilt and never called.
-        return await invoke()
+        @DBOS.step(name=f"mus.tool:{tool_name}")
+        async def _run(invoke: t.Callable[[], t.Awaitable[ToolValue]]) -> ToolValue:
+            # Wraps mus's own invoke, so validation and the fallback function
+            # are not reimplemented and cannot drift. A closure is not
+            # picklable, but step arguments are never persisted, and a replayed
+            # step is not executed -- the closure is rebuilt and never called.
+            return await invoke()
 
-    return _run
+        _TOOL_STEPS[tool_name] = _run
+    return _TOOL_STEPS[tool_name]
 
 
 async def _tool_runner(
@@ -241,6 +249,46 @@ def _error_delta(exc: BaseException) -> Delta:
     )
 
 
+_NEW_ID: t.Optional[t.Callable] = None
+
+
+def _id_step() -> t.Callable:
+    """The step that mints one correlation id, registered once.
+
+    Cached because the name is constant and DBOS keys its function registry by
+    name: re-registering would log a duplicate-registration warning per call.
+    """
+    global _NEW_ID
+    if _NEW_ID is None:
+
+        @DBOS.step(name="mus.id")
+        async def _step() -> str:
+            return uuid.uuid4().hex
+
+        _NEW_ID = _step
+    assert _NEW_ID is not None
+    return _NEW_ID
+
+
+async def _new_id() -> str:
+    """A correlation id that a replay takes from the checkpoint.
+
+    ``bot.query`` runs in the workflow body, so every id it mints is minted
+    again on replay -- but workflow-scope writes are exactly-once per
+    function_id, so deltas already in the stream keep the originals. Fresh ids
+    on the replayed remainder leave a reader with tool results pairing to no
+    tool use, and one turn split across several stream_ids.
+
+    A step rather than a value derived from the workflow id. Deriving is also
+    correct while the body re-executes identically, and costs no write -- but
+    it goes back to failing silently once that stops holding, which is the
+    failure this exists to remove. A recorded step instead makes DBOS compare
+    the name at each function_id and raise DBOSUnexpectedStepError. The writes
+    are a rounding error next to the one this bot already makes per delta.
+    """
+    return await _id_step()()
+
+
 class DurableBot:
     """A Bot whose runs are checkpointed and whose deltas are streamed durably."""
 
@@ -251,7 +299,12 @@ class DurableBot:
         self._closed = False
         bot.client = _DurableLLM(bot.client)
         bot.default_args = t.cast(
-            t.Any, {**bot.default_args, "tool_runner": _tool_runner}
+            t.Any,
+            {
+                **bot.default_args,
+                "tool_runner": _tool_runner,
+                "id_generator": _new_id,
+            },
         )
 
     def query(self, *args, **kwargs) -> t.AsyncGenerator[Delta, None]:

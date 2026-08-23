@@ -37,7 +37,11 @@ def reset_dbos(tmp_path):
     DBOS(config=config)
     DBOS.reset_system_database(truncate=True)
     DBOS.launch()
+    # Steps are cached across calls but hold a reference to the DBOS
+    # instance destroyed above, so each test re-registers its own.
     mus_dbos._PROVIDER_TURN = None
+    mus_dbos._NEW_ID = None
+    mus_dbos._TOOL_STEPS.clear()
     yield
     DBOS.destroy()
 
@@ -554,3 +558,56 @@ async def test_close_is_idempotent(reset_dbos):
         return True
 
     assert await (await DBOS.start_workflow_async(run)).get_result() is True
+
+
+# --- correlation ids across a real crash -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_correlation_ids_survive_a_crash(tmp_path):
+    """A replayed run must not contradict the ids already in the stream.
+
+    ``bot.query`` runs in the workflow body, so every id it mints is minted
+    again on replay -- but workflow-scope writes are exactly-once per
+    function_id, so the deltas written before the crash keep the originals. A
+    reader then sees a DeltaToolResult whose tool_invocation_id matches no
+    DeltaToolUse, and one logical turn smeared across several stream_ids.
+    """
+    import json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_ids_helper.py"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    def run_helper(db, mode, expect_rc=0):
+        proc = subprocess.run(
+            [_sys.executable, str(helper), str(db), mode],
+            capture_output=True, text=True, env=env, timeout=120,
+        )
+        assert proc.returncode == expect_rc, (
+            f"{mode}: rc={proc.returncode}\n{proc.stdout}\n{proc.stderr[-800:]}"
+        )
+        if expect_rc != 0:
+            return None
+        line = next(
+            ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT ")
+        )
+        return json.loads(line[len("RESULT "):])
+
+    clean = run_helper(tmp_path / "clean.sqlite", "clean")
+
+    crash_db = tmp_path / "crash.sqlite"
+    run_helper(crash_db, "crash", expect_rc=9)
+    recovered = run_helper(crash_db, "recover")
+
+    assert recovered["orphaned_results"] == [], (
+        "a tool result in the stream pairs to no tool use: "
+        f"{recovered['orphaned_results']}"
+    )
+    assert recovered["distinct_stream_ids"] == clean["distinct_stream_ids"], (
+        "the replay split one turn across extra stream_ids: "
+        f"{recovered['distinct_stream_ids']} vs {clean['distinct_stream_ids']}"
+    )
+    assert recovered["normalised"] == clean["normalised"]
