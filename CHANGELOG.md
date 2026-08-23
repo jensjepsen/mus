@@ -1,3 +1,14 @@
+## v0.33.0 (2026-08-23)
+
+### Feat
+
+- dbos recovery
+
+### Fix
+
+- remove unnecessary cache
+- test
+
 ## v0.32.0 (2026-08-20)
 
 ### Feat
