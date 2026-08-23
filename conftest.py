@@ -7,7 +7,7 @@ from sybil import Sybil
 import pytest
 from unittest import mock
 from mus.llm.mock_client import StubLLM
-from sybil.parsers.markdown import PythonCodeBlockParser
+from sybil.parsers.markdown import PythonCodeBlockParser, SkipParser
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +31,9 @@ def mock_clients():
 pytest_collect_file = Sybil(
     parsers=[
         PythonCodeBlockParser(future_imports=['print_function']),
+        # Lets a section opt out when its extra is not installed, so the
+        # suite passes on an install without every optional dependency.
+        SkipParser(),
     ],
     pattern='*.md',
     fixtures=['mock_clients'],
