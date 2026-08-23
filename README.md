@@ -128,7 +128,7 @@ asyncio.run(main())
 
 ### Cache points
 
-A `CachePoint` marks a prompt-cache breakpoint *inside* a message. Everything before it becomes a cacheable prefix that's reused on later calls, so a large shared document or context only has to be processed once, only the content after the cache point is reprocessed.
+A `CachePoint` marks a prompt-cache breakpoint *inside* a message.
 
 ```python
 from mus import CachePoint
@@ -164,7 +164,6 @@ Every provider reports why generation ended. mus normalises those into a common 
 | `malformed_tool_call` | no | derived | derived | derived | `MALFORMED_FUNCTION_CALL` | derived |
 | `pause_turn`, `error`, `unknown` | no | | | | | |
 
-Planned stops are the ones you asked for, and are reported on the result. Only some providers distinguish a natural stop from a stop-sequence hit; where they don't, both arrive as `end_turn`.
 
 <!-- invisible-code-block: python
 # Stub responses for the examples below
@@ -211,8 +210,6 @@ async def truncated():
 asyncio.run(truncated())
 ```
 
-There is no recovery hook, because a half-emitted tool call can't be continued: the assistant turn holds a malformed tool block that providers reject on the next request. Recovery happens at the call site instead, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
-
 <!-- invisible-code-block: python
 model.put_text("Continue where you stopped.", " science of map-making.")
 model.put_stop_reason("Continue where you stopped.", "end_turn")
@@ -235,23 +232,83 @@ async def recover():
 asyncio.run(recover())
 ```
 
-`partial_text` is exactly what the provider emitted, so a cut mid-word joins without a separator. Prompt the continuation to restart the final sentence to trade a few repeated tokens for a clean join.
 
-`pending_tool_call` says whether the turn can be continued at all: `False` to append and carry on, `True` to re-issue it. It is derived from tool blocks left in flight at the stop, so it depends on what the provider exposes. Anthropic, Bedrock, OpenAI and Mistral report it; Google sets it only for `MALFORMED_FUNCTION_CALL`. A tool is never invoked with truncated arguments either way.
+### Durable runs
 
-Values mus doesn't recognise normalise to `unknown`, which also raises, with `raw` preserved so a new provider value can be handled without waiting for a mus release.
+A mus run is normally ephemeral: if the process dies mid-conversation the turn is lost, completed tool calls are forgotten, and a reconnecting client has nothing to reattach to. `mus.dbos` runs a bot inside a [DBOS](https://docs.dbos.dev/) workflow so a run survives a crash or a deploy, without re-billing completed provider calls or re-firing completed tools, and can be tailed from anywhere by workflow id.
 
-OpenAI-compatible gateways such as OpenRouter normalise the upstream reason, and will report a planned `tool_calls` for a call the upstream actually cut off at the token limit. Where a gateway also sends the upstream value as `native_finish_reason`, mus reads it and takes the unplanned reading, since normalising can hide a truncation but never invent one. Point `OpenAILLM` at a gateway by passing your own client:
+Install the extra with `pip install "mus[dbos]"`.
+
+<!-- invisible-code-block: python
+# Set up DBOS on a throwaway SQLite database, and a stubbed model, so the
+# examples below actually run.
+import tempfile
+from dbos import DBOS, DBOSConfig, SetWorkflowID
+from mus import ToolUse
+from mus import dbos as mus_dbos
+
+_db = f"sqlite:///{tempfile.mkdtemp()}/mus.sqlite"
+DBOS.destroy()
+DBOS(config=DBOSConfig(name="mus-readme", database_url=_db, system_database_url=_db))
+DBOS.launch()
+
+async def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return {"Paris": "17C, rain"}.get(city, "unknown")
+
+QUESTION = "What is the weather in Paris?"
+model.put_tool_use(QUESTION, ToolUse(id="t1", name="get_weather", input={"city": "Paris"}))
+-->
+
+The bot is built *inside* the workflow, and `bot.query` runs in the workflow body. Each provider call and each tool call becomes a checkpointed step, so a recovered run picks up where it stopped instead of replaying from the top.
 
 ```python
-from openai import AsyncClient
-from mus import OpenAILLM
-
-gateway_model = OpenAILLM(
-    "openai/gpt-4o-mini",
-    AsyncClient(base_url="https://openrouter.ai/api/v1", api_key="sk-or-v1-..."),
-)
+@DBOS.workflow()
+async def weather_agent(question: str) -> str:
+    bot = mus_dbos.durable(Bot(
+        prompt="Use the tool for every city mentioned.",
+        model=model,
+        functions=[get_weather],
+    ))
+    result = bot(question)
+    text = await result.string()
+    await bot.close()
+    return text
 ```
+
+Start a run and hand out its id, then read it from elswhere while it is still running. Keying the workflow id on your request id also makes the run idempotent, so a retried request re-attaches to the existing run rather than starting a second conversation.
+
+```python
+async def demo():
+    with SetWorkflowID("support-42"):
+        handle = await DBOS.start_workflow_async(weather_agent, QUESTION)
+    workflow_id = handle.workflow_id
+    answer = await handle.get_result()
+
+    # Tail the run's deltas by id. This works from any process.
+    streamed = [delta async for delta in mus_dbos.read(workflow_id)]
+    assert len(streamed) > 0
+
+    # Or reattach as the result object you already know, which behaves exactly
+    # as it does in-process.
+    result = mus_dbos.attach(workflow_id)
+    assert await result.string() == answer
+    return result.usage, result.stop_reason
+
+usage, stop_reason = asyncio.run(demo())
+```
+
+Pass `offset=` to resume mid-stream, so a client that reconnects after a dropped socket or a page refresh continues where it left off rather than replaying the transcript.
+
+**Crashes.** A tool that *completed* before a crash never runs again. A tool interrupted *mid-execution* does run again, because DBOS cannot know whether its side effect landed, so side-effecting tools still need to be idempotent for that window.
+
+**Failures.** If the run raises, a terminal delta carrying `metadata["mus.error"]` is written before the error propagates, so a failed run is distinguishable from a truncated one.
+
+Without the extra installed `mus.dbos` still imports, but `durable()`, `read()` and `attach()` raise. 
+
+<!-- invisible-code-block: python
+DBOS.destroy()
+-->
 
 
 ## Contributing

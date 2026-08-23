@@ -14,9 +14,15 @@ from sybil.parsers.markdown import PythonCodeBlockParser
 def mock_clients():
     import sys
     import mus
+    import mus.dbos
+
     original = sys.modules["mus"]
     m = mock.Mock(wraps=mus)
     m.AnthropicLLM = StubLLM
+    # A Mock is not a package, so `import mus.dbos` cannot resolve while it is
+    # standing in. Expose the real submodule so docs can still reach it via
+    # `from mus import dbos`.
+    m.dbos = sys.modules["mus.dbos"]
     sys.modules["mus"] = m
     yield m
     sys.modules["mus"] = original
