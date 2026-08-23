@@ -41,7 +41,7 @@ def reset_dbos(tmp_path):
     # instance destroyed above, so each test re-registers its own.
     mus_dbos._PROVIDER_TURN = None
     mus_dbos._NEW_ID = None
-    mus_dbos._TOOL_STEPS.clear()
+    mus_dbos._TOOL_STEP = None
     yield
     DBOS.destroy()
 
@@ -132,8 +132,8 @@ async def test_callable_object_tool(reset_dbos):
 
 
 @pytest.mark.asyncio
-async def test_dynamically_built_tools_get_distinct_steps(reset_dbos):
-    """Several tools made by a factory, each checkpointed under its own name."""
+async def test_dynamically_built_tools_each_get_a_checkpoint(reset_dbos):
+    """Several tools made by a factory, each checkpointed separately."""
 
     def make_tool(name: str):
         async def _tool(value: str) -> str:
@@ -170,10 +170,10 @@ async def test_dynamically_built_tools_get_distinct_steps(reset_dbos):
 
     steps = await DBOS.list_workflow_steps_async(handle.workflow_id)
     names = [s.get("function_name") for s in steps]
-    # Each dynamic tool is checkpointed under its own name, not one generic step.
-    assert "mus.tool:dyn_0" in names
-    assert "mus.tool:dyn_1" in names
-    assert "mus.tool:dyn_2" in names
+    # One checkpoint per tool call. They share a step name -- the wrapper is
+    # generic, and a per-name one would register a step DBOS never releases for
+    # every name a factory invents.
+    assert names.count("mus.tool") == 3
 
 
 @pytest.mark.asyncio
@@ -559,6 +559,58 @@ async def test_close_is_idempotent(reset_dbos):
 
     assert await (await DBOS.start_workflow_async(run)).get_result() is True
 
+
+@pytest.mark.asyncio
+async def test_two_bots_sharing_a_tool_name_keep_their_own_tools(reset_dbos):
+    """The per-name step cache holds plumbing, never a tool.
+
+One generic step serves every tool in the process, so two bots whose tools
+    share a ``__name__`` are certainly served the same wrapper. That is safe
+    only because the wrapper takes ``invoke`` as an argument rather than
+    capturing it -- bake the tool into the step and the second bot would
+    silently run the first bot's handler.
+    """
+
+    def make(kind: str):
+        async def record(city: str) -> str:
+            """Record a city."""
+            return f"{kind}-handler saw {city}"
+
+        return record  # same __name__, different behaviour
+
+    def bot_for(kind: str, key: str):
+        model = StubLLM()
+        model.put_tool_use(
+            "go", ToolUse(id="t1", name="record", input={"city": "Paris"})
+        )
+        model.put_text("go", "ok")
+        return mus_dbos.durable(
+            Bot(prompt="t", model=model, functions=[make(kind)]), key=key
+        )
+
+    @DBOS.workflow()
+    async def run() -> dict:
+        out = {}
+        # Separate keys so the two bots do not interleave on one stream.
+        for kind, key in (("alpha", "a"), ("beta", "b")):
+            bot = bot_for(kind, key)
+            results = [
+                d
+                async for d in bot.query("go")
+                if isinstance(d.content, DeltaToolResult)
+            ]
+            out[kind] = results[0].content.data.content.val
+            await bot.close()
+        return out
+
+    got = await (await DBOS.start_workflow_async(run)).get_result()
+
+    assert got["alpha"] == "alpha-handler saw Paris"
+    assert got["beta"] == "beta-handler saw Paris", (
+        "the second bot ran the first bot's tool: " + got["beta"]
+    )
+    # A single registered wrapper serves both, which is the condition under test.
+    assert mus_dbos._TOOL_STEP is not None
 
 # --- correlation ids across a real crash -----------------------------------
 

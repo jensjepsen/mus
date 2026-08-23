@@ -85,41 +85,49 @@ async def sleep(seconds: float) -> None:
 
 # --- tool steps -----------------------------------------------------------
 
-_TOOL_STEPS: dict[str, t.Callable] = {}
+_TOOL_STEP: t.Optional[t.Callable] = None
 
 
-def _step_for(tool_name: str):
-    """A checkpointed step for one tool call, named after the tool.
+def _tool_step() -> t.Callable:
+    """The step wrapping one tool call, registered once for every tool.
 
-    The wrapper is generic and the tool itself is never registered or pickled --
-    it is reached through mus's ``invoke``, which crosses the step boundary as
-    an argument, and step arguments are not persisted. That is what lets tools
-    be closures, callable objects, or built dynamically per run.
+    One generic step rather than one per tool name. The wrapper is
+    interchangeable -- it takes ``invoke`` as an argument and holds no
+    reference to any tool -- so a per-name variant bought only a label, at the
+    cost of a registration per distinct name that DBOS never releases. A
+    process minting a fresh tool name per request grew that registry without
+    bound; this cannot.
 
-    Cached per name because DBOS keys its own function registry by name, so
-    re-registering one logs a duplicate-registration warning -- uncached, that
-    is a warning on every tool call. The cache does not change what is
-    retained: DBOS keeps an entry per distinct name either way, so a program
-    minting a fresh tool name per request grows that registry regardless.
+    The tool name is recorded on the tracing span instead, so it stays visible
+    where it is useful. It is *not* in ``list_workflow_steps``, which now shows
+    ``mus.tool`` for every call.
     """
-    if tool_name not in _TOOL_STEPS:
+    global _TOOL_STEP
+    if _TOOL_STEP is None:
 
-        @DBOS.step(name=f"mus.tool:{tool_name}")
-        async def _run(invoke: t.Callable[[], t.Awaitable[ToolValue]]) -> ToolValue:
+        @DBOS.step(name="mus.tool")
+        async def _run(
+            tool_name: str, invoke: t.Callable[[], t.Awaitable[ToolValue]]
+        ) -> ToolValue:
             # Wraps mus's own invoke, so validation and the fallback function
             # are not reimplemented and cannot drift. A closure is not
             # picklable, but step arguments are never persisted, and a replayed
             # step is not executed -- the closure is rebuilt and never called.
+            try:
+                DBOS.span.set_attribute("mus.tool", tool_name)
+            except Exception:  # pragma: no cover - tracing must never break a run
+                pass
             return await invoke()
 
-        _TOOL_STEPS[tool_name] = _run
-    return _TOOL_STEPS[tool_name]
+        _TOOL_STEP = _run
+    assert _TOOL_STEP is not None
+    return _TOOL_STEP
 
 
 async def _tool_runner(
     tool_use: ToolUse, invoke: t.Callable[[], t.Awaitable[ToolValue]]
 ) -> ToolValue:
-    return await _step_for(tool_use.name)(invoke)
+    return await _tool_step()(tool_use.name, invoke)
 
 
 # --- provider step --------------------------------------------------------
