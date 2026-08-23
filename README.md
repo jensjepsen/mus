@@ -261,6 +261,11 @@ A mus run is normally ephemeral: if the process dies mid-conversation the turn i
 Install the extra with `pip install "mus[dbos]"`.
 
 <!-- invisible-code-block: python
+import importlib.util
+have_dbos = importlib.util.find_spec("dbos") is not None
+-->
+<!-- skip: start if(not have_dbos, "needs the dbos extra") -->
+<!-- invisible-code-block: python
 # Set up DBOS on a throwaway SQLite database, and a stubbed model, so the
 # examples below actually run.
 import tempfile
@@ -332,6 +337,7 @@ Without the extra installed `mus.dbos` still imports, but `durable()`, `read()` 
 <!-- invisible-code-block: python
 DBOS.destroy()
 -->
+<!-- skip: end -->
 
 
 ## Contributing
