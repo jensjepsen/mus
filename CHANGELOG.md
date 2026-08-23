@@ -1,3 +1,11 @@
+## v0.33.1 (2026-08-23)
+
+### Fix
+
+- unbounded tool cache
+- stable tool ids across dbos recoveries
+- skip durable-runs docs when the dbos extra is absent
+
 ## v0.33.0 (2026-08-23)
 
 ### Feat
