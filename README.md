@@ -276,7 +276,7 @@ async def weather_agent(question: str) -> str:
     return text
 ```
 
-Start a run and hand out its id, then read it from anywhere -- another process, a web handler -- while it is still running. Keying the workflow id on your request id also makes the run idempotent: a retried request re-attaches to the existing run rather than starting a second conversation.
+Start a run and hand out its id, then read it from elswhere while it is still running. Keying the workflow id on your request id also makes the run idempotent, so a retried request re-attaches to the existing run rather than starting a second conversation.
 
 ```python
 async def demo():
@@ -285,7 +285,7 @@ async def demo():
     workflow_id = handle.workflow_id
     answer = await handle.get_result()
 
-    # Tail the run's deltas by id -- this works from any process.
+    # Tail the run's deltas by id. This works from any process.
     streamed = [delta async for delta in mus_dbos.read(workflow_id)]
     assert len(streamed) > 0
 
