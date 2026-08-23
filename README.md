@@ -128,7 +128,7 @@ asyncio.run(main())
 
 ### Cache points
 
-A `CachePoint` marks a prompt-cache breakpoint *inside* a message. Everything before it becomes a cacheable prefix that's reused on later calls, so a large shared document or context only has to be processed once, only the content after the cache point is reprocessed.
+A `CachePoint` marks a prompt-cache breakpoint *inside* a message.
 
 ```python
 from mus import CachePoint
@@ -164,7 +164,6 @@ Every provider reports why generation ended. mus normalises those into a common 
 | `malformed_tool_call` | no | derived | derived | derived | `MALFORMED_FUNCTION_CALL` | derived |
 | `pause_turn`, `error`, `unknown` | no | | | | | |
 
-Planned stops are the ones you asked for, and are reported on the result. Only some providers distinguish a natural stop from a stop-sequence hit; where they don't, both arrive as `end_turn`.
 
 <!-- invisible-code-block: python
 # Stub responses for the examples below
@@ -211,8 +210,6 @@ async def truncated():
 asyncio.run(truncated())
 ```
 
-There is no recovery hook, because a half-emitted tool call can't be continued: the assistant turn holds a malformed tool block that providers reject on the next request. Recovery happens at the call site instead, and the continuation prompt is yours to write, since the model has no way of knowing it was cut off unless you tell it.
-
 <!-- invisible-code-block: python
 model.put_text("Continue where you stopped.", " science of map-making.")
 model.put_stop_reason("Continue where you stopped.", "end_turn")
@@ -233,24 +230,6 @@ async def recover():
     assert text == "Cartography, the art and science of map-making."
 
 asyncio.run(recover())
-```
-
-`partial_text` is exactly what the provider emitted, so a cut mid-word joins without a separator. Prompt the continuation to restart the final sentence to trade a few repeated tokens for a clean join.
-
-`pending_tool_call` says whether the turn can be continued at all: `False` to append and carry on, `True` to re-issue it. It is derived from tool blocks left in flight at the stop, so it depends on what the provider exposes. Anthropic, Bedrock, OpenAI and Mistral report it; Google sets it only for `MALFORMED_FUNCTION_CALL`. A tool is never invoked with truncated arguments either way.
-
-Values mus doesn't recognise normalise to `unknown`, which also raises, with `raw` preserved so a new provider value can be handled without waiting for a mus release.
-
-OpenAI-compatible gateways such as OpenRouter normalise the upstream reason, and will report a planned `tool_calls` for a call the upstream actually cut off at the token limit. Where a gateway also sends the upstream value as `native_finish_reason`, mus reads it and takes the unplanned reading, since normalising can hide a truncation but never invent one. Point `OpenAILLM` at a gateway by passing your own client:
-
-```python
-from openai import AsyncClient
-from mus import OpenAILLM
-
-gateway_model = OpenAILLM(
-    "openai/gpt-4o-mini",
-    AsyncClient(base_url="https://openrouter.ai/api/v1", api_key="sk-or-v1-..."),
-)
 ```
 
 
@@ -302,7 +281,7 @@ async def weather_agent(question: str) -> str:
     return text
 ```
 
-Start a run and hand out its id, then read it from anywhere -- another process, a web handler -- while it is still running. Keying the workflow id on your request id also makes the run idempotent: a retried request re-attaches to the existing run rather than starting a second conversation.
+Start a run and hand out its id, then read it from elswhere while it is still running. Keying the workflow id on your request id also makes the run idempotent, so a retried request re-attaches to the existing run rather than starting a second conversation.
 
 ```python
 async def demo():
@@ -311,7 +290,7 @@ async def demo():
     workflow_id = handle.workflow_id
     answer = await handle.get_result()
 
-    # Tail the run's deltas by id -- this works from any process.
+    # Tail the run's deltas by id. This works from any process.
     streamed = [delta async for delta in mus_dbos.read(workflow_id)]
     assert len(streamed) > 0
 
@@ -326,13 +305,11 @@ usage, stop_reason = asyncio.run(demo())
 
 Pass `offset=` to resume mid-stream, so a client that reconnects after a dropped socket or a page refresh continues where it left off rather than replaying the transcript.
 
-**What is guaranteed.** A tool that *completed* before a crash never runs again. A tool interrupted *mid-execution* does run again, because DBOS cannot know whether its side effect landed -- so side-effecting tools still need to be idempotent for that window. What durability buys is that the window is one tool call, not the whole run.
+**Crashes.** A tool that *completed* before a crash never runs again. A tool interrupted *mid-execution* does run again, because DBOS cannot know whether its side effect landed, so side-effecting tools still need to be idempotent for that window.
 
-**Failures reach the reader.** If the run raises, a terminal delta carrying `metadata["mus.error"]` is written before the error propagates, so a failed run is distinguishable from a truncated one.
+**Failures.** If the run raises, a terminal delta carrying `metadata["mus.error"]` is written before the error propagates, so a failed run is distinguishable from a truncated one.
 
-Tools may be defined anywhere -- module level, closures over local state, callable objects, or built dynamically per run. Only the wrapper is registered with DBOS; your tool is reached through mus's own invocation path, so schema validation and the fallback function still apply.
-
-Without the extra installed `mus.dbos` still imports, but `durable()`, `read()` and `attach()` raise. A `durable()` that quietly wasn't durable would be worse than an error -- run the bot unwrapped if you don't need durability.
+Without the extra installed `mus.dbos` still imports, but `durable()`, `read()` and `attach()` raise. 
 
 <!-- invisible-code-block: python
 DBOS.destroy()
