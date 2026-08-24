@@ -1,3 +1,10 @@
+## v0.33.2 (2026-08-24)
+
+### Fix
+
+- openai client
+- openai client
+
 ## v0.33.1 (2026-08-23)
 
 ### Fix
