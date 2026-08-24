@@ -662,3 +662,162 @@ def test_tool_result_text_only_has_no_followup():
     assert tool_msg["content"] == "42"
     # Text-only tool result is the last message; no follow-up user message added.
     assert messages.index(tool_msg) == len(messages) - 1
+
+
+# --- parallel tool calls ----------------------------------------------------
+#
+# ChoiceDeltaToolCall makes `index` the only REQUIRED field; `id` is optional.
+# The protocol keys fragments by index, so reconstructing call boundaries from
+# id alone only holds while calls happen to arrive one whole call at a time.
+
+
+def _frag(index, *, id=None, name=None, arguments=None):
+    """One streamed tool-call fragment."""
+    tc = Mock()
+    tc.index = index
+    tc.id = id
+    tc.function = Mock()
+    tc.function.name = name
+    tc.function.arguments = arguments
+    return tc
+
+
+def _chunk(tool_calls=None, finish_reason=None, content=None):
+    c = Mock()
+    c.choices = [Mock()]
+    c.choices[0].delta = Mock()
+    c.choices[0].delta.content = content
+    c.choices[0].delta.tool_calls = tool_calls
+    c.choices[0].finish_reason = finish_reason
+    c.usage = None
+    return c
+
+
+async def _tool_uses(openai_llm, mock_openai_client, chunks):
+    mock_openai_client.chat.completions.create.return_value = to_async_response(chunks)
+    out = []
+    async for d in openai_llm.stream(prompt="p", history=[], model="m"):
+        if isinstance(d.content, DeltaToolUse):
+            out.append(d.content.data)
+    return out
+
+
+@pytest.mark.asyncio
+async def test_two_tool_calls_streamed_one_after_another(openai_llm, mock_openai_client):
+    """The common case: each call's fragments arrive contiguously."""
+    uses = await _tool_uses(openai_llm, mock_openai_client, [
+        _chunk([_frag(0, id="call_a", name="get_weather", arguments="")]),
+        _chunk([_frag(0, arguments='{"city": "Paris"}')]),
+        _chunk([_frag(1, id="call_b", name="get_weather", arguments="")]),
+        _chunk([_frag(1, arguments='{"city": "Tokyo"}')]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    assert [u.input for u in uses] == [{"city": "Paris"}, {"city": "Tokyo"}]
+    assert [u.id for u in uses] == ["call_a", "call_b"]
+
+
+@pytest.mark.asyncio
+async def test_two_tool_calls_with_interleaved_fragments(openai_llm, mock_openai_client):
+    """Both calls announced first, then their arguments -- keyed by index."""
+    uses = await _tool_uses(openai_llm, mock_openai_client, [
+        _chunk([_frag(0, id="call_a", name="get_weather")]),
+        _chunk([_frag(1, id="call_b", name="get_weather")]),
+        _chunk([_frag(0, arguments='{"city": "Paris"}')]),
+        _chunk([_frag(1, arguments='{"city": "Tokyo"}')]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    assert [u.input for u in uses] == [{"city": "Paris"}, {"city": "Tokyo"}]
+    assert [u.id for u in uses] == ["call_a", "call_b"]
+
+
+@pytest.mark.asyncio
+async def test_two_tool_calls_when_the_first_fragment_carries_no_id(
+    openai_llm, mock_openai_client
+):
+    """`id` is optional, so a gateway may send it on a later fragment."""
+    uses = await _tool_uses(openai_llm, mock_openai_client, [
+        _chunk([_frag(0, name="get_weather")]),
+        _chunk([_frag(0, id="call_a", arguments='{"city": "Paris"}')]),
+        _chunk([_frag(1, id="call_b", name="get_weather")]),
+        _chunk([_frag(1, arguments='{"city": "Tokyo"}')]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    assert [u.input for u in uses] == [{"city": "Paris"}, {"city": "Tokyo"}]
+    assert [u.name for u in uses] == ["get_weather", "get_weather"]
+
+
+@pytest.mark.asyncio
+async def test_two_tool_calls_arriving_in_one_chunk(openai_llm, mock_openai_client):
+    """delta.tool_calls is a list -- one chunk may carry both calls' fragments."""
+    uses = await _tool_uses(openai_llm, mock_openai_client, [
+        _chunk([
+            _frag(0, id="call_a", name="get_weather", arguments='{"city": "Paris"}'),
+            _frag(1, id="call_b", name="get_weather", arguments='{"city": "Tokyo"}'),
+        ]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    assert [u.input for u in uses] == [{"city": "Paris"}, {"city": "Tokyo"}]
+
+
+# --- parallel tool calls in history -----------------------------------------
+
+
+def test_parallel_tool_calls_share_one_assistant_message():
+    """OpenAI requires each assistant tool_calls message to be answered next.
+
+    A turn that calls several tools yields several DeltaToolUse, then several
+    DeltaToolResult. Emitting one assistant message per call interleaves them as
+    assistant/assistant/tool/tool, and the next request is rejected with "An
+    assistant message with 'tool_calls' must be followed by tool messages
+    responding to each 'tool_call_id'". Anthropic, Bedrock and Mistral all group
+    a turn's calls into a single message.
+    """
+    hist = []
+    for i, city in enumerate(["Paris", "Tokyo"]):
+        hist.append(
+            Delta(
+                content=DeltaToolUse(
+                    data=ToolUse(id=f"call_{i}", name="get_weather", input={"city": city})
+                ),
+                stream_id="turn1",
+            )
+        )
+    for i, city in enumerate(["Paris", "Tokyo"]):
+        hist.append(
+            Delta(
+                content=DeltaToolResult(
+                    data=ToolResult(id=f"call_{i}", content=ToolValue(val=f"{city} ok"))
+                ),
+                stream_id="turn1",
+            )
+        )
+
+    messages = deltas_to_messages(hist)
+    assistant = [m for m in messages if m["role"] == "assistant"]
+    assert len(assistant) == 1, (
+        "one assistant message per tool call: " + str([m["role"] for m in messages])
+    )
+    assert [tc["id"] for tc in assistant[0]["tool_calls"]] == ["call_0", "call_1"]
+    # ...and every tool reply follows it.
+    assert [m["role"] for m in messages] == ["assistant", "tool", "tool"]
+
+
+@pytest.mark.asyncio
+async def test_function_choice_any_forces_a_tool_call(openai_llm, mock_openai_client):
+    """``function_choice="any"`` means the model MUST call a tool.
+
+    ``fill()`` and ``fun()`` both rely on it. OpenAI spells it
+    ``tool_choice="required"``; mapping only "auto" and dropping the rest leaves
+    the model free to answer in prose, and fill() then raises "No structured
+    response found" depending on the model's mood.
+    """
+    mock_openai_client.chat.completions.create.return_value = to_async_response(
+        [_chunk(finish_reason="stop")]
+    )
+    async for _ in openai_llm.stream(
+        prompt="p", history=[], model="m", function_choice="any",
+        functions=[{"name": "f", "description": "d", "schema": {"type": "object"}}],
+    ):
+        pass
+    sent = mock_openai_client.chat.completions.create.call_args.kwargs
+    assert sent["tool_choice"] == "required", f"sent tool_choice={sent['tool_choice']!r}"
