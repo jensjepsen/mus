@@ -257,9 +257,25 @@ def deltas_to_messages(
                         "arguments": json.dumps(delta.content.data.input),
                     },
                 }
-                messages.append(
-                    {"role": "assistant", "content": None, "tool_calls": [tool_call]}
-                )
+                # A turn may call several tools. OpenAI requires every
+                # assistant message carrying tool_calls to be followed by tool
+                # messages answering each of its ids, so two adjacent ones are
+                # always invalid however they arose -- the calls belong in one
+                # message. Anthropic, Bedrock and Mistral group them likewise.
+                previous = messages[-1] if messages else None
+                if (
+                    previous is not None
+                    and previous.get("role") == "assistant"
+                    and previous.get("tool_calls")
+                ):
+                    previous["tool_calls"] = [  # type: ignore[typeddict-item]
+                        *previous["tool_calls"],  # type: ignore[typeddict-item]
+                        tool_call,
+                    ]
+                else:
+                    messages.append(
+                        {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+                    )
             elif isinstance(delta.content, DeltaToolResult):
                 tool_result = delta.content.data
                 texts, images = split_tool_result(tool_result)
@@ -298,6 +314,12 @@ def deltas_to_messages(
         else:
             messages.extend(query_to_messages(delta))
     return messages
+
+
+# mus's "any" means the model MUST call a tool -- what ``fill()`` and ``fun()``
+# rely on. OpenAI spells that "required"; leaving it unmapped lets the model
+# answer in prose instead, so fill() succeeds or fails on the model's whim.
+_TOOL_CHOICE: t.Mapping[str, t.Any] = {"auto": "auto", "any": "required"}
 
 
 class StreamArgs(t.TypedDict, total=False):
@@ -413,9 +435,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                 model=self.model,
                 messages=messages,
                 tools=tools,
-                tool_choice="auto"
-                if kwargs.get("function_choice", None) == "auto"
-                else OMIT,
+                tool_choice=_TOOL_CHOICE.get(
+                    kwargs.get("function_choice", None) or "", OMIT
+                ),
                 max_completion_tokens=kwargs.get("max_tokens", None) or OMIT,
                 temperature=kwargs.get("temperature", None) or OMIT,
                 top_p=kwargs.get("top_p", None) or OMIT,
@@ -434,7 +456,11 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             return not stream
 
         if is_stream(response):
-            partial_calls: list[PartialToolCall] = []
+            # Keyed by index, the only field ChoiceDeltaToolCall requires.
+            # `id` is optional and arrives once, so it cannot mark a
+            # boundary: fragments may interleave, and a gateway may send
+            # the id on a later fragment than the name.
+            partial_calls: dict[int, PartialToolCall] = {}
             # finish_reason and usage arrive on *different* chunks, so carry the
             # stop reason forward and attach it to whichever terminal delta we
             # end up emitting.
@@ -454,49 +480,25 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                         f"Only function tool calls are supported, not: {tool_call.type}"
                                     )
 
-                                if tool_call.function:
-                                    if not partial_calls or (
-                                        tool_call.id
-                                        and partial_calls[-1].id
-                                        and tool_call.id != partial_calls[-1].id
-                                    ):
-                                        partial_calls.append(
-                                            PartialToolCall(
-                                                id=tool_call.id if tool_call.id else "",
-                                                name="",
-                                                arguments="",
-                                            )
-                                        )
-                                    last_call = partial_calls.pop()
-
-                                    if not last_call:
-                                        raise ValueError(
-                                            "Received tool call chunk without a starting id"
-                                        )
-
-                                    if tool_call.function.arguments:
-                                        last_call.arguments += (
-                                            tool_call.function.arguments
-                                        )
-
-                                    if tool_call.function.name:
-                                        last_call.name += tool_call.function.name
-
-                                    # yield function call update
-                                    if (
-                                        last_call.id
-                                        and last_call.name
-                                        and tool_call.function.arguments
-                                    ):
+                                call = partial_calls.setdefault(
+                                    tool_call.index,
+                                    PartialToolCall(id="", name="", arguments=""),
+                                )
+                                if tool_call.id:
+                                    call.id = tool_call.id
+                                if tool_call.function.name:
+                                    # Accumulated: a name may be chunked too.
+                                    call.name += tool_call.function.name
+                                if tool_call.function.arguments:
+                                    call.arguments += tool_call.function.arguments
+                                    if call.id and call.name:
                                         yield Delta(
                                             content=DeltaToolInputUpdate(
-                                                name=last_call.name,
-                                                id=last_call.id,
+                                                name=call.name,
+                                                id=call.id,
                                                 data=tool_call.function.arguments,
                                             )
                                         )
-
-                                    partial_calls.append(last_call)
 
                         if first_choice.finish_reason:
                             stop_reason = _map_openai_stop_reason(
@@ -515,7 +517,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                         # upstream truncated, and stop_reason has already
                         # settled that against native_finish_reason.
                         if stop_reason is not None and stop_reason.kind == "tool_use":
-                            for call in partial_calls:
+                            # Index order: the order the model issued them.
+                            for _index in sorted(partial_calls):
+                                call = partial_calls[_index]
                                 parsed_input = repair_json(
                                     call.arguments, return_objects=True
                                 )
@@ -528,7 +532,7 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                                     id=call.id, name=call.name, input=parsed_input
                                 )
                                 yield Delta(content=DeltaToolUse(data=tool_use))
-                            partial_calls = []
+                            partial_calls = {}
 
                     if chunk.usage:
                         stop_reason_emitted = True
