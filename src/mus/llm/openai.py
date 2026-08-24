@@ -263,16 +263,15 @@ def deltas_to_messages(
                 # always invalid however they arose -- the calls belong in one
                 # message. Anthropic, Bedrock and Mistral group them likewise.
                 previous = messages[-1] if messages else None
-                if (
-                    previous is not None
-                    and previous.get("role") == "assistant"
-                    and previous.get("tool_calls")
-                ):
-                    previous["tool_calls"] = [  # type: ignore[typeddict-item]
-                        *previous["tool_calls"],  # type: ignore[typeddict-item]
-                        tool_call,
-                    ]
-                else:
+                merged = False
+                # ``role`` is a literal on every variant, so testing it narrows
+                # the union to the assistant message and keeps this checkable.
+                if previous is not None and previous["role"] == "assistant":
+                    existing = previous.get("tool_calls")
+                    if existing:
+                        previous["tool_calls"] = [*existing, tool_call]
+                        merged = True
+                if not merged:
                     messages.append(
                         {"role": "assistant", "content": None, "tool_calls": [tool_call]}
                     )
