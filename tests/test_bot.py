@@ -157,7 +157,8 @@ async def test_llm_fill(strategy, mock_model):
 """)),
         ])
     llm = Bot(prompt="Test prompt", model=mock_model)
-    result = await llm.fill("Test query", TestStructure, strategy=strategy)
+    filled = await llm.fill("Test query", TestStructure, strategy=strategy)
+    result = filled.value
     assert isinstance(result, TestStructure), f"Expected TestStructure, got {type(result)}"
     assert result.field1 == "test", f"Expected 'test', got {result.field1}"
     assert result.field2 == 123, f"Expected 123, got {result.field2}"
@@ -1365,7 +1366,7 @@ async def test_llm_fill_prefill_json_repair(mock_model, malformed_response, expe
         Delta(content=DeltaText(data=malformed_response)),
     ])
     llm = Bot(prompt="Test prompt", model=mock_model)
-    result = await llm.fill("Test query", TestStructure, strategy="prefill")
+    result = (await llm.fill("Test query", TestStructure, strategy="prefill")).value
     assert isinstance(result, TestStructure)
     assert result.field1 == expected_field1
     assert result.field2 == expected_field2
@@ -1514,3 +1515,43 @@ async def test_prefill_assistant_turn_does_not_end_with_whitespace(mock_model):
     assert prefills[0].val == prefills[0].val.rstrip(), (
         f"prefill ends with whitespace: {prefills[0].val[-12:]!r}"
     )
+
+
+# --- fill() reports what it cost -------------------------------------------
+
+
+@pytest.mark.parametrize("strategy", ["tool_use", "prefill"])
+@pytest.mark.asyncio
+async def test_fill_reports_usage(strategy, mock_model):
+    """fill() spends tokens, so it has to say how many.
+
+    The two strategies lost it differently. ``tool_use`` returned from inside
+    the ``async for``, abandoning the generator before the provider's trailing
+    usage delta was ever produced. ``prefill`` did produce and aggregate it,
+    into an IterableResult it then dropped for the sake of ``.string()``.
+    """
+    if strategy == "tool_use":
+        body = [
+            Delta(content=DeltaText(data="Processing")),
+            Delta(
+                content=DeltaToolUse(
+                    data=ToolUse(
+                        name="test_tool", input={"field1": "test", "field2": 123}, id="abc"
+                    )
+                )
+            ),
+        ]
+    else:
+        body = [Delta(content=DeltaText(data='\n"test",\n"field2": 123\n}\n'))]
+    # Providers report usage on a trailing delta, after the content.
+    mock_model.set_response(
+        body + [Delta(content=DeltaText(data=""), usage=Usage(input_tokens=120, output_tokens=8))]
+    )
+
+    llm = Bot(prompt="Test prompt", model=mock_model)
+    filled = await llm.fill("Test query", TestStructure, strategy=strategy)
+
+    assert filled.value.field1 == "test"
+    assert filled.value.field2 == 123
+    assert filled.usage.input_tokens == 120, f"got {filled.usage}"
+    assert filled.usage.output_tokens == 8, f"got {filled.usage}"

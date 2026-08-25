@@ -444,7 +444,8 @@ async def test_fill_works_through_a_durable_bot(reset_dbos):
             "who", ToolUse(id="f1", name="Person", input={"name": "Ada", "age": 36})
         )
         bot = mus_dbos.durable(Bot(prompt="t", model=model))
-        person = t.cast(Person, await bot.fill("who", Person))
+        # No cast: fill() is now typed as returning the structure passed in.
+        person = (await bot.fill("who", Person)).value
         return {"name": person.name, "age": person.age}
 
     out = await (await DBOS.start_workflow_async(run)).get_result()

@@ -1,4 +1,6 @@
 import typing as t
+
+from ..types import FillableT
 from dataclasses import dataclass
 
 from abc import ABC, abstractmethod
@@ -233,6 +235,19 @@ class Usage:
     output_tokens: int = 0
     cache_read_input_tokens: int = 0
     cache_written_input_tokens: int = 0
+
+
+@dataclass
+class Filled(t.Generic[FillableT]):
+    """What ``Bot.fill`` returns: the structure, and what producing it cost.
+
+    A wrapper rather than the bare structure so usage is reachable at all --
+    the tokens are spent either way, and every other entry point already
+    reports them through ``IterableResult.usage``.
+    """
+
+    value: FillableT
+    usage: Usage
 
 
 StopReasonKind = t.Literal[

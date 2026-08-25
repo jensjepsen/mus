@@ -23,6 +23,7 @@ from .types import (
     ToolResult,
     ToolUse,
     ToolValue,
+    Filled,
     RetryPolicy,
     STREAM_EXTRA_ARGS,
     MODEL_TYPE,
@@ -59,7 +60,7 @@ from ..functions import (
     ToolCallable,
     verify_schema_inputs,
 )
-from ..types import FillableType
+from ..types import FillableT
 
 from ..exceptions import ToolNotFoundError
 
@@ -232,6 +233,18 @@ class ToolRunner(t.Protocol):
     async def __call__(
         self, tool_use: ToolUse, invoke: t.Callable[[], t.Awaitable[ToolValue]]
     ) -> ToolValue: ...
+
+
+async def _fill_tool_runner(
+    tool_use: ToolUse, invoke: t.Callable[[], t.Awaitable[ToolValue]]
+) -> ToolValue:
+    """``fill`` wants the arguments, not the call.
+
+    The "tool" it declares is the structure being filled, so there is nothing
+    to execute. Not executing also keeps the schema-mismatch behaviour it had
+    when it returned from mid-stream instead of draining.
+    """
+    return ToolValue(val="")
 
 
 async def _default_tool_runner(
@@ -662,23 +675,42 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
     async def fill(
         self,
         query: QueryType,
-        structure: t.Type[FillableType],
+        structure: t.Type[FillableT],
         strategy: t.Literal["tool_use", "prefill"] = "tool_use",
-    ) -> FillableType:
+    ) -> Filled[FillableT]:
         if strategy == "tool_use":
             as_tool = ToolCallable(
                 function=structure,  # type: ignore
                 schema=to_schema(structure),
             )
-            async for msg in self.query(
-                query, functions=[as_tool], function_choice="any", no_stream=True
-            ):
-                if isinstance(msg.content, DeltaToolUse):
-                    input = msg.content.data.input
-                    input = verify_schema_inputs(as_tool.schema, input)
-                    return structure(**input)
-            else:
+            result = IterableResult(
+                self.query(
+                    query,
+                    functions=[as_tool],
+                    function_choice="any",
+                    no_stream=True,
+                    tool_runner=_fill_tool_runner,
+                )
+            )
+            value: t.Optional[FillableT] = None
+            # Read on past the tool call instead of returning from mid-stream:
+            # providers report usage on a trailing delta, so stopping there
+            # meant the number was never produced at all, though the tokens
+            # were spent regardless.
+            async for msg in result:
+                if value is None and isinstance(msg.content, DeltaToolUse):
+                    input = verify_schema_inputs(
+                        as_tool.schema, msg.content.data.input
+                    )
+                    value = structure(**input)
+                elif isinstance(msg.content, DeltaToolResult):
+                    # The turn is fully drained before any result appears, so
+                    # usage has already accrued. Stop: reading on would issue a
+                    # second, billed request feeding the result back.
+                    break
+            if value is None:
                 raise ValueError("No structured response found")
+            return Filled(value=value, usage=result.usage)
         elif strategy == "prefill":
             schema = to_schema(structure)
             first_prop = list(schema["schema"]["properties"].keys())[0]
@@ -704,18 +736,18 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                     echo=True,
                 )
             )
-            result = (
-                await self(agumented_query, stop_sequences=["```"]).string()
-            ).strip()
-            if result.startswith("```"):
-                result = result[3:]
-            if result.endswith("```"):
-                result = result[:-3]
-            input = repair_json(result, return_objects=True)
+            # Kept, not discarded: the result object is where usage accrues.
+            filled = self(agumented_query, stop_sequences=["```"])
+            text = (await filled.string()).strip()
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            input = repair_json(text, return_objects=True)
             if not isinstance(input, dict):
-                raise ValueError(f"Failed to decode JSON: {result}")
+                raise ValueError(f"Failed to decode JSON: {text}")
             input = verify_schema_inputs(schema, input)
-            return structure(**input)
+            return Filled(value=structure(**input), usage=filled.usage)
 
     def fun(self, function: LLMDecoratedFunctionType[LLMDecoratedFunctionReturnType]):
         async def decorated_function(
