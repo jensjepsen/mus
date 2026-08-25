@@ -21,3 +21,8 @@ class FillableTypeDataclass(FillableTypeBase, t.Protocol):
 
 
 FillableType = t.Union[FillableTypeDict, FillableTypeDataclass]
+
+
+# Binds to whatever concrete structure the caller passes, so ``fill(q, Weather)``
+# is typed as returning a ``Weather`` rather than the union above.
+FillableT = t.TypeVar("FillableT", bound=FillableType)
