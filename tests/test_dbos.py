@@ -664,3 +664,47 @@ async def test_correlation_ids_survive_a_crash(tmp_path):
         f"{recovered['distinct_stream_ids']} vs {clean['distinct_stream_ids']}"
     )
     assert recovered["normalised"] == clean["normalised"]
+
+
+# --- a crash while the provider is still streaming --------------------------
+
+
+@pytest.mark.asyncio
+async def test_crash_mid_provider_turn_survives_a_different_re_stream(tmp_path):
+    """Recovery must not depend on the provider re-emitting the same deltas.
+
+    A kill mid-turn leaves ``mus.provider_turn`` uncheckpointed, so recovery
+    re-runs it live -- and a live model answers with a different number of
+    deltas. If each delta is written from the workflow body, every write is a
+    positional op, so the delta count becomes part of the determinism contract
+    and DBOS aborts the run:
+
+        DBOSUnexpectedStepError: ... DBOS.writeStream was recorded when
+        DBOS.closeStream was expected.
+
+    The other crash tests here all kill *after* the turn checkpointed, where
+    the replay is identical by construction, so none of them can see this.
+    """
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_stream_determinism_helper.py"
+    db = tmp_path / "sd.sqlite"
+    marker = tmp_path / "sd.marker"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, (
+        "recovery aborted:\n" + recovered.stderr[-600:]
+    )
+    assert "RESULT recovered" in recovered.stdout, recovered.stdout
