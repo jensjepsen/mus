@@ -44,11 +44,19 @@ import typing as t
 import uuid
 
 from .llm.llm import Bot, IterableResult
-from .llm.types import LLM, Delta, DeltaText, ToolUse, ToolValue
+from .llm.types import LLM, Delta, DeltaStreamReset, DeltaText, ToolUse, ToolValue
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["durable", "read", "attach", "DurableBot", "sleep", "HAS_DBOS"]
+__all__ = [
+    "durable",
+    "read",
+    "attach",
+    "DurableBot",
+    "OnDelta",
+    "sleep",
+    "HAS_DBOS",
+]
 
 # Typed as Any so the module type-checks whether or not dbos is installed;
 # every use is guarded by HAS_DBOS.
@@ -142,16 +150,37 @@ def _provider_turn_step() -> t.Callable:
 
         @DBOS.step(name="mus.provider_turn")
         async def _provider_turn(
-            inner: LLM, call_kwargs: dict, queue: "asyncio.Queue"
+            inner: LLM,
+            call_kwargs: dict,
+            queue: "asyncio.Queue",
+            finished: t.Optional["asyncio.Queue"],
+            key: t.Optional[str],
+            on_delta: t.Optional[OnDelta],
         ) -> list:
-            """One provider call: streams deltas live and returns them.
+            """One provider call: streams deltas live, writes them, returns them.
 
-            The queue is in-memory -- the step runs as a task in the same event
+            The queues are in-memory -- the step runs as a task in the same event
             loop as the workflow body, so tokens need no durable channel to get
-            there. An earlier version wrote them to a DBOS stream instead, which
-            was worse in two ways: a crash mid-turn left an abandoned prefix
-            that cannot be deleted (streams are append-only), and the reader had
-            to distinguish it from the retry's output by counting offsets.
+            there.
+
+            The deltas are written to the durable stream *from inside this step*,
+            which is the load-bearing detail. A write issued from the workflow
+            body is a positional, determinism-checked operation, so writing one
+            per delta would make the number of deltas part of the workflow's
+            determinism contract. A turn interrupted mid-stream is not
+            checkpointed, so recovery re-runs it against a live model, which
+            answers with a different number of deltas -- and the run would then
+            abort with DBOSUnexpectedStepError, permanently. Writes issued inside
+            a step are not positional, so the count is free to vary.
+
+            Each delta makes a round trip before being written: it goes up to
+            mus, which stamps stream_id and tool_invocation_id and applies the
+            transform hook, and the finished delta comes back here. That keeps
+            the durable stream identical to what ``query`` yields without
+            duplicating any of mus's tagging. The trip is exactly 1:1 because
+            ``Bot.query`` yields every provider delta exactly once; the deltas it
+            synthesises itself are emitted outside that loop and written by the
+            body instead.
 
             The return value is what makes replay work: it is checkpointed, so a
             recovered run gets the turn back without re-calling the provider.
@@ -159,10 +188,47 @@ def _provider_turn_step() -> t.Callable:
             keeps that storage linear in conversation size.
             """
             out = []
+            opened = False
             try:
                 async for delta in inner.stream(**call_kwargs):
                     out.append(delta)
                     queue.put_nowait(delta)
+                    if finished is None:
+                        # Nobody is consuming this turn's deltas for the stream
+                        # -- fill() and fun() drive Bot.query directly, and
+                        # their deltas have never been published. Don't wait for
+                        # a finished delta that is not coming.
+                        continue
+                    tagged = await finished.get()
+                    if tagged is _END:
+                        # The consumer stopped reading, so no finished delta is
+                        # coming. Stop rather than block the workflow forever.
+                        break
+                    if not opened and tagged.stream_id is not None:
+                        opened = True
+                        # An interrupted attempt leaves its deltas in the stream
+                        # -- streams are append-only, so they cannot be taken
+                        # out. They carry this same stream_id, because the id
+                        # comes from a checkpointed step and replays identically,
+                        # which makes them indistinguishable from what follows.
+                        # Opening the turn with a reset tells a reader to discard
+                        # whatever it accumulated under this id before believing
+                        # what comes next. On a first attempt there is nothing to
+                        # discard and it costs a reader nothing.
+                        await DBOS.write_stream_async(
+                            key,
+                            Delta(
+                                content=DeltaStreamReset(
+                                    stream_id=tagged.stream_id,
+                                    reason="provider turn (re)started",
+                                    attempt=0,
+                                ),
+                                stream_id=tagged.stream_id,
+                            ),
+                        )
+                    await DBOS.write_stream_async(key, tagged)
+                    if on_delta is not None:
+                        await on_delta(tagged)
             finally:
                 # Always signals "this step actually executed", so the consumer
                 # can tell a live run from a replay off the checkpoint.
@@ -172,6 +238,29 @@ def _provider_turn_step() -> t.Callable:
         _PROVIDER_TURN = _provider_turn
     assert _PROVIDER_TURN is not None
     return _PROVIDER_TURN
+
+
+class OnDelta(t.Protocol):
+    """Called for each delta, from inside the step that produced it.
+
+    The point is *where* it runs. A write issued from the workflow body is a
+    positional, determinism-checked operation, so a consumer writing one record
+    per delta would put the delta count back into the workflow's determinism
+    contract -- and a turn re-run live after a crash emits a different number of
+    deltas, which would then abort the run permanently. Writes issued inside a
+    step cost no positional op, so this is the seam for a consumer that wants
+    its own durable output per delta.
+
+    Two consequences of running inside a step. Writes are at-least-once rather
+    than exactly-once, since a retried step runs the hook again. And a replayed
+    turn does not execute its step, so the hook does not fire for it: it runs
+    exactly when the provider was actually called.
+
+    Raising propagates: the step fails and the turn fails with it, rather than
+    the error being swallowed where nobody would see it.
+    """
+
+    async def __call__(self, delta: Delta) -> None: ...
 
 
 _PROVIDER_TURN: t.Optional[t.Callable] = None
@@ -185,8 +274,39 @@ class _DurableLLM(LLM):
 
     provider = "durable"
 
-    def __init__(self, inner: LLM):
+    def __init__(self, inner: LLM, key: str, on_delta: t.Optional[OnDelta] = None):
         self.inner = inner
+        self.key = key
+        self.on_delta = on_delta
+        # Set while a turn's step is streaming; the finished deltas go back to
+        # it so the step can write them (see _provider_turn).
+        self._finished: t.Optional[asyncio.Queue] = None
+        self._awaiting = 0
+        # Deltas coming off a checkpoint: the step that produced them wrote
+        # them the first time round and does not run again.
+        self._replayed = 0
+        # Set only while DurableBot.query is the consumer. Other entry points
+        # (fill, fun) drive Bot.query directly and publish nothing.
+        self.writing = False
+
+    def deliver(self, delta: Delta) -> bool:
+        """Hand a finished delta back to the running step to be written.
+
+        False means no step is waiting for it -- either the turn's stream is
+        done and this delta was synthesised by mus (a tool result, the history),
+        or the turn was replayed off its checkpoint and was never written by a
+        step at all. Either way the caller writes it instead.
+        """
+        if self._replayed > 0:
+            # Already in the stream, written by the step on the run that
+            # actually called the provider. Writing again would duplicate it.
+            self._replayed -= 1
+            return True
+        if self._finished is None or self._awaiting <= 0:
+            return False
+        self._awaiting -= 1
+        self._finished.put_nowait(delta)
+        return True
 
     async def stream(self, **kwargs):
         if DBOS.workflow_id is None:
@@ -197,8 +317,19 @@ class _DurableLLM(LLM):
         call_kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
         queue: asyncio.Queue = asyncio.Queue()
+        writing = self.writing
+        finished: t.Optional[asyncio.Queue] = asyncio.Queue() if writing else None
+        self._finished = finished
+        self._awaiting = 0
         task = asyncio.ensure_future(
-            _provider_turn_step()(self.inner, call_kwargs, queue)
+            _provider_turn_step()(
+                self.inner,
+                call_kwargs,
+                queue,
+                finished,
+                self.key if writing else None,
+                self.on_delta if writing else None,
+            )
         )
 
         streamed = False
@@ -216,6 +347,9 @@ class _DurableLLM(LLM):
                     if item is _END:
                         break
                     streamed = True
+                    if writing:
+                        # One finished delta is owed back per raw one handed up.
+                        self._awaiting += 1
                     yield item
                 elif task.done():
                     # The step returned without executing -- a replay off its
@@ -226,10 +360,18 @@ class _DurableLLM(LLM):
         finally:
             if getter is not None:
                 getter.cancel()
+            # Release the step if the consumer stopped before the turn ended,
+            # rather than leaving it blocked on a delta that will never come.
+            if finished is not None and self._awaiting > 0:
+                finished.put_nowait(_END)
+            self._finished = None
+            self._awaiting = 0
 
         deltas = await task
         if not streamed:
             # Replayed: the deltas come from the checkpoint rather than live.
+            if writing:
+                self._replayed = len(deltas)
             for delta in deltas:
                 yield delta
 
@@ -300,12 +442,15 @@ async def _new_id() -> str:
 class DurableBot:
     """A Bot whose runs are checkpointed and whose deltas are streamed durably."""
 
-    def __init__(self, bot: Bot, key: str = "mus"):
+    def __init__(
+        self, bot: Bot, key: str = "mus", on_delta: t.Optional[OnDelta] = None
+    ):
         _require_dbos("durable()")
         self._bot = bot
         self._key = key
         self._closed = False
-        bot.client = _DurableLLM(bot.client)
+        self._client = _DurableLLM(bot.client, key, on_delta)
+        bot.client = self._client
         bot.default_args = t.cast(
             t.Any,
             {
@@ -317,11 +462,21 @@ class DurableBot:
 
     def query(self, *args, **kwargs) -> t.AsyncGenerator[Delta, None]:
         async def _gen():
+            self._client.writing = True
             try:
                 async for delta in self._bot.query(*args, **kwargs):
-                    # Written from workflow scope: exactly-once, and already
-                    # tagged and hook-transformed by mus.
-                    await DBOS.write_stream_async(self._key, delta)
+                    # Provider deltas go back to the step that produced them, to
+                    # be written from inside it -- a write issued here in the
+                    # workflow body is a positional op, and one per delta would
+                    # make the delta count part of the determinism contract, so
+                    # a turn re-run live after a crash could never recover.
+                    #
+                    # What is left is the deltas mus synthesises itself: tool
+                    # results, the history, a stream reset. No step is waiting
+                    # for those, and their number is fixed by the checkpointed
+                    # steps around them, so writing them here is safe.
+                    if not self._client.deliver(delta):
+                        await DBOS.write_stream_async(self._key, delta)
                     yield delta
             except BaseException as exc:
                 # Otherwise a failed run is indistinguishable from a truncated
@@ -338,6 +493,8 @@ class DurableBot:
                         "could not write the failure into the stream", exc_info=True
                     )
                 raise
+            finally:
+                self._client.writing = False
 
         return _gen()
 
@@ -363,14 +520,16 @@ class DurableBot:
         await DBOS.close_stream_async(self._key)
 
 
-def durable(bot: Bot, key: str = "mus") -> DurableBot:
+def durable(
+    bot: Bot, key: str = "mus", on_delta: t.Optional[OnDelta] = None
+) -> DurableBot:
     """Make a bot's runs durable. Raises without the ``dbos`` extra installed.
 
     Deliberately not a silent passthrough: the name promises a guarantee, and
     quietly not providing it would leave callers believing completed tools never
     re-fire. Run the bot unwrapped if you don't want durability.
     """
-    return DurableBot(bot, key)
+    return DurableBot(bot, key, on_delta)
 
 
 async def read(

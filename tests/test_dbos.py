@@ -18,7 +18,7 @@ import pytest
 
 pytest.importorskip("dbos")
 
-from dbos import DBOS, DBOSConfig  # noqa: E402
+from dbos import DBOS, DBOSConfig, SetWorkflowID  # noqa: E402
 
 from mus import Delta, DeltaText, DeltaToolResult, DeltaToolUse, StubLLM  # noqa: E402
 from mus.llm.llm import Bot  # noqa: E402
@@ -664,3 +664,104 @@ async def test_correlation_ids_survive_a_crash(tmp_path):
         f"{recovered['distinct_stream_ids']} vs {clean['distinct_stream_ids']}"
     )
     assert recovered["normalised"] == clean["normalised"]
+
+
+# --- a crash while the provider is still streaming --------------------------
+
+
+@pytest.mark.asyncio
+async def test_crash_mid_provider_turn_survives_a_different_re_stream(tmp_path):
+    """Recovery must not depend on the provider re-emitting the same deltas.
+
+    A kill mid-turn leaves ``mus.provider_turn`` uncheckpointed, so recovery
+    re-runs it live -- and a live model answers with a different number of
+    deltas. If each delta is written from the workflow body, every write is a
+    positional op, so the delta count becomes part of the determinism contract
+    and DBOS aborts the run:
+
+        DBOSUnexpectedStepError: ... DBOS.writeStream was recorded when
+        DBOS.closeStream was expected.
+
+    The other crash tests here all kill *after* the turn checkpointed, where
+    the replay is identical by construction, so none of them can see this.
+    """
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_stream_determinism_helper.py"
+    db = tmp_path / "sd.sqlite"
+    marker = tmp_path / "sd.marker"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, (
+        "recovery aborted:\n" + recovered.stderr[-600:]
+    )
+    assert "RESULT recovered" in recovered.stdout, recovered.stdout
+
+
+# --- a consumer writing from inside the step --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_delta_hook_writes_without_positional_cost(reset_dbos):
+    """A consumer needs the same escape hatch mus uses for its own deltas.
+
+    Anything written from the workflow body is a positional, determinism-checked
+    op, so a consumer writing one record per delta would put the delta count
+    back into the determinism contract -- the exact thing that makes a turn
+    re-run live after a crash unrecoverable. The hook runs inside the provider
+    step, where writes cost no positional op.
+    """
+
+    async def echo(delta):
+        if isinstance(delta.content, DeltaText) and delta.content.data:
+            await DBOS.write_stream_async("mine", {"text": delta.content.data})
+
+    async def run_with(n: int) -> int:
+        model = StubLLM()
+        for i in range(n):
+            model.put_text("go", f"tok{i} ")
+        bot = mus_dbos.durable(
+            Bot(prompt="t", model=model), key=f"mus{n}", on_delta=echo
+        )
+        async for _ in bot.query("go"):
+            pass
+        await bot.close()
+        await DBOS.close_stream_async("mine")
+        return n
+
+    @DBOS.workflow()
+    async def short() -> int:
+        return await run_with(3)
+
+    @DBOS.workflow()
+    async def long() -> int:
+        return await run_with(25)
+
+    async def ops_for(wf, wf_id):
+        with SetWorkflowID(wf_id):
+            await (await DBOS.start_workflow_async(wf)).get_result()
+        steps = await DBOS.list_workflow_steps_async(wf_id)
+        mine = [v async for v in DBOS.read_stream_async(wf_id, "mine")]
+        return len(steps), len(mine)
+
+    short_ops, short_mine = await ops_for(short, "hook-short")
+    long_ops, long_mine = await ops_for(long, "hook-long")
+
+    # The consumer's own records scale with the deltas...
+    assert (short_mine, long_mine) == (3, 25), (short_mine, long_mine)
+    # ...while the workflow's positional op count does not.
+    assert short_ops == long_ops, (
+        f"the hook cost positional ops: {short_ops} vs {long_ops}"
+    )
