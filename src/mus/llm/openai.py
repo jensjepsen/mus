@@ -48,6 +48,7 @@ from openai.types.chat import (
 from openai._types import Omit
 import json
 import dataclasses
+import uuid
 from json_repair import repair_json
 
 
@@ -481,7 +482,19 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
 
                                 call = partial_calls.setdefault(
                                     tool_call.index,
-                                    PartialToolCall(id="", name="", arguments=""),
+                                    # Seeded with an id of our own: `id` is
+                                    # optional on every fragment, and a gateway
+                                    # that never sends one would otherwise leave
+                                    # every call sharing the empty string. mus
+                                    # keys tool_invocation_id on this, so the
+                                    # calls would collapse into one invocation
+                                    # and their results could not be paired.
+                                    # A real id from the provider replaces it.
+                                    PartialToolCall(
+                                        id=f"call:{uuid.uuid4().hex[:8]}",
+                                        name="",
+                                        arguments="",
+                                    ),
                                 )
                                 if tool_call.id:
                                     call.id = tool_call.id

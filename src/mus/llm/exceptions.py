@@ -4,6 +4,19 @@ if t.TYPE_CHECKING:
     from .types import History, StopReason
 
 
+def _rebuild_exception(
+    cls: t.Type[BaseException], args: tuple, state: dict
+) -> BaseException:
+    """Reconstruct an exception without going through ``__init__``.
+
+    Module level so it is picklable itself. See ``LLMException.__reduce__``.
+    """
+    exc = cls.__new__(cls)
+    BaseException.__init__(exc, *args)
+    exc.__dict__.update(state)
+    return exc
+
+
 class LLMException(Exception):
     """Base exception for all LLM-related errors."""
 
@@ -21,6 +34,26 @@ class LLMException(Exception):
         self.status_code = status_code
         self.request_id = request_id
         self.raw_response = raw_response
+
+    def __reduce__(self):
+        """Make these survive a trip through pickle.
+
+        The default reconstruction calls ``cls(*args)``, and ``args`` holds only
+        the message -- everything else here is keyword-only, so rebuilding fails
+        with a TypeError. That breaks any path that carries an exception across
+        processes: a durable run checkpoints a failed step by serialising the
+        exception and re-raises it from that record when recovering in a fresh
+        process, so an unreconstructable one makes the recovery fail inside the
+        deserialiser, before any mus code runs.
+
+        Restoring from ``__dict__`` rather than naming the arguments keeps every
+        subclass working without its own ``__reduce__``, including fields they
+        add of their own.
+        """
+        return (
+            _rebuild_exception,
+            (type(self), self.args, dict(self.__dict__)),
+        )
 
 
 class LLMAuthenticationException(LLMException):

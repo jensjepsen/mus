@@ -925,3 +925,53 @@ def test_query_to_messages_skips_cache_point():
     assert len(messages) == 2
     assert messages[0].content == "User message"
     assert messages[1].content == "more"
+
+@pytest.mark.asyncio
+async def test_parallel_calls_to_one_function_get_distinct_ids(
+    mistral_llm, mock_mistral_client
+):
+    """Two calls to the same function must stay distinguishable.
+
+    ``tool_call.id or tool_call.function.name`` falls back to the function name
+    when the provider omits an id, so "weather in Paris and Tokyo" produces two
+    calls sharing one id. mus keys ``tool_invocation_id`` on that id, so the two
+    invocations collapse into one and their results cannot be paired with the
+    calls that produced them. Gemini had the same bug; it was fixed there by
+    suffixing the name with a short uuid.
+    """
+    def chunk(name, arguments, tool_id, finish_reason=None):
+        c = Mock()
+        c.data = Mock()
+        c.data.choices = [Mock()]
+        c.data.choices[0].delta = Mock()
+        c.data.choices[0].delta.content = None
+        fn = Mock()
+        fn.name = name
+        fn.arguments = arguments
+        c.data.choices[0].delta.tool_calls = [Mock(id=tool_id, function=fn)]
+        c.data.choices[0].finish_reason = finish_reason
+        return c
+
+    def dummy_func(city: str) -> str:
+        """Dummy function for testing"""
+        return "result"
+
+    mock_mistral_client.chat.stream_async.return_value = to_async_response([
+        # The provider sends no id for either call.
+        chunk("get_weather", '{"city": "Paris"}', None),
+        chunk("get_weather", '{"city": "Tokyo"}', None, finish_reason="tool_calls"),
+    ])
+
+    uses = [
+        d.content.data
+        async for d in mistral_llm.stream(
+            prompt="p", model="m", history=[], functions=[to_schema(dummy_func)]
+        )
+        if isinstance(d.content, DeltaToolUse)
+    ]
+
+    assert len(uses) == 2, uses
+    assert uses[0].id != uses[1].id, (
+        "both calls share one id, so their results cannot be paired: "
+        f"{[u.id for u in uses]}"
+    )

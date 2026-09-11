@@ -3,6 +3,7 @@ import json
 from json_repair import repair_json
 import logging
 import random
+import hashlib
 import typing as t
 import uuid
 from textwrap import dedent
@@ -253,6 +254,26 @@ async def _default_tool_runner(
     return await invoke()
 
 
+def _tool_invocation_id(stream_id: str, provider_id: str) -> str:
+    """Pair a tool use with its result, derived rather than minted.
+
+    Derived because a durable backend replaces ``id_generator`` with a
+    checkpointed step, and a step is a positional operation: minting one id per
+    tool made the NUMBER of tools a turn asks for part of the workflow's
+    determinism contract. A turn interrupted mid-stream re-runs against a live
+    model, which may ask for fewer tools the second time, and the recovery then
+    aborts permanently.
+
+    Both inputs are stable where it matters. ``stream_id`` identifies the turn,
+    so the same provider id reused in a later turn does not collide. The
+    provider id is unique within a turn -- every adapter guarantees that,
+    suffixing its own value where the provider omits one -- and a replayed turn
+    serves identical deltas from its checkpoint, so the derivation reproduces
+    exactly.
+    """
+    return hashlib.sha256(f"{stream_id}:{provider_id}".encode()).hexdigest()[:32]
+
+
 class IdGenerator(t.Protocol):
     """Mints the correlation ids mus stamps on deltas.
 
@@ -484,28 +505,25 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                         last_stop_reason = None
                         partial_text = ""
 
-                    tool_id_to_uuid: dict[str, str] = {}
                     pending_tool_uses: list[ToolUse] = []
                     try:
                         async for msg in self.client.stream(**stream_kwargs):
                             # Assign tool_invocation_id for tool-related deltas
                             if isinstance(msg.content, DeltaToolInputUpdate):
-                                provider_id = msg.content.id
-                                if provider_id not in tool_id_to_uuid:
-                                    tool_id_to_uuid[provider_id] = await new_id()
                                 msg = replace(
                                     msg,
                                     stream_id=stream_id,
-                                    tool_invocation_id=tool_id_to_uuid[provider_id],
+                                    tool_invocation_id=_tool_invocation_id(
+                                        stream_id, msg.content.id
+                                    ),
                                 )
                             elif isinstance(msg.content, DeltaToolUse):
-                                provider_id = msg.content.data.id
-                                if provider_id not in tool_id_to_uuid:
-                                    tool_id_to_uuid[provider_id] = await new_id()
                                 msg = replace(
                                     msg,
                                     stream_id=stream_id,
-                                    tool_invocation_id=tool_id_to_uuid[provider_id],
+                                    tool_invocation_id=_tool_invocation_id(
+                                        stream_id, msg.content.data.id
+                                    ),
                                 )
                             else:
                                 msg = replace(msg, stream_id=stream_id)
@@ -570,7 +588,9 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
                                     ToolResult(id=tool_use.id, content=func_result)
                                 ),
                                 stream_id=stream_id,
-                                tool_invocation_id=tool_id_to_uuid[tool_use.id],
+                                tool_invocation_id=_tool_invocation_id(
+                                    stream_id, tool_use.id
+                                ),
                             )
                             if transform_delta_hook:
                                 fd = await transform_delta_hook(fd)
