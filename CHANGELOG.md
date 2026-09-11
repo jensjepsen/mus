@@ -1,3 +1,9 @@
+## v0.35.1 (2026-09-11)
+
+### Fix
+
+- tool id derived instead of a dbos step
+
 ## v0.35.0 (2026-09-11)
 
 ### Feat
