@@ -1,3 +1,13 @@
+## v0.35.0 (2026-09-11)
+
+### Feat
+
+- delta hook from within step
+
+### Fix
+
+- durable stream determinism
+
 ## v0.34.0 (2026-08-25)
 
 ### Feat
