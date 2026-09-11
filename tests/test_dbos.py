@@ -707,7 +707,23 @@ async def test_crash_mid_provider_turn_survives_a_different_re_stream(tmp_path):
     assert recovered.returncode == 0, (
         "recovery aborted:\n" + recovered.stderr[-600:]
     )
-    assert "RESULT recovered" in recovered.stdout, recovered.stdout
+    import json
+
+    got = json.loads(
+        next(l for l in recovered.stdout.splitlines() if l.startswith("RESULT "))[7:]
+    )
+    # Recovering is not enough: the abandoned attempt's deltas are still in the
+    # stream -- it is append-only -- so what makes a recovered run readable is
+    # the DeltaStreamReset opening the re-run, which rolls them back. Without
+    # it this run still completes, and a reconnecting client silently reads the
+    # truncated first attempt spliced onto the second.
+    assert got["attached"].strip() == "RE0 RE1 RE2", (
+        "the abandoned attempt leaked into what a client reads: "
+        + repr(got["attached"])
+    )
+    assert "first" not in got["attached"], got["attached"]
+    # The records are all still there; only the reading of them changed.
+    assert got["records"] > 3, got
 
 
 # --- a consumer writing from inside the step --------------------------------
@@ -765,3 +781,219 @@ async def test_on_delta_hook_writes_without_positional_cost(reset_dbos):
     assert short_ops == long_ops, (
         f"the hook cost positional ops: {short_ops} vs {long_ops}"
     )
+
+
+@pytest.mark.asyncio
+async def test_recovery_survives_a_re_run_asking_for_fewer_tools(tmp_path):
+    """The number of tools a turn asks for must not decide recoverability.
+
+    ``tool_invocation_id`` is minted by a ``mus.id`` step, so one positional op
+    is recorded per tool. A turn killed mid-stream re-runs live, and a model
+    that asks for fewer tools the second time leaves the body reaching a
+    different operation where ``mus.id`` was recorded:
+
+        DBOSUnexpectedStepError: ... mus.id was recorded when mus.tool was
+        expected.
+
+    Asking for *more* tools survives, since the extra ids land past the recorded
+    tail -- so in production this shows up intermittently, in one direction.
+    """
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_tool_id_helper.py"
+    db = tmp_path / "tid.sqlite"
+    marker = tmp_path / "tid.marker"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), str(db), str(marker), "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, (
+        "recovery aborted:\n" + recovered.stderr[-600:]
+    )
+    assert "RESULT recovered" in recovered.stdout, recovered.stdout
+
+
+@pytest.mark.asyncio
+async def test_recovery_replays_a_checkpointed_provider_failure(tmp_path):
+    """A run that retried past a transient error must still be recoverable.
+
+    DBOS checkpoints a failed step by serialising the exception and re-raises it
+    from that record on replay. mus exceptions take ``provider`` keyword-only,
+    so it is absent from ``args`` and pickle cannot rebuild them:
+
+        TypeError: LLMException.__init__() missing 1 required keyword-only
+        argument: 'provider'
+
+    The recovery then dies inside the deserialiser, before any mus code runs --
+    so surviving a transient provider error leaves the run unrecoverable if it
+    later crashes. See tests/test_exceptions.py for the root cause.
+    """
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_retry_helper.py"
+    args = [
+        str(tmp_path / "rc.sqlite"),
+        str(tmp_path / "rc.marker"),
+        str(tmp_path / "rc.attempts"),
+    ]
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), *args, "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), *args, "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, (
+        "recovery aborted:\n" + recovered.stderr[-600:]
+    )
+    assert "RESULT recovered" in recovered.stdout, recovered.stdout
+
+
+@pytest.mark.asyncio
+async def test_on_delta_does_not_re_fire_for_a_replayed_turn(tmp_path):
+    """A recovered run must not hand the consumer the same deltas twice.
+
+    The hook runs inside ``mus.provider_turn``; a turn served from its
+    checkpoint never executes that step. If it fired anyway, every consumer
+    counting tokens or streaming to a client would double-count each recovery.
+    """
+    import json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_hook_replay_helper.py"
+    args = [
+        str(tmp_path / "hr.sqlite"),
+        str(tmp_path / "hr.marker"),
+        str(tmp_path / "hr.hooklog"),
+    ]
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), *args, "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), *args, "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, recovered.stderr[-600:]
+    got = json.loads(
+        next(l for l in recovered.stdout.splitlines() if l.startswith("RESULT "))[7:]
+    )
+
+    # The first run saw the turn that was checkpointed before the crash.
+    assert "DeltaText:PROLOGUE " in got["first"], got
+    # The recovery must not see it again: that turn came off its checkpoint.
+    assert "DeltaText:PROLOGUE " not in got["recovery"], (
+        "the hook re-fired for a replayed turn: " + str(got["recovery"])
+    )
+    assert not any(e.startswith("DeltaToolUse") for e in got["recovery"]), got
+    # It must still fire for the continuation, which did run live.
+    assert got["recovery"], "the hook never fired for the live continuation turn"
+
+
+@pytest.mark.asyncio
+async def test_a_run_interrupted_several_times_still_reads_cleanly(tmp_path):
+    """Two crashes, then a completion: only the finished attempt should read back.
+
+    Each interrupted attempt leaves its deltas in the append-only stream, and
+    each re-run opens with a reset. They have to compose: a bad deploy loop can
+    restart the same run repeatedly, and a reader must not end up with the
+    wreckage of every attempt concatenated.
+    """
+    import json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_repeat_crash_helper.py"
+    args = [str(tmp_path / "rp.sqlite"), str(tmp_path / "rp.attempts")]
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    for mode, expected_rc in (("start", 9), ("recover", 9), ("recover", 0)):
+        proc = subprocess.run(
+            [_sys.executable, str(helper), *args, mode],
+            capture_output=True, text=True, env=env, timeout=120,
+        )
+        assert proc.returncode == expected_rc, (
+            f"{mode}: rc={proc.returncode}\n{proc.stdout}\n{proc.stderr[-500:]}"
+        )
+
+    got = json.loads(
+        next(l for l in proc.stdout.splitlines() if l.startswith("RESULT "))[7:]
+    )
+    assert got["attempts"] == 3, got
+    assert got["attached"].strip() == "C0 C1 C2", (
+        "an abandoned attempt survived into what a client reads: "
+        + repr(got["attached"])
+    )
+    # Both wrecked attempts are still on disk; only the reading of them changed.
+    assert got["records"] > 3, got
+
+
+@pytest.mark.asyncio
+async def test_tools_survive_a_turn_that_re_runs_with_different_content(tmp_path):
+    """Tools plus a genuinely different re-run -- the combination nothing covered.
+
+    The other crash tests either use tools with a replay that is identical by
+    construction, or a differing re-run with no tools at all.
+    """
+    import json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    helper = Path(__file__).parent / "dbos_tools_divergence_helper.py"
+    args = [
+        str(tmp_path / "td.sqlite"),
+        str(tmp_path / "td.marker"),
+        str(tmp_path / "td.tools"),
+    ]
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent / "src")}
+
+    crashed = subprocess.run(
+        [_sys.executable, str(helper), *args, "crash"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert crashed.returncode == 9, f"expected a crash, got {crashed.returncode}"
+
+    recovered = subprocess.run(
+        [_sys.executable, str(helper), *args, "recover"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )
+    assert recovered.returncode == 0, recovered.stderr[-600:]
+    got = json.loads(
+        next(l for l in recovered.stdout.splitlines() if l.startswith("RESULT "))[7:]
+    )
+
+    assert "first" not in got["attached"], (
+        "the abandoned attempt leaked: " + repr(got["attached"])
+    )
+    assert "second" in got["attached"], got
+    # The killed attempt never drained its stream, so no tool ran in it.
+    assert got["tools_fired"] == ["Tokyo"], got
+    # The abandoned attempt's tool-use delta is still on disk -- append-only --
+    # but the reset means a reader ends up with only the live turn's pair.
+    assert got["raw_uses"] == 2, got
+    assert (got["reader_uses"], got["reader_results"]) == (1, 1), got

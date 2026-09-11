@@ -13,6 +13,7 @@ they all crash *after* the provider turn has checkpointed.
 """
 
 import asyncio
+import json
 import os
 import sys
 
@@ -50,8 +51,14 @@ class SlowStub(StubLLM):
 async def run() -> int:
     model = SlowStub()
     # The provider answers differently the second time, as a live one would.
-    for i in range(3 if already_crashed() else 20):
-        model.put_text("go", f"tok{i} ")
+    # Distinct wording per attempt, so a stream that splices the abandoned
+    # attempt onto the re-run is obvious rather than plausible-looking.
+    if already_crashed():
+        for i in range(3):
+            model.put_text("go", f"RE{i} ")
+    else:
+        for i in range(20):
+            model.put_text("go", f"first{i} ")
 
     bot = mus_dbos.durable(Bot(prompt="t", model=model))
     result = bot("go")
@@ -76,7 +83,13 @@ async def main():
         handle = await DBOS.retrieve_workflow_async(WF_ID)
         seen = await handle.get_result()
         streamed = [d async for d in mus_dbos.read(WF_ID)]
-        print(f"RESULT recovered seen={seen} stream={len(streamed)}")
+        # What a client reconnecting to this run actually reads.
+        text = await mus_dbos.attach(WF_ID).string()
+        print("RESULT " + json.dumps({
+            "seen": seen,
+            "records": len(streamed),
+            "attached": text,
+        }))
 
 
 if __name__ == "__main__":

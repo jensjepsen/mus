@@ -1,4 +1,5 @@
 import typing as t
+import uuid
 from .types import (
     LLM,
     Delta,
@@ -308,6 +309,23 @@ MODEL_TYPE = str
 ALL_STREAM_ARGS = t.Union[StreamArgs]
 
 
+def _call_id(tool_call: t.Any) -> str:
+    """A tool-call id that is unique within a turn.
+
+    Mistral may omit ``id``. Falling back to the function name made a turn that
+    calls one function twice ("weather in Paris and Tokyo") produce two calls
+    sharing an id -- and mus keys ``tool_invocation_id`` on it, so the two
+    invocations collapsed into one and their results could not be paired with
+    the calls that produced them.
+
+    The suffix is random rather than a counter, so a call in a later turn cannot
+    collide with one in an earlier turn when the whole history is converted.
+    """
+    if getattr(tool_call, "id", None):
+        return tool_call.id
+    return f"{tool_call.function.name}:{uuid.uuid4().hex[:8]}"
+
+
 def convert_tool_arguments(args: Arguments, tool_name: str = "unknown"):
     if isinstance(args, dict):
         return args
@@ -425,7 +443,7 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                                 if tool_call.function:
                                     pending_calls.append(
                                         ToolUse(
-                                            id=tool_call.id or tool_call.function.name,
+                                            id=_call_id(tool_call),
                                             name=tool_call.function.name,
                                             input=convert_tool_arguments(
                                                 tool_call.function.arguments,
@@ -497,7 +515,7 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
                     for tool_call in choice.message.tool_calls:
                         if tool_call.function:
                             tool_use = ToolUse(
-                                id=tool_call.id or tool_call.function.name,
+                                id=_call_id(tool_call),
                                 name=tool_call.function.name,
                                 input=convert_tool_arguments(
                                     tool_call.function.arguments,

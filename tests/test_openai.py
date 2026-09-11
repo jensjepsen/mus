@@ -821,3 +821,28 @@ async def test_function_choice_any_forces_a_tool_call(openai_llm, mock_openai_cl
         pass
     sent = mock_openai_client.chat.completions.create.call_args.kwargs
     assert sent["tool_choice"] == "required", f"sent tool_choice={sent['tool_choice']!r}"
+
+
+@pytest.mark.asyncio
+async def test_calls_without_any_provider_id_still_get_distinct_ids(
+    openai_llm, mock_openai_client
+):
+    """`id` is optional on every fragment, so a call may arrive without one.
+
+    The accumulator defaults it to "", and mus keys ``tool_invocation_id`` on
+    that id -- so two calls that never receive one collapse into a single
+    invocation and their results cannot be paired with the calls that produced
+    them. OpenAI itself always sends ids; gateways are the risk.
+    """
+    uses = await _tool_uses(openai_llm, mock_openai_client, [
+        _chunk([_frag(0, name="get_weather", arguments='{"city": "Paris"}')]),
+        _chunk([_frag(1, name="get_weather", arguments='{"city": "Tokyo"}')]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+
+    assert len(uses) == 2, uses
+    assert uses[0].id and uses[1].id, f"empty tool ids: {[u.id for u in uses]}"
+    assert uses[0].id != uses[1].id, (
+        "both calls share one id, so their results cannot be paired: "
+        f"{[u.id for u in uses]}"
+    )
