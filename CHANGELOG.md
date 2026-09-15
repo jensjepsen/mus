@@ -1,3 +1,9 @@
+## v0.35.2 (2026-09-15)
+
+### Fix
+
+- unpicklable exceptions
+
 ## v0.35.1 (2026-09-11)
 
 ### Fix
