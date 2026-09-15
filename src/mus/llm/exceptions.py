@@ -1,7 +1,33 @@
+import pickle
 import typing as t
 
 if t.TYPE_CHECKING:
     from .types import History, StopReason
+
+
+def _portable_state(state: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
+    """Drop what cannot cross a process boundary, keep the rest.
+
+    ``raw_response`` holds whatever the provider SDK raised with -- mus does not
+    control it, which is why it is typed ``object`` -- and a live response is
+    routinely unpicklable: Google's is an ``aiohttp.ClientResponse``, whose
+    headers are a ``CIMultiDictProxy``. Letting that sink the whole exception
+    would lose the diagnostics that *are* portable (provider, status code,
+    message) along with an object that means nothing in another process anyway.
+
+    Replaced by its type name rather than its ``repr``: a response repr can
+    include headers, and headers carry credentials. The type is enough to say
+    what was dropped without writing a token into a checkpoint.
+    """
+    portable = {}
+    for key, value in state.items():
+        try:
+            pickle.dumps(value)
+        except Exception:
+            cls = type(value)
+            value = f"<unpicklable {cls.__module__}.{cls.__qualname__}>"
+        portable[key] = value
+    return portable
 
 
 def _rebuild_exception(
@@ -52,7 +78,7 @@ class LLMException(Exception):
         """
         return (
             _rebuild_exception,
-            (type(self), self.args, dict(self.__dict__)),
+            (type(self), self.args, _portable_state(self.__dict__)),
         )
 
 
