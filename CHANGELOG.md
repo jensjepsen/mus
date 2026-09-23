@@ -1,3 +1,9 @@
+## v0.35.3 (2026-09-23)
+
+### Fix
+
+- don't orphan the provider_turn step when a stream is abandoned
+
 ## v0.35.2 (2026-09-15)
 
 ### Fix
