@@ -265,6 +265,16 @@ class OnDelta(t.Protocol):
 
 _PROVIDER_TURN: t.Optional[t.Callable] = None
 
+# Every in-flight provider step, held so it cannot be garbage collected while
+# it is still running -- the same pattern DBOS uses for its own workflow tasks.
+# A step task that is collected while pending has its coroutine closed
+# synchronously inside whatever task happens to be running at the time, and the
+# step's ``EnterDBOSStepCtx.__exit__`` then restores its own workflow context
+# into that unrelated task. The victim records its next operation under the
+# wrong workflow -- or, once the abandoned workflow has ended, under a blank one
+# -- and DBOS fails an assertion deep in _sys_db. See issue #86.
+_PENDING_STEPS: "set[asyncio.Task]" = set()
+
 
 class _DurableLLM(LLM):
     """Wraps any mus LLM so each provider call is a checkpointed step.
@@ -331,6 +341,11 @@ class _DurableLLM(LLM):
                 self.on_delta if writing else None,
             )
         )
+        # The generator frame is otherwise the only reference to the task, and
+        # an abandoned generator is torn down without reaching ``await task``
+        # below -- see _PENDING_STEPS.
+        _PENDING_STEPS.add(task)
+        task.add_done_callback(_PENDING_STEPS.discard)
 
         streamed = False
         getter: t.Optional[asyncio.Future] = None
@@ -362,7 +377,12 @@ class _DurableLLM(LLM):
                 getter.cancel()
             # Release the step if the consumer stopped before the turn ended,
             # rather than leaving it blocked on a delta that will never come.
-            if finished is not None and self._awaiting > 0:
+            # Keyed off the task rather than off ``_awaiting``, which is back at
+            # zero for the whole window between mus handing a finished delta
+            # back and the consumer taking the next raw one -- and that window
+            # is exactly where a consumer that stops early lands. An _END the
+            # step no longer waits for is simply never read.
+            if finished is not None and not task.done():
                 finished.put_nowait(_END)
             self._finished = None
             self._awaiting = 0

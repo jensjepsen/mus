@@ -997,3 +997,61 @@ async def test_tools_survive_a_turn_that_re_runs_with_different_content(tmp_path
     # but the reset means a reader ends up with only the live turn's pair.
     assert got["raw_uses"] == 2, got
     assert (got["reader_uses"], got["reader_results"]) == (1, 1), got
+
+
+# --- abandoning a stream ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_abandoning_a_stream_mid_turn_does_not_orphan_its_step(reset_dbos):
+    """A consumer that stops early must still release and keep the step.
+
+    Issue #86. The step blocks on the finished delta for each raw one it hands
+    up, and ``_awaiting`` is back at zero for the whole window between mus
+    handing that delta back and the consumer taking the next raw one -- which
+    is exactly where a consumer that stops early lands. Releasing on
+    ``_awaiting > 0`` therefore missed it, and the abandoned generator is torn
+    down before ``await task``, so nothing outside referenced the pending step
+    task either.
+
+    Left that way, the garbage collector eventually closes the step coroutine
+    synchronously inside whatever task is running, and DBOS restores the dead
+    step's workflow context into that task -- corrupting an unrelated
+    workflow's bookkeeping. Nothing here can observe that directly; what it
+    pins down is the precondition: no step task is left pending.
+    """
+    import asyncio
+
+    before = set(mus_dbos._PENDING_STEPS)
+
+    @DBOS.workflow()
+    async def run() -> list:
+        model = StubLLM()
+        for i in range(4):
+            model.put_text("go", f"delta-{i}")
+
+        bot = mus_dbos.durable(Bot(prompt="t", model=model))
+        gen = bot.query("go")
+        async for _ in gen:
+            break  # stop after the first delta has been round-tripped
+
+        # Let the step write that delta, pull the next one and block on the
+        # finished delta that is never coming. Without this the step has not
+        # reached the dangerous state yet and any release would do.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        started = [task for task in mus_dbos._PENDING_STEPS if task not in before]
+        assert started, "the provider step was never tracked"
+        assert not any(task.done() for task in started), (
+            "the step finished on its own -- this no longer reproduces #86"
+        )
+
+        await gen.aclose()
+        await asyncio.wait(started, timeout=5)
+        return [task.done() for task in started]
+
+    handle = await DBOS.start_workflow_async(run)
+    assert all(await handle.get_result()), "the provider step was left pending"
+    assert not (set(mus_dbos._PENDING_STEPS) - before), (
+        "a finished step stayed in _PENDING_STEPS"
+    )
