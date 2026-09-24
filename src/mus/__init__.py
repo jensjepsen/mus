@@ -45,6 +45,7 @@ if importlib.util.find_spec("boto3"):
 
 if importlib.util.find_spec("openai"):
     from .llm.openai import OpenAILLM as OpenAILLM
+    from .llm.openai_responses import OpenAIResponsesLLM as OpenAIResponsesLLM
 
 if importlib.util.find_spec("google") and importlib.util.find_spec("google.genai"):
     from .llm.google import GoogleGenAILLM as GoogleGenAILLM
