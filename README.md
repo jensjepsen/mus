@@ -2,7 +2,9 @@
 
 A small for fun library to play around with tool use in LLMs
 
-Currently supports the Bedrock, Anthropic and OpenAI API's.
+Currently supports the Bedrock, Anthropic, OpenAI (Chat Completions and Responses), Google and Mistral API's.
+
+For OpenAI there are two adapters. `OpenAIResponsesLLM` uses the Responses API and is the one to use with OpenAI itself: it reaches the Responses-only models and carries reasoning across tool calls. `OpenAILLM` uses Chat Completions, for OpenAI-compatible gateways (OpenRouter and friends) and the few models Responses doesn't serve. The Responses API has no stop sequences, so `OpenAIResponsesLLM` ignores `stop_sequences` and logs a warning.
 
 ## Installation
 ```bash
@@ -154,15 +156,15 @@ query = (
 
 Every provider reports why generation ended. mus normalises those into a common `StopReason`, keeping the provider's own value in `raw`.
 
-| `kind` | planned? | Anthropic | OpenAI | Bedrock | Google | Mistral |
-|---|---|---|---|---|---|---|
-| `end_turn` | yes | `end_turn` | `stop` | `end_turn` | `STOP` | `stop` |
-| `stop_sequence` | yes | `stop_sequence` | `stop` | `stop_sequence` | `STOP` | `stop` |
-| `tool_use` | yes | `tool_use` | `tool_calls` | `tool_use` | `STOP` + call | `tool_calls` |
-| `max_tokens` | no | `max_tokens` | `length` | `max_tokens` | `MAX_TOKENS` | `length` |
-| `content_filter` | no | `refusal` | `content_filter` | `content_filtered` | `SAFETY` | |
-| `malformed_tool_call` | no | derived | derived | derived | `MALFORMED_FUNCTION_CALL` | derived |
-| `pause_turn`, `error`, `unknown` | no | | | | | |
+| `kind` | planned? | Anthropic | OpenAI | OpenAI Responses | Bedrock | Google | Mistral |
+|---|---|---|---|---|---|---|---|
+| `end_turn` | yes | `end_turn` | `stop` | `completed` | `end_turn` | `STOP` | `stop` |
+| `stop_sequence` | yes | `stop_sequence` | `stop` |  | `stop_sequence` | `STOP` | `stop` |
+| `tool_use` | yes | `tool_use` | `tool_calls` | `completed` + call | `tool_use` | `STOP` + call | `tool_calls` |
+| `max_tokens` | no | `max_tokens` | `length` | `max_output_tokens` | `max_tokens` | `MAX_TOKENS` | `length` |
+| `content_filter` | no | `refusal` | `content_filter` | `content_filter`, `refusal` | `content_filtered` | `SAFETY` | |
+| `malformed_tool_call` | no | derived | derived | derived | derived | `MALFORMED_FUNCTION_CALL` | derived |
+| `pause_turn`, `error`, `unknown` | no | | | `failed` → `error` | | | |
 
 
 <!-- invisible-code-block: python
