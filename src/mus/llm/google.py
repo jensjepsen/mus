@@ -471,6 +471,13 @@ class GoogleGenAILLM(LLM[StreamArgs, MODEL_TYPE, genai.Client]):
         if functions := kwargs.get("functions", None):
             config_kwargs["tools"] = functions_for_llm(functions)
 
+        if structured := kwargs.get("structured_output", None):
+            # response_json_schema takes a JSON Schema as-is; response_schema
+            # expects Gemini's own Schema shape. Verified live on 2.5-flash and
+            # 3-flash-preview, including while streaming.
+            config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["response_json_schema"] = structured["schema"]
+
         if prompt := kwargs.get("prompt", None):
             config_kwargs["system_instruction"] = prompt
 

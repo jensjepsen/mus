@@ -76,6 +76,20 @@ REASONING_METADATA_KEY = "openai_reasoning"
 logger = logging.getLogger(__name__)
 
 
+def _text_format(structured: t.Optional[FunctionSchemaNoAnnotations]) -> t.Any:
+    """The Responses API spells structured output as text.format."""
+    if not structured:
+        return OMIT
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": structured["name"],
+            "schema": structured["schema"],
+            "strict": True,
+        }
+    }
+
+
 def func_to_tool(func: FunctionSchemaNoAnnotations) -> FunctionToolParam:
     return {
         "type": "function",
@@ -425,6 +439,7 @@ class OpenAIResponsesLLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
             tool_choice=_TOOL_CHOICE.get(
                 kwargs.get("function_choice", None) or "", OMIT
             ),
+            text=_text_format(kwargs.get("structured_output", None)),
             max_output_tokens=kwargs.get("max_tokens", None) or OMIT,
             temperature=temperature if temperature is not None else OMIT,
             top_p=top_p if top_p is not None else OMIT,

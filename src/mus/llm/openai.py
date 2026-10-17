@@ -322,6 +322,20 @@ def deltas_to_messages(
 _TOOL_CHOICE: t.Mapping[str, t.Any] = {"auto": "auto", "any": "required"}
 
 
+def _response_format(structured: t.Optional[FunctionSchemaNoAnnotations]) -> t.Any:
+    """Chat Completions spells structured output as response_format."""
+    if not structured:
+        return OMIT
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": structured["name"],
+            "schema": structured["schema"],
+            "strict": True,
+        },
+    }
+
+
 class StreamArgs(t.TypedDict, total=False):
     extra_headers: t.Dict[str, str]
 
@@ -437,6 +451,9 @@ class OpenAILLM(LLM[StreamArgs, MODEL_TYPE, openai.AsyncClient]):
                 tools=tools,
                 tool_choice=_TOOL_CHOICE.get(
                     kwargs.get("function_choice", None) or "", OMIT
+                ),
+                response_format=_response_format(
+                    kwargs.get("structured_output", None)
                 ),
                 max_completion_tokens=kwargs.get("max_tokens", None) or OMIT,
                 temperature=kwargs.get("temperature", None) or OMIT,

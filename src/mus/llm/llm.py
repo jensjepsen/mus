@@ -55,6 +55,7 @@ from .exceptions import (
     LLMStoppedException,
 )
 from ..functions import (
+    strict_schema,
     to_schema,
     schema_to_example,
     parse_tools,
@@ -310,6 +311,7 @@ class ErrorRecoveryHook(t.Protocol):
 class _LLMInitAndQuerySharedKwargs(QueryStreamArgs, total=False):
     functions: t.Optional[t.Sequence[ToolCallableType | ToolCallable]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
+    structured_output: t.Optional[FunctionSchemaNoAnnotations]
     fallback_function: t.Optional[FallbackToolCallableType]
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
@@ -458,6 +460,7 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
             history=history,
             kwargs=self.client_kwargs,
             function_choice=kwargs.get("function_choice", None),
+            structured_output=kwargs.get("structured_output", None),
             functions=function_schemas,
             no_stream=kwargs.get("no_stream", None),
             max_tokens=kwargs.get("max_tokens", None),
@@ -696,8 +699,61 @@ class Bot(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE, CLIENT_TYPE]):
         self,
         query: QueryType,
         structure: t.Type[FillableT],
-        strategy: t.Literal["tool_use", "prefill"] = "tool_use",
+        strategy: t.Literal["tool_use", "prefill", "native"] = "tool_use",
+        json_schema: t.Optional[t.Dict[str, t.Any]] = None,
     ) -> Filled[FillableT]:
+        """Ask the model to fill in ``structure``.
+
+        ``tool_use`` (the default) declares the structure as a tool and makes
+        the model call it. ``prefill`` opens an assistant turn with the start of
+        the JSON. ``native`` uses the provider's own structured-output mode,
+        which is the only one that works on models where forced tool use is
+        rejected, and needs no synthetic tool.
+
+        ``json_schema`` replaces the schema derived from ``structure`` on the wire,
+        for ``native`` only. Derived schemas are deliberately minimal -- no
+        per-field descriptions, no enums, no formats -- and provider dialects
+        differ, so this is the escape hatch for tuning one. It is also what the
+        response is validated against, since it is the contract the model was
+        given; it must still produce something ``structure`` accepts.
+        """
+        if json_schema is not None and strategy != "native":
+            raise ValueError(
+                "json_schema= is only supported by strategy='native', "
+                f"not {strategy!r}"
+            )
+        if strategy == "native":
+            derived = to_schema(structure)
+            wire = FunctionSchemaNoAnnotations(
+                name=derived["name"],
+                description=derived["description"],
+                schema=json_schema
+                if json_schema is not None
+                else strict_schema(derived["schema"]),
+            )
+            result = IterableResult(
+                self.query(query, structured_output=wire, no_stream=True)
+            )
+            text = (await result.string()).strip()
+            parsed = repair_json(text, return_objects=True)
+            if not isinstance(parsed, dict):
+                raise ValueError(f"Failed to decode JSON: {text}")
+            # Checked against the schema the model was actually given, so a
+            # response that obeyed the request is never rejected here.
+            verified = verify_schema_inputs(
+                t.cast(t.Any, {"name": wire["name"], "schema": wire["schema"]}),
+                parsed,
+            )
+            try:
+                value = structure(**verified)
+            except TypeError as e:
+                # Reached only when the schema and the type disagree, which is
+                # deterministic: the caller supplied both.
+                raise TypeError(
+                    f"{structure.__name__} could not be built from a response "
+                    f"matching the schema given to the model: {e}"
+                ) from e
+            return Filled(value=value, usage=result.usage)
         if strategy == "tool_use":
             as_tool = ToolCallable(
                 function=structure,  # type: ignore

@@ -521,6 +521,23 @@ class BedrockLLM(LLM[StreamArgs, MODEL_TYPE, BedrockRuntimeClient]):
                 ]
             extra_kwargs["toolConfig"] = toolConfig
 
+        if structured := kwargs.get("structured_output", None):
+            # Converse documents outputConfig.textFormat, but botocore 1.40.x
+            # does not carry that field yet -- passing it fails parameter
+            # validation before the request leaves. additionalModelRequestFields
+            # is the documented route for model-specific parameters, and the
+            # Anthropic output_config shape goes through it today. Verified
+            # live against claude-sonnet-4-5 on Converse.
+            extra_kwargs["additionalModelRequestFields"] = {
+                **(extra_kwargs.get("additionalModelRequestFields") or {}),
+                "output_config": {
+                    "format": {
+                        "type": "json_schema",
+                        "schema": structured["schema"],
+                    }
+                },
+            }
+
         if prompt := kwargs.get("prompt", None):
             system: list[bt.SystemContentBlockTypeDef] = [
                 {
