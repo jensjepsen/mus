@@ -302,6 +302,34 @@ def type_to_attr(value: t.Type) -> attrs.Attribute:
         )
 
 
+def strict_schema(schema: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
+    """Adapt a derived schema to what structured-output modes demand.
+
+    Two requirements every provider shares, and which the schemas mus derives
+    from a type do not carry: ``additionalProperties: false``, and every
+    property listed in ``required``. Bedrock rejects a schema without the
+    first outright -- a live Converse call returns ValidationException -- and
+    OpenAI's strict mode requires both.
+
+    Both hold for a type-derived schema by construction: a dataclass or
+    TypedDict has exactly these fields, and a constructor needs all of them.
+
+    Applied recursively, since nested objects carry the same rules.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    out = dict(schema)
+    if out.get("type") == "object":
+        props = out.get("properties")
+        if isinstance(props, dict):
+            out["properties"] = {k: strict_schema(v) for k, v in props.items()}
+            out["required"] = list(props)
+        out["additionalProperties"] = False
+    if isinstance(out.get("items"), dict):
+        out["items"] = strict_schema(out["items"])
+    return out
+
+
 def verify_schema_inputs(
     schema: FunctionSchema,
     inputs: t.Mapping[str, t.Any],

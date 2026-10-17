@@ -407,6 +407,17 @@ class AnthropicLLM(
             extra_kwargs["tools"] = functions_for_llm(functions)
             if function_choice := kwargs.get("function_choice", None):
                 extra_kwargs["tool_choice"] = {"type": function_choice}
+        if structured := kwargs.get("structured_output", None):
+            # output_config.format is Anthropic's JSON-outputs mechanism. It
+            # works on the newest models, where tool_choice {"type": "any"}
+            # returns a 400 -- which is why fill() has a native strategy at all.
+            extra_kwargs["output_config"] = {
+                "format": {
+                    "type": "json_schema",
+                    "schema": structured["schema"],
+                }
+            }
+
         if prompt := kwargs.get("prompt", None):
             extra_kwargs["system"] = prompt
 

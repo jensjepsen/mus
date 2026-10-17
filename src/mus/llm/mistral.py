@@ -38,6 +38,8 @@ from json_repair import repair_json
 from mistralai.client.sdk import Mistral
 from mistralai.client.errors.mistralerror import MistralError
 from mistralai.client.models import (
+    ResponseFormat,
+    JSONSchema,
     ChatCompletionRequest,
     ChatCompletionRequestTool,
     SystemMessage,
@@ -136,6 +138,23 @@ def func_schema_to_tool(func_schema: FunctionSchemaNoAnnotations) -> Tool:
             name=func_schema["name"],
             description=func_schema["description"],
             parameters=func_schema["schema"],
+        ),
+    )
+
+
+def _response_format(
+    structured: t.Optional[FunctionSchemaNoAnnotations],
+) -> t.Optional[ResponseFormat]:
+    """Mistral's JSON-schema response format, or None to leave it unset."""
+    if not structured:
+        return None
+    return ResponseFormat(
+        type="json_schema",
+        json_schema=JSONSchema(
+            name=structured["name"],
+            schema_definition=structured["schema"],
+            description=structured.get("description") or None,
+            strict=True,
         ),
     )
 
@@ -409,6 +428,7 @@ class MistralLLM(LLM[StreamArgs, MODEL_TYPE, Mistral]):
             top_p=kwargs.get("top_p"),
             stop=kwargs.get("stop_sequences"),
             tools=tools,
+            response_format=_response_format(kwargs.get("structured_output", None)),
             stream=not kwargs.get("no_stream", False),
             safe_prompt=extra_kwargs.get("safe_prompt"),
             **{k: v for k, v in extra_kwargs.items() if k != "safe_prompt"},

@@ -54,6 +54,14 @@ class LLMClientStreamArgs(t.Generic[STREAM_EXTRA_ARGS, MODEL_TYPE], QueryStreamA
     history: "History"
     functions: t.Optional[t.Sequence["FunctionSchemaNoAnnotations"]]
     function_choice: t.Optional[t.Literal["auto", "any"]]
+    # A JSON schema the response must conform to, using each provider's own
+    # structured-output mechanism rather than a tool call.
+    #
+    # NotRequired, unlike its siblings: this TypedDict does not inherit
+    # total=False from QueryStreamArgs, so a plain annotation would make the key
+    # mandatory -- and the sandbox structures payloads built by a guest that
+    # predates it, which would then fail to decode.
+    structured_output: t.NotRequired[t.Optional["FunctionSchemaNoAnnotations"]]
     kwargs: t.Optional[STREAM_EXTRA_ARGS]
     no_stream: t.Optional[bool]
     cache: t.Optional[CacheOptions]
