@@ -1,3 +1,13 @@
+## v0.37.0 (2026-10-17)
+
+### Feat
+
+- native structured fill
+
+### Fix
+
+- complex schemas
+
 ## v0.36.0 (2026-09-24)
 
 ### Feat
