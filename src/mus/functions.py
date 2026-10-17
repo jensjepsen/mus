@@ -302,31 +302,81 @@ def type_to_attr(value: t.Type) -> attrs.Attribute:
         )
 
 
-def strict_schema(schema: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
-    """Adapt a derived schema to what structured-output modes demand.
+def strict_schema(
+    schema: t.Dict[str, t.Any], _path: str = ""
+) -> t.Dict[str, t.Any]:
+    """Adapt a type-derived schema to what structured-output modes demand.
 
-    Two requirements every provider shares, and which the schemas mus derives
-    from a type do not carry: ``additionalProperties: false``, and every
-    property listed in ``required``. Bedrock rejects a schema without the
-    first outright -- a live Converse call returns ValidationException -- and
-    OpenAI's strict mode requires both.
+    Applies only to schemas mus derives from a type; a caller's own schema is
+    passed to the provider untouched. Measured against live providers rather
+    than inferred, because they disagree:
 
-    Both hold for a type-derived schema by construction: a dataclass or
-    TypedDict has exactly these fields, and a constructor needs all of them.
+    * ``additionalProperties: false`` on every object. Bedrock and OpenAI both
+      reject a schema without it (ValidationException / 400); Google does not
+      care.
+    * Every property in ``required``. OpenAI's strict mode rejects any schema
+      whose ``required`` omits a property -- "must be an array including every
+      key in properties" -- so a defaulted field cannot simply be left out.
+      The documented way to say "may be absent" is a nullable type that *is*
+      required, which keeps the meaning: the model answers ``null`` and the
+      type's default absorbs it.
 
-    Applied recursively, since nested objects carry the same rules.
+    An open-ended mapping has no such translation. ``t.Dict[str, str]`` carries
+    its value type in ``additionalProperties``, which OpenAI and Bedrock both
+    reject, and overwriting it with ``false`` yields a mapping that can hold
+    nothing -- so this raises instead of shipping a schema no response can
+    satisfy.
+
+    Recursive: nested objects and array items carry the same rules.
     """
     if not isinstance(schema, dict):
         return schema
     out = dict(schema)
+
     if out.get("type") == "object":
         props = out.get("properties")
+        extra = out.get("additionalProperties")
+        if isinstance(extra, dict) or (props is None and extra is not None):
+            # A value schema here means arbitrary keys, which strict modes
+            # cannot express at all.
+            where = _path or "the structure"
+            raise ValueError(
+                f"{where} is an open-ended mapping, which "
+                "strategy='native' cannot express: OpenAI and Bedrock both "
+                "reject a schema with a typed additionalProperties. Pass an "
+                "explicit json_schema= to choose how to represent it."
+            )
         if isinstance(props, dict):
-            out["properties"] = {k: strict_schema(v) for k, v in props.items()}
+            required = set(out.get("required") or props)
+            adapted = {}
+            for name, sub in props.items():
+                sub = strict_schema(sub, f"{_path}.{name}" if _path else name)
+                if name not in required:
+                    # Optional by virtue of a default. Say so with null rather
+                    # than by omission, which OpenAI rejects.
+                    sub = _nullable(sub)
+                adapted[name] = sub
+            out["properties"] = adapted
             out["required"] = list(props)
         out["additionalProperties"] = False
+
     if isinstance(out.get("items"), dict):
-        out["items"] = strict_schema(out["items"])
+        out["items"] = strict_schema(
+            out["items"], f"{_path}[]" if _path else "[]"
+        )
+    return out
+
+
+def _nullable(schema: t.Dict[str, t.Any]) -> t.Dict[str, t.Any]:
+    """Allow null alongside whatever this schema already permits."""
+    out = dict(schema)
+    kind = out.get("type")
+    if kind is None or kind == "null":
+        return out
+    if isinstance(kind, list):
+        out["type"] = list(kind) if "null" in kind else [*kind, "null"]
+    else:
+        out["type"] = [kind, "null"]
     return out
 
 

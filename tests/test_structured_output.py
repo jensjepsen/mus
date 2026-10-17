@@ -368,3 +368,82 @@ async def test_native_fill_validates_against_the_schema_it_sent():
     # Schema validation passed -- the response obeyed the contract it was given
     # -- so the mismatch surfaces where it belongs: building the type.
     assert "Weather" in str(excinfo.value)
+
+
+# --- strict_schema, on the derived path only --------------------------------
+
+
+def test_nested_objects_are_sealed():
+    """Recursion into nested objects and array items must keep working."""
+    from mus.functions import strict_schema, to_schema
+
+    @dataclass
+    class Reading:
+        """One reading."""
+
+        hour: int
+
+    @dataclass
+    class Forecast:
+        """A forecast."""
+
+        readings: t.List[Reading]
+
+    adapted = strict_schema(to_schema(Forecast)["schema"])
+
+    item = adapted["properties"]["readings"]["items"]
+    assert item["additionalProperties"] is False
+    assert item["required"] == ["hour"]
+
+
+def test_optional_fields_become_nullable_and_required():
+    """OpenAI's strict mode has one way to say "may be absent": null.
+
+    It rejects a schema whose ``required`` omits any property -- "'required'
+    ... must be an array including every key in properties" -- so the derived
+    form, which omits defaulted fields, is a 400 there. The documented pattern
+    is a nullable type that IS required, verified live: the model answers
+    ``{"city":"Paris","station":null}``, and the dataclass default absorbs the
+    None. Google and Bedrock accept either form.
+    """
+    from mus.functions import strict_schema, to_schema
+
+    @dataclass
+    class Forecast:
+        """A forecast."""
+
+        city: str
+        station: t.Optional[str] = None
+
+    adapted = strict_schema(to_schema(Forecast)["schema"])
+
+    assert sorted(adapted["required"]) == ["city", "station"]
+    assert adapted["properties"]["city"]["type"] == "string"
+    assert adapted["properties"]["station"]["type"] == ["string", "null"], (
+        "optional field was not made nullable: "
+        + str(adapted["properties"]["station"])
+    )
+
+
+def test_open_ended_mapping_is_rejected_not_mangled():
+    """A dict with arbitrary keys cannot be expressed in strict mode.
+
+    Both OpenAI and Bedrock reject ``additionalProperties`` carrying a value
+    schema; only Google accepts it. Overwriting it with False does not help --
+    it yields a mapping that can hold nothing. Failing here, before a request
+    is billed, beats shipping a schema no response can satisfy.
+    """
+    from mus.functions import strict_schema, to_schema
+
+    @dataclass
+    class Forecast:
+        """A forecast."""
+
+        city: str
+        meta: t.Dict[str, str]
+
+    with pytest.raises(ValueError) as excinfo:
+        strict_schema(to_schema(Forecast)["schema"])
+
+    assert "meta" in str(excinfo.value)
+    assert "json_schema" in str(excinfo.value)
